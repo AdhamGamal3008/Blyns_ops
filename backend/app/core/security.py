@@ -39,6 +39,7 @@ class TokenPayload(BaseModel):
     tenant: str | None = None  # client only; null for admin
     role_id: str | None = None
     type: Literal["access", "refresh"] = "access"
+    jti: str | None = None  # refresh tokens only — rotation allowlist key
     iat: int
     exp: int
 

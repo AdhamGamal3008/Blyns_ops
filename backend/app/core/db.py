@@ -15,8 +15,10 @@ from app.core.config import settings
 
 class DBManager:
     def __init__(self, uri: str):
+        # tz_aware: BSON dates come back as aware-UTC datetimes, so they can be
+        # compared against datetime.now(UTC) (lockout windows, expiries).
         self._client: AsyncIOMotorClient = AsyncIOMotorClient(
-            uri, uuidRepresentation="standard"
+            uri, uuidRepresentation="standard", tz_aware=True
         )
         self._tenant_cache: dict[str, AsyncIOMotorDatabase] = {}
 

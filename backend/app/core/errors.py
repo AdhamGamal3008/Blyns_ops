@@ -25,6 +25,7 @@ TENANT_NOT_FOUND = "TENANT_NOT_FOUND"
 RATE_LIMITED = "RATE_LIMITED"
 PROVISIONING_FAILED = "PROVISIONING_FAILED"
 VALIDATION_ERROR = "VALIDATION_ERROR"
+INVALID_CREDENTIALS = "INVALID_CREDENTIALS"  # generic login failure, reveals nothing
 
 # Generic HTTP fallbacks (uniform envelope even for non-domain errors).
 _HTTP_STATUS_CODES: dict[int, str] = {

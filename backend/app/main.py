@@ -75,10 +75,15 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             return JSONResponse(status_code=503, content=body)
         return body
 
-    # --- module routers mount here as phases land ---
-    # Phase 2: control_plane provisioning/companies
-    # Phase 3: auth (admin + client realms)
-    # Phase 4+: admin portal, dashboard, settings, crm, inventory, finance, projects
+    # --- module routers (mounted as phases land) ---
+    from app.auth.admin_auth import router as admin_auth_router
+    from app.auth.client_auth import router as client_auth_router
+    from app.control_plane.companies.router import router as companies_router
+
+    app.include_router(admin_auth_router)
+    app.include_router(client_auth_router)
+    app.include_router(companies_router)
+    # Phase 4+: admin portal CRUD/dashboard, client modules
 
     return app
 
