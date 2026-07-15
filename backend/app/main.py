@@ -7,6 +7,7 @@ are mounted here as each build phase lands.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
@@ -33,7 +34,27 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         db = init_db_manager(cfg.mongo_uri)
         app.state.db = db
+
+        # In-process metrics collector loop (docs/ADMIN_PORTAL.md §4 perf
+        # note): rolling snapshots so the dashboard never fans out live.
+        collector_task: asyncio.Task | None = None
+        if cfg.metrics_interval_sec > 0:
+            from app.control_plane.metrics.collector import collect_platform_metrics
+
+            async def _collect_loop() -> None:
+                while True:
+                    await asyncio.sleep(cfg.metrics_interval_sec)
+                    try:
+                        await collect_platform_metrics(db)
+                    except Exception:  # collector must never kill the app
+                        pass
+
+            collector_task = asyncio.create_task(_collect_loop())
+
         yield
+
+        if collector_task is not None:
+            collector_task.cancel()
         close_db_manager()
 
     app = FastAPI(
@@ -78,12 +99,16 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     # --- module routers (mounted as phases land) ---
     from app.auth.admin_auth import router as admin_auth_router
     from app.auth.client_auth import router as client_auth_router
+    from app.control_plane.admin_users.router import router as admin_users_router
     from app.control_plane.companies.router import router as companies_router
+    from app.control_plane.metrics.router import router as metrics_router
 
     app.include_router(admin_auth_router)
     app.include_router(client_auth_router)
     app.include_router(companies_router)
-    # Phase 4+: admin portal CRUD/dashboard, client modules
+    app.include_router(admin_users_router)
+    app.include_router(metrics_router)
+    # Phase 5+: client modules (dashboard, settings, crm, inventory, finance, projects)
 
     return app
 

@@ -10,10 +10,23 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from bson import ObjectId
 from fastapi import Query
 from pydantic import BaseModel
 
 MAX_PAGE_SIZE = 100
+
+
+def to_api(value: Any) -> Any:
+    """Recursively convert Mongo documents for API bodies: ObjectId → str,
+    `_id` → `id` (docs/BUILD.md §5). Datetimes are handled by FastAPI."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {("id" if k == "_id" else k): to_api(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [to_api(v) for v in value]
+    return value
 
 
 def envelope(data: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]:

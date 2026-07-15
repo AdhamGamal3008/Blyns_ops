@@ -22,6 +22,7 @@ os.environ.setdefault("ERP_TENANT_DB_PREFIX", "test_tenant_")
 os.environ.setdefault("ERP_ACCESS_TOKEN_TTL_MIN", "5")
 os.environ.setdefault("ERP_RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("ERP_DEFAULT_FAILED_LOGIN_THRESHOLD", "3")  # fast lockout tests
+os.environ.setdefault("ERP_METRICS_INTERVAL_SEC", "0")  # no background collector loop
 
 import uuid  # noqa: E402
 

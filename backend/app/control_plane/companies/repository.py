@@ -76,3 +76,37 @@ async def inc_seats_used(
 async def delete(control_db: AsyncIOMotorDatabase, company_id: ObjectId) -> None:
     """Hard removal — only used by provisioning teardown (docs/MULTITENANCY.md §3)."""
     await control_db.companies.delete_one({"_id": company_id})
+
+
+async def list_companies(
+    control_db: AsyncIOMotorDatabase,
+    status: str | None,
+    search: str | None,
+    skip: int,
+    limit: int,
+) -> tuple[list[dict], int]:
+    """Filtered, paginated listing (docs/ADMIN_PORTAL.md §1)."""
+    query: dict[str, Any] = {}
+    if status:
+        query["status"] = status
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"slug": {"$regex": search, "$options": "i"}},
+        ]
+    total = await control_db.companies.count_documents(query)
+    cursor = (
+        control_db.companies.find(query)
+        .sort("created_at", -1).skip(skip).limit(limit)
+    )
+    return await cursor.to_list(length=limit), total
+
+
+async def try_claim_seat(control_db: AsyncIOMotorDatabase, company_id: ObjectId) -> bool:
+    """Atomically increment seats_used only while below seat_limit
+    (docs/ADMIN_PORTAL.md §2). Returns False when the limit is reached."""
+    result = await control_db.companies.update_one(
+        {"_id": company_id, "$expr": {"$lt": ["$seats_used", "$seat_limit"]}},
+        {"$inc": {"seats_used": 1}, "$set": {"updated_at": datetime.now(UTC)}},
+    )
+    return result.modified_count == 1

@@ -1,16 +1,23 @@
-"""Custom rate limiting (docs/ARCHITECTURE.md §6). No external service.
+"""Custom rate limiting + request accounting (docs/ARCHITECTURE.md §6). No
+external service.
 
-Phase 1 ships the global per-IP fixed-window middleware with an in-process
-store (the `local`/`test` backend). The Mongo-backed store (TTL-indexed
-`rate_limit_buckets`, survives multiple production workers) and the per-tenant
-counters that feed the admin dashboard land with Phase 4 (metrics) and
-Phase 11 (hardening) — the store interface below is what they plug into.
+Two concerns in one middleware:
+- ENFORCEMENT: global per-IP fixed window (in-process store for local/test;
+  the Mongo-backed store that survives multiple production workers lands with
+  Phase 11 hardening — it plugs into the same store interface).
+- ACCOUNTING: per-minute request counters, platform-wide and per tenant, into
+  the TTL-indexed `rate_limit_buckets` collection. These feed the admin
+  dashboard "rate limits / activity" panel (docs/ADMIN_PORTAL.md §4.2).
+  Accounting always runs (even when enforcement is disabled) and must never
+  break a request — failures are swallowed.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
+import jwt
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -18,6 +25,8 @@ from starlette.types import ASGIApp
 from app.core.config import Settings
 from app.core.config import settings as default_settings
 from app.core.errors import RATE_LIMITED, error_body
+
+BUCKET_TTL_SEC = 2 * 3600
 
 
 class InMemoryFixedWindowStore:
@@ -35,6 +44,52 @@ class InMemoryFixedWindowStore:
         return self._counts[bucket]
 
 
+def _tenant_from_auth_header(request: Request) -> str | None:
+    """Metrics-only tenant attribution from the bearer token's claim.
+    UNVERIFIED decode — never used for authorization, only accounting."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    try:
+        claims = jwt.decode(
+            auth[7:], options={"verify_signature": False, "verify_exp": False}
+        )
+        return claims.get("tenant")
+    except jwt.InvalidTokenError:
+        return None
+
+
+async def _record(request: Request, rate_limited: bool) -> None:
+    """Increment platform + tenant minute buckets. Fire-safe."""
+    try:
+        from app.core.db import get_db_manager
+
+        control = get_db_manager().control
+        minute = datetime.now(UTC).replace(second=0, microsecond=0)
+        inc = {"requests": 1, "rate_limited": 1 if rate_limited else 0}
+        await control.rate_limit_buckets.update_one(
+            {"scope": "platform", "key": "platform", "minute": minute},
+            {"$inc": inc}, upsert=True,
+        )
+        tenant = _tenant_from_auth_header(request)
+        if tenant:
+            await control.rate_limit_buckets.update_one(
+                {"scope": "tenant", "key": tenant, "minute": minute},
+                {"$inc": inc}, upsert=True,
+            )
+    except Exception:
+        pass  # accounting must never break a request
+
+
+async def ensure_bucket_indexes(control_db) -> None:
+    await control_db.rate_limit_buckets.create_index(
+        [("scope", 1), ("key", 1), ("minute", 1)], unique=True
+    )
+    await control_db.rate_limit_buckets.create_index(
+        "minute", expireAfterSeconds=BUCKET_TTL_SEC
+    )
+
+
 class RateLimitMiddleware:
     """Global per-IP fixed window. 429 + Retry-After when exceeded."""
 
@@ -44,18 +99,25 @@ class RateLimitMiddleware:
         self.store = InMemoryFixedWindowStore()
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http" or not self.cfg.rate_limit_enabled:
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
         request = Request(scope)
-        client_ip = request.client.host if request.client else "unknown"
-        window_sec = self.cfg.rate_limit_window_sec
-        window = int(time.time()) // window_sec
+        limited = False
+        if self.cfg.rate_limit_enabled:
+            client_ip = request.client.host if request.client else "unknown"
+            window_sec = self.cfg.rate_limit_window_sec
+            window = int(time.time()) // window_sec
+            count = self.store.incr(client_ip, window)
+            limited = count > self.cfg.rate_limit_max_requests
 
-        count = self.store.incr(client_ip, window)
-        if count > self.cfg.rate_limit_max_requests:
-            retry_after = window_sec - (int(time.time()) % window_sec)
+        await _record(request, limited)
+
+        if limited:
+            retry_after = self.cfg.rate_limit_window_sec - (
+                int(time.time()) % self.cfg.rate_limit_window_sec
+            )
             response: Response = JSONResponse(
                 status_code=429,
                 content=error_body(RATE_LIMITED, "Too many requests."),

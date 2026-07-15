@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Platform metrics collector (docs/ADMIN_PORTAL.md §4): in-process loop
+    # writing dbStats/activity snapshots. 0 disables (tests).
+    metrics_interval_sec: int = 300
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ERP_")
 
     @property

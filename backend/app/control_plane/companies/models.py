@@ -8,11 +8,11 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import settings
+from app.shared.validation import EMAIL_PATTERN as _EMAIL_PATTERN
 
 CompanyStatus = Literal["active", "blocked", "suspended", "provisioning", "failed"]
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
-_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 # Modules a tenant may enable, in seeding order (docs/MULTITENANCY.md §5).
 KNOWN_MODULES = ["dashboard", "settings", "projects", "crm", "inventory", "finance"]
@@ -70,3 +70,44 @@ class OnboardCompanyPayload(BaseModel):
     @property
     def db_name(self) -> str:
         return f"{settings.tenant_db_prefix}{self.slug}"
+
+
+class UpdateCompanyPayload(BaseModel):
+    """PATCH /admin/companies/{id} — edit name / enabled_modules
+    (docs/ADMIN_PORTAL.md §1). Enabling a module runs its seed."""
+
+    name: str | None = Field(default=None, min_length=1)
+    enabled_modules: list[str] | None = None
+
+    @field_validator("enabled_modules")
+    @classmethod
+    def _known_modules(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        unknown = set(v) - set(KNOWN_MODULES)
+        if unknown:
+            raise ValueError(f"unknown modules: {sorted(unknown)}")
+        return [m for m in KNOWN_MODULES if m in v]
+
+
+class SeatLimitBody(BaseModel):
+    """PATCH /admin/companies/{id}/seats (docs/ADMIN_PORTAL.md §2)."""
+
+    seat_limit: int = Field(ge=1)
+    force: bool = False
+
+
+class AdminEmployeeCreate(BaseModel):
+    """POST /admin/companies/{id}/employees — seed an employee from the admin
+    side; respects the seat limit."""
+
+    name: str = Field(min_length=1)
+    email: str
+    role_name: str = "Member"
+
+    @field_validator("email")
+    @classmethod
+    def _valid_email(cls, v: str) -> str:
+        if not _EMAIL_PATTERN.match(v):
+            raise ValueError("invalid email address")
+        return v.lower()
