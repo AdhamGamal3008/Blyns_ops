@@ -1,0 +1,23 @@
+# Local infrastructure (docs/ENVIRONMENTS.md §2). Dev only.
+services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # Optional inspection UI — an open dev tool, NOT a product integration.
+  # Start with: docker compose --profile tools up -d
+  mongo-express:
+    image: mongo-express:latest
+    profiles: ["tools"]
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
