@@ -31,6 +31,20 @@ async def seed(tenant_db: AsyncIOMotorDatabase) -> None:
     await tenant_db.bills.create_index("due_date")
     await tenant_db.payments.create_index("ref_doc.id")
 
+    # A document number must be unique — §2 mandates a gapless sequence, and a
+    # duplicated invoice number is an audit failure. The atomic counter already
+    # prevents this through the API; the index defends against anything that
+    # writes a number by another path (an import, a migration, a data fix).
+    #
+    # PARTIAL, not a plain unique index: drafts carry `number: null` until they
+    # post, and Mongo treats every missing/null key as the same value — a naive
+    # unique index would reject the second draft.
+    for coll in (tenant_db.invoices, tenant_db.bills):
+        await coll.create_index(
+            "number", unique=True,
+            partialFilterExpression={"number": {"$type": "string"}},
+        )
+
     now = datetime.now(UTC)
     for code, name, acc_type in STARTER_CHART:
         await tenant_db.accounts.update_one(

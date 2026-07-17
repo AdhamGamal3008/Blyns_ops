@@ -27,6 +27,7 @@ PROVISIONING_FAILED = "PROVISIONING_FAILED"
 VALIDATION_ERROR = "VALIDATION_ERROR"
 INVALID_CREDENTIALS = "INVALID_CREDENTIALS"  # generic login failure, reveals nothing
 INSUFFICIENT_STOCK = "INSUFFICIENT_STOCK"  # docs/modules/INVENTORY.md §2
+UNBALANCED_ENTRY = "UNBALANCED_ENTRY"  # docs/modules/FINANCE.md §1
 
 # Generic HTTP fallbacks (uniform envelope even for non-domain errors).
 _HTTP_STATUS_CODES: dict[int, str] = {
