@@ -204,3 +204,22 @@ input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -
 .muted { color: var(--text-dim); }
 .coming-soon { text-align: center; padding: 80px 0; color: var(--text-dim); }
 .coming-soon h2 { color: var(--text); margin-bottom: 8px; }
+
+/* --- crm pipeline board ------------------------------------------------ */
+.pipe-board {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr);
+  gap: 10px; overflow-x: auto; padding-bottom: 4px;
+}
+.pipe-col { background: var(--bg); border-radius: 8px; padding: 8px; min-width: 150px; }
+.pipe-col.terminal { opacity: 0.85; }
+.pipe-col-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 12px; text-transform: capitalize;
+}
+.pipe-col-total { color: var(--text-dim); font-size: 11px; margin-bottom: 8px; }
+.pipe-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px; margin-bottom: 6px; font-size: 12px;
+}
+.pipe-card-title { font-weight: 600; margin-bottom: 2px; }
+.pipe-move { width: 100%; margin-top: 6px; font-size: 11px; padding: 2px 4px; }

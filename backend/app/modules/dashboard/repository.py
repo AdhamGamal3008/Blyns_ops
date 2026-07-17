@@ -121,6 +121,7 @@ async def calendar_crm(db, start: datetime, end: datetime) -> list[dict]:
         ))
     async for doc in db.crm_activities.find({
         "due_at": {"$gte": start, "$lte": end}, "done": {"$ne": True},
+        "is_deleted": {"$ne": True},
     }):
         events.append(_event(
             "crm", "task_due", doc["_id"], doc.get("subject", "CRM activity"),
