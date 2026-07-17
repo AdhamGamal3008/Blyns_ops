@@ -106,6 +106,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     from app.modules.dashboard.router import router as dashboard_router
     from app.modules.finance.router import router as finance_router
     from app.modules.inventory.router import router as inventory_router
+    from app.modules.projects.router import router as projects_router
     from app.modules.settings.router import router as settings_router
 
     app.include_router(admin_auth_router)
@@ -118,7 +119,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(crm_router)
     app.include_router(inventory_router)
     app.include_router(finance_router)
-    # Phase 10: client modules (projects)
+    app.include_router(projects_router)
 
     return app
 
