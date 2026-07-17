@@ -25,4 +25,4 @@ lint:           ## ruff + mypy (+ eslint once frontend lands)
 
 build-prod:     ## frontend build + backend image
 	@if [ -f frontend/package.json ]; then cd frontend && npm run build; fi
-	@echo "backend image build lands with Phase 11 (production config)"
+	cd backend && docker build -t erp-backend:$(shell cd backend && python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])") -t erp-backend:latest .

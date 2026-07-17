@@ -2,9 +2,11 @@
 external service.
 
 Two concerns in one middleware:
-- ENFORCEMENT: global per-IP fixed window (in-process store for local/test;
-  the Mongo-backed store that survives multiple production workers lands with
-  Phase 11 hardening — it plugs into the same store interface).
+- ENFORCEMENT: global per-IP fixed window. The store is chosen by environment
+  (ENVIRONMENTS.md §1): an in-process dict for local/test, and a Mongo-backed
+  store for production so a single limit holds across multiple uvicorn workers
+  (one in-process counter per worker would let N workers serve N× the limit).
+  Both stores share the async `incr(key, window) -> int` interface.
 - ACCOUNTING: per-minute request counters, platform-wide and per tenant, into
   the TTL-indexed `rate_limit_buckets` collection. These feed the admin
   dashboard "rate limits / activity" panel (docs/ADMIN_PORTAL.md §4.2).
@@ -16,8 +18,10 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from typing import Protocol
 
 import jwt
+from pymongo import ReturnDocument
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -27,21 +31,58 @@ from app.core.config import settings as default_settings
 from app.core.errors import RATE_LIMITED, error_body
 
 BUCKET_TTL_SEC = 2 * 3600
+_ENFORCEMENT_COLL = "rate_limit_windows"
+
+
+class FixedWindowStore(Protocol):
+    """A per-(key, window) counter. `incr` returns the new count for the window."""
+
+    async def incr(self, key: str, window: int) -> int: ...
 
 
 class InMemoryFixedWindowStore:
-    """Fixed-window counters keyed by (key, window). In-process only."""
+    """Fixed-window counters keyed by (key, window). In-process only — correct
+    for a single worker (local/test), not across production workers."""
 
     def __init__(self) -> None:
         self._counts: dict[tuple[str, int], int] = {}
 
-    def incr(self, key: str, window: int) -> int:
+    async def incr(self, key: str, window: int) -> int:
         bucket = (key, window)
         self._counts[bucket] = self._counts.get(bucket, 0) + 1
         # Opportunistic pruning of expired windows so the dict can't grow unbounded.
         if len(self._counts) > 10_000:
             self._counts = {k: v for k, v in self._counts.items() if k[1] >= window}
         return self._counts[bucket]
+
+
+class MongoFixedWindowStore:
+    """Fixed-window counters in a TTL-indexed control-plane collection, shared by
+    every worker. The count is an atomic `$inc` inside `find_one_and_update`, so
+    concurrent requests across workers can never miss each other's increments.
+    """
+
+    def __init__(self, control_db) -> None:
+        self._db = control_db
+
+    async def incr(self, key: str, window: int) -> int:
+        doc = await self._db[_ENFORCEMENT_COLL].find_one_and_update(
+            {"key": key, "window": window},
+            {"$inc": {"count": 1}, "$setOnInsert": {"created_at": datetime.now(UTC)}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int(doc["count"])
+
+
+async def ensure_enforcement_indexes(control_db) -> None:
+    await control_db[_ENFORCEMENT_COLL].create_index(
+        [("key", 1), ("window", 1)], unique=True
+    )
+    # windows are created once then only $inc'd, so TTL from creation is safe
+    await control_db[_ENFORCEMENT_COLL].create_index(
+        "created_at", expireAfterSeconds=BUCKET_TTL_SEC
+    )
 
 
 def _tenant_from_auth_header(request: Request) -> str | None:
@@ -91,12 +132,27 @@ async def ensure_bucket_indexes(control_db) -> None:
 
 
 class RateLimitMiddleware:
-    """Global per-IP fixed window. 429 + Retry-After when exceeded."""
+    """Global per-IP fixed window. 429 + Retry-After when exceeded.
+
+    Store is chosen by environment: in-process for local/test, Mongo-backed for
+    production (shared across workers). The Mongo store is built lazily on first
+    use because the DB manager is only initialized once the app lifespan runs.
+    """
 
     def __init__(self, app: ASGIApp, cfg: Settings | None = None) -> None:
         self.app = app
         self.cfg = cfg or default_settings
-        self.store = InMemoryFixedWindowStore()
+        self._memory_store = InMemoryFixedWindowStore()
+        self._mongo_store: MongoFixedWindowStore | None = None
+
+    def _store(self) -> FixedWindowStore:
+        if self.cfg.env != "production":
+            return self._memory_store
+        if self._mongo_store is None:
+            from app.core.db import get_db_manager
+
+            self._mongo_store = MongoFixedWindowStore(get_db_manager().control)
+        return self._mongo_store
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
@@ -109,7 +165,7 @@ class RateLimitMiddleware:
             client_ip = request.client.host if request.client else "unknown"
             window_sec = self.cfg.rate_limit_window_sec
             window = int(time.time()) // window_sec
-            count = self.store.incr(client_ip, window)
+            count = await self._store().incr(client_ip, window)
             limited = count > self.cfg.rate_limit_max_requests
 
         await _record(request, limited)

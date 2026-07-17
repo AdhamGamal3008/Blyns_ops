@@ -14,10 +14,11 @@ from importlib.metadata import PackageNotFoundError, version
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import Settings
+from app.core.config import Settings, validate_for_production
 from app.core.config import settings as default_settings
 from app.core.db import close_db_manager, get_db_manager, init_db_manager
 from app.core.errors import register_exception_handlers
+from app.core.logging import AccessLogMiddleware, configure_logging
 from app.core.rate_limit import RateLimitMiddleware
 from app.shared.schemas import envelope
 
@@ -30,10 +31,29 @@ except PackageNotFoundError:  # running from a raw checkout
 def create_app(cfg: Settings | None = None) -> FastAPI:
     cfg = cfg or default_settings
 
+    # Hardening (docs/ENVIRONMENTS.md §4/§6): a production process must not start
+    # with a dev secret, open docs, or localhost origins. No-op elsewhere.
+    validate_for_production(cfg)
+    configure_logging(cfg)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         db = init_db_manager(cfg.mongo_uri)
         app.state.db = db
+
+        # Rate-limit collections (accounting + enforcement) need their indexes
+        # before the middleware writes to them (docs/ARCHITECTURE.md §6). Both
+        # create_index calls are idempotent, so every worker can run them.
+        from app.core.rate_limit import (
+            ensure_bucket_indexes,
+            ensure_enforcement_indexes,
+        )
+
+        try:
+            await ensure_bucket_indexes(db.control)
+            await ensure_enforcement_indexes(db.control)
+        except Exception:  # index setup must not stop the app from serving
+            pass
 
         # In-process metrics collector loop (docs/ADMIN_PORTAL.md §4 perf
         # note): rolling snapshots so the dashboard never fans out live.
@@ -68,7 +88,10 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
 
-    # Order matters: rate limiting wraps everything, CORS inside it.
+    # Middleware wraps outermost-first. Rate limiting fronts everything (reject
+    # floods before any work), then CORS, then the access log closest to the
+    # app so it records the true handler status.
+    app.add_middleware(AccessLogMiddleware, cfg=cfg)
     app.add_middleware(CORSMiddleware,
                        allow_origins=cfg.cors_origins,
                        allow_credentials=True,

@@ -51,6 +51,57 @@ class Settings(BaseSettings):
         """/docs is on for local + test, off for production (ENVIRONMENTS.md §1)."""
         return self.env != "production"
 
+    def production_problems(self) -> list[str]:
+        """Config that must never ship to production (docs/ENVIRONMENTS.md §4/§6).
+
+        Returns a human-readable list of violations; empty means safe. Enforced
+        at startup by `validate_for_production` so a misconfigured production
+        process fails fast instead of serving with a dev secret or open docs.
+        """
+        problems: list[str] = []
+
+        weak_secrets = {"", "change-me", "change-me-dev-only", "dev", "secret", "test"}
+        if self.jwt_secret in weak_secrets or len(self.jwt_secret) < 32:
+            problems.append(
+                "ERP_JWT_SECRET is empty, a known dev value, or shorter than 32 "
+                "chars — inject a strong secret (e.g. `openssl rand -hex 32`)."
+            )
+
+        if self.docs_enabled:
+            problems.append("/docs must be disabled in production.")
+
+        if not self.cors_origins:
+            problems.append("ERP_CORS_ORIGINS must list the exact frontend origin(s).")
+        localhost = [o for o in self.cors_origins if "localhost" in o or "127.0.0.1" in o]
+        if localhost:
+            problems.append(
+                f"CORS origins point at localhost in production: {localhost}."
+            )
+
+        if "localhost" in self.mongo_uri or "127.0.0.1" in self.mongo_uri:
+            problems.append(
+                "ERP_MONGO_URI points at localhost — production Mongo is an "
+                "injected replica-set secret (docs/ENVIRONMENTS.md §4)."
+            )
+
+        return problems
+
+
+def validate_for_production(cfg: Settings) -> None:
+    """Fail fast at startup if a production process carries unsafe config.
+
+    No-op outside production. Raises RuntimeError listing every violation so the
+    operator sees all of them at once rather than one redeploy at a time.
+    """
+    if cfg.env != "production":
+        return
+    problems = cfg.production_problems()
+    if problems:
+        raise RuntimeError(
+            "Refusing to start in production with unsafe configuration:\n  - "
+            + "\n  - ".join(problems)
+        )
+
 
 # jwt_secret arrives via env/.env at runtime (pydantic-settings); mypy can't see that.
 settings = Settings()  # type: ignore[call-arg]  # imported everywhere

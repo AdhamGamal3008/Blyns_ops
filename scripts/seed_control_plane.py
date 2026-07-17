@@ -22,6 +22,7 @@ from app.control_plane.admin_users.repository import (
 from app.core.audit import write_admin_audit
 from app.core.config import settings
 from app.core.db import close_db_manager, init_db_manager
+from app.core.rate_limit import ensure_bucket_indexes, ensure_enforcement_indexes
 from app.core.security import hash_password
 
 
@@ -30,6 +31,8 @@ async def main(email: str, name: str, password: str | None) -> None:
     try:
         control = init_db_manager(settings.mongo_uri).control
         await ensure_admin_indexes(control)
+        await ensure_bucket_indexes(control)
+        await ensure_enforcement_indexes(control)
         role_ids = await seed_admin_roles(control)
         print(f"admin roles : {', '.join(role_ids)}")
 
