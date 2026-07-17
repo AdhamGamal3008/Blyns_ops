@@ -40,22 +40,11 @@ async def kpi_open_deals(db: AsyncIOMotorDatabase) -> int:
 
 
 async def kpi_low_stock_items(db: AsyncIOMotorDatabase) -> int:
-    pipeline: list[dict] = [
-        {"$lookup": {
-            "from": "products", "localField": "product_id",
-            "foreignField": "_id", "as": "product",
-        }},
-        {"$unwind": "$product"},
-        {"$match": {
-            "product.is_active": True,
-            "product.reorder_point": {"$gt": 0},
-            "$expr": {"$lte": ["$on_hand", "$product.reorder_point"]},
-        }},
-        {"$count": "n"},
-    ]
-    async for doc in db.stock_levels.aggregate(pipeline):
-        return doc["n"]
-    return 0
+    """Delegates to the Inventory module so this KPI and its `/inventory/
+    low-stock` list can never disagree about what "low" means."""
+    from app.modules.inventory import repository as inventory_repo
+
+    return await inventory_repo.low_stock_count(db)
 
 
 async def kpi_unpaid_invoices_total(db: AsyncIOMotorDatabase) -> float:

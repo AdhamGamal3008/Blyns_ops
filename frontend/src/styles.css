@@ -223,3 +223,7 @@ input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -
 }
 .pipe-card-title { font-weight: 600; margin-bottom: 2px; }
 .pipe-move { width: 100%; margin-top: 6px; font-size: 11px; padding: 2px 4px; }
+
+/* --- inventory --------------------------------------------------------- */
+.qty-in { color: var(--ok); }
+.qty-out { color: var(--danger); }

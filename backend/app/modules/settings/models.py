@@ -20,6 +20,9 @@ class CompanyProfilePatch(BaseModel):
         default=None, pattern=r"^\d{2}-\d{2}$"
     )
     contact: dict | None = None
+    # INVENTORY.md §2: negative stock is rejected by default; this is the
+    # "company setting [that] may allow it".
+    allow_negative_stock: bool | None = None
 
 
 class EmployeeCreate(BaseModel):

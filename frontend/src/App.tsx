@@ -13,6 +13,7 @@ import { ClientShell } from "./client/ClientShell";
 import { ComingSoon } from "./client/ComingSoon";
 import { CrmPage } from "./client/crm/CrmPage";
 import { DashboardPage } from "./client/dashboard/DashboardPage";
+import { InventoryPage } from "./client/inventory/InventoryPage";
 import { SettingsPage } from "./client/settings/SettingsPage";
 import { getTokens } from "./shared/api";
 
@@ -39,6 +40,7 @@ export function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="crm/*" element={<CrmPage />} />
+          <Route path="inventory/*" element={<InventoryPage />} />
           <Route path="settings/*" element={<SettingsPage />} />
           <Route path=":module/*" element={<ComingSoon />} />
         </Route>
