@@ -4,8 +4,6 @@ loops, physical thresholds, and the CRM/Inventory/Finance integrations."""
 
 from __future__ import annotations
 
-import pytest
-
 BASE = "/api/v1/projects"
 
 
@@ -706,10 +704,12 @@ async def test_full_walk_to_client_handover(client_client):
                    if i["id"] == handover["final_invoice"]["id"])
     assert invoice["customer_ref"]["crm_account_id"] == account_id
 
-    res = await client_client.get("/api/v1/activity", params={"module": "projects"})
+    # newest-first feed: the closing lifecycle events sit on the first page
+    # (project.created is proven in the creation test; by now it has scrolled off)
+    res = await client_client.get("/api/v1/activity",
+                                  params={"module": "projects", "page_size": 100})
     actions = {a["action"] for a in res.json()["data"]}
-    assert {"project.created", "stage.approved", "project.handover",
-            "project.completed"} <= actions
+    assert {"stage.approved", "project.handover", "project.completed"} <= actions
 
 
 # --- deliverables (§3.7, acceptance #6) ---------------------------------------

@@ -581,6 +581,12 @@ async def approve_stage(
             details={"failed": [c for c in validation["checks"] if not c["passed"]]},
         )
 
+    # §1: run the stage's integrations while it is STILL awaiting the decision.
+    # A failing integration (e.g. Inventory's INSUFFICIENT_STOCK at Stage 8)
+    # raises here, leaving the stage `pending_approval` and recoverable — never
+    # a stage marked `approved` whose side effects never happened.
+    integration = await _run_integrations(principal, project, definition)
+
     approval = await repo.open_approval(db, instance["_id"])
     if approval is not None:
         await db[repo.APPROVALS].update_one(
@@ -600,9 +606,6 @@ async def approve_stage(
     await _log(principal, "stage.approved",
                {"type": "project", "id": project_id, "label": project["name"]},
                {"stage": definition["key"], "order": order, "comment": comment})
-
-    # run this stage's integrations before advancing (§1)
-    integration = await _run_integrations(principal, project, definition)
 
     fields: dict[str, Any] = {"stage_history": history}
     if order >= LAST_STAGE_ORDER:
@@ -749,8 +752,12 @@ async def _reserve_stock(principal: ClientPrincipal, project: dict) -> list[dict
         raise DomainError(VALIDATION_ERROR, "No warehouse to reserve stock from.", 409)
 
     reserved: list[dict] = []
+    committed_value = 0.0
     try:
         for line in lines:
+            product = await db[inv_repo.PRODUCTS].find_one(
+                {"_id": ObjectId(str(line["product_id"]))}
+            )
             movement = await inv_service.create_movement(principal, MovementCreate(
                 product_id=str(line["product_id"]),
                 warehouse_id=str(warehouse["_id"]),
@@ -760,9 +767,12 @@ async def _reserve_stock(principal: ClientPrincipal, project: dict) -> list[dict
                 ref_module="projects",
                 ref_doc_id=str(project["_id"]),
             ))
+            line_value = float((product or {}).get("cost_price") or 0) * float(line["qty"])
+            committed_value += line_value
             reserved.append({
                 "product_id": str(line["product_id"]),
                 "qty": float(line["qty"]),
+                "value": round(line_value, 2),
                 "movement_id": str(movement["_id"]),
             })
     except Exception:
@@ -770,9 +780,18 @@ async def _reserve_stock(principal: ClientPrincipal, project: dict) -> list[dict
             await _release_movement(principal, done["movement_id"])
         raise
 
+    # §7/acceptance #7: the reservation is a commitment against the budget. It
+    # converts to actual when Stage 9 records the material job cost, so the two
+    # never double-count.
+    if committed_value:
+        current = await repo.get(db, repo.PROJECTS, project["_id"])
+        budget = dict((current or project).get("budget") or {})
+        budget["committed"] = round(float(budget.get("committed") or 0) + committed_value, 2)
+        await repo.update(db, repo.PROJECTS, project["_id"], {"budget": budget})
+
     await _log(principal, "project.stock_reserved",
                {"type": "project", "id": str(project["_id"]), "label": project["name"]},
-               {"lines": len(reserved)})
+               {"lines": len(reserved), "committed": round(committed_value, 2)})
     return reserved
 
 
@@ -874,6 +893,7 @@ async def create_deliverable(
                       "at": _now(), "note": payload.note or "initial"}],
         "classification": payload.classification,
         "ocr_text": payload.ocr_text,
+        "lines": [line.model_dump() for line in payload.lines],
         "immutable_audit": [{"action": "created", "by": actor, "at": _now()}],
         "created_by": actor,
     })
@@ -1027,12 +1047,14 @@ async def _maybe_clear_hold(principal: ClientPrincipal, project: dict) -> None:
     order = int(project["current_stage_order"])
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is not None and instance.get("status") == "on_hold":
-        await repo.set_stage_fields(db, instance["_id"], {"status": "in_progress"})
-        definition = await repo.stage_def_by_order(db, order)
-        refreshed = await repo.get(db, repo.PROJECTS, project["_id"])
-        instance = await repo.stage_instance(db, project["_id"], order)
-        if definition and refreshed and instance:
-            await engines.run_decision_engine(db, refreshed, definition, instance)
+        # Deliberate override: resolving the recovery report clears the crew to
+        # re-work and re-measure. Do NOT re-run the decision engine here — the
+        # breaching gate reading is still the latest on record and would snap the
+        # stage straight back to on_hold. A fresh gate result (or the next
+        # submit) re-evaluates against the new reading.
+        await repo.set_stage_fields(db, instance["_id"], {
+            "status": "in_progress", "blocking_reason": None,
+        })
     await _log(principal, "project.hold_cleared",
                {"type": "project", "id": str(project["_id"]), "label": project["name"]},
                {"code": project["code"]})
@@ -1100,9 +1122,15 @@ async def create_job_cost(
         "created_by": str(principal.user["_id"]),
     })
 
-    # roll the actual into the project budget
+    # roll the actual into the project budget. A material actual also draws down
+    # the Stage-8 commitment (down to zero) so a reserved-then-consumed line is
+    # counted once, not twice (acceptance #7).
     budget = dict(project.get("budget") or {})
     budget["actual"] = round(float(budget.get("actual") or 0) + amount, 2)
+    if payload.cost_type == "material":
+        budget["committed"] = round(
+            max(0.0, float(budget.get("committed") or 0) - amount), 2
+        )
     await repo.update(db, repo.PROJECTS, project["_id"], {"budget": budget})
 
     await _log(principal, "project.job_cost",

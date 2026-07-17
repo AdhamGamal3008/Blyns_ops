@@ -78,6 +78,13 @@ class RejectBody(BaseModel):
     owner_id: str | None = None
 
 
+class BomLine(BaseModel):
+    """One BOM row — what Stage 8 reserves through Inventory (§1, acceptance #7)."""
+
+    product_id: str = Field(min_length=1)
+    qty: float = Field(gt=0)
+
+
 class DeliverableCreate(BaseModel):
     kind: DeliverableKind
     title: str = Field(min_length=1)
@@ -86,6 +93,7 @@ class DeliverableCreate(BaseModel):
     note: str | None = None
     classification: Literal["auto", "manual"] = "manual"
     ocr_text: str | None = None
+    lines: list[BomLine] = Field(default_factory=list)  # meaningful for kind="bom"
 
 
 class RevisionCreate(BaseModel):
