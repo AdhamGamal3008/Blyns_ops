@@ -2,7 +2,7 @@
 // NONE never appears in navigation (docs/AUTH_RBAC.md acceptance).
 
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clientLogout, clientMe } from "../shared/auth";
 import type { ClientMe } from "../shared/types";
 import { Spinner } from "../shared/ui";
@@ -17,6 +17,7 @@ const MODULE_NAV: { key: string; label: string; route: string }[] = [
 
 export function ClientShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [me, setMe] = useState<ClientMe | null>(null);
   const [error, setError] = useState(false);
 
@@ -40,6 +41,8 @@ export function ClientShell() {
     await clientLogout();
     navigate("/login");
   }
+
+  const current = MODULE_NAV.find((m) => location.pathname.startsWith(m.route));
 
   return (
     <div className="shell">
@@ -66,7 +69,7 @@ export function ClientShell() {
       </aside>
       <div className="main">
         <header className="topbar">
-          <h2 style={{ fontSize: 16 }}>Dashboard</h2>
+          <h2 style={{ fontSize: 16 }}>{current?.label ?? "Dashboard"}</h2>
           <span className="who">
             <b>{me.name}</b> · {me.role.name}
           </span>

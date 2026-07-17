@@ -67,7 +67,7 @@ async def test_onboarding_creates_seeded_tenant_db(engine_db):
     assert await t.report_types.count_documents({}) == 7
     assert await t.approver_role_map.count_documents({}) == 16
     # other module seeds
-    assert await t.roles.count_documents({}) == 4          # Owner/Manager/Member/Viewer
+    assert await t.roles.count_documents({}) == 5          # 4 defaults + client_contact
     assert await t.pipelines.count_documents({"key": "default"}) == 1
     assert await t.warehouses.count_documents({"code": "WH1"}) == 1
     assert await t.accounts.count_documents({}) == 8       # starter chart
@@ -141,7 +141,7 @@ async def test_failed_job_resumes_idempotently(engine_db, monkeypatch):
 
     t = engine_db.tenant("test_tenant_acme4")
     assert await t.stage_definitions.count_documents({}) == 16  # not 32
-    assert await t.roles.count_documents({}) == 4
+    assert await t.roles.count_documents({}) == 5
     assert await t.accounts.count_documents({}) == 8
     assert await t.users.count_documents({}) == 1
 

@@ -157,7 +157,9 @@ async def calendar_settings(
 ) -> list[dict]:
     """Standalone company events, respecting visibility (SETTINGS.md §1.4)."""
     events = []
-    async for doc in db.calendar_events.find({"start": {"$gte": start, "$lte": end}}):
+    async for doc in db.calendar_events.find({
+        "start": {"$gte": start, "$lte": end}, "is_deleted": {"$ne": True},
+    }):
         visibility = doc.get("visibility", "company")
         if visibility == "owner" and str(doc.get("created_by")) != user_id:
             continue

@@ -37,9 +37,11 @@ def _role(name: str, levels: dict[str, Level]) -> dict:
 
 
 def default_roles() -> list[dict]:
-    """Default client roles (docs/AUTH_RBAC.md §2). Roles are data — tenants
+    """Default client roles (docs/AUTH_RBAC.md §2) plus `client_contact`
+    (PROJECT_MANAGEMENT.md §9): the scoped, approval-only user type the seeded
+    approver map's `client` position resolves to. Roles are data — tenants
     edit these maps later through the Settings RBAC editor."""
-    w, r = Level.WRITE, Level.READ
+    w, r, v = Level.WRITE, Level.READ, Level.VIEW
     return [
         _role("Owner", {res: w for res in CLIENT_RESOURCES}),
         _role("Manager", {
@@ -53,6 +55,9 @@ def default_roles() -> list[dict]:
             "projects": w, "crm": w, "inventory": r,
         }),
         _role("Viewer", {"dashboard": r, "calendar": r}),
+        # approval-only: sees the portal surface; stage approvals come through
+        # the scoped client-portal flow (Phase 10), never full module access
+        _role("client_contact", {"dashboard": v, "projects": v}),
     ]
 
 

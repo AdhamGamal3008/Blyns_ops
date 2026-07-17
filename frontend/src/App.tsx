@@ -12,6 +12,7 @@ import { ClientLogin } from "./client/ClientLogin";
 import { ClientShell } from "./client/ClientShell";
 import { ComingSoon } from "./client/ComingSoon";
 import { DashboardPage } from "./client/dashboard/DashboardPage";
+import { SettingsPage } from "./client/settings/SettingsPage";
 import { getTokens } from "./shared/api";
 
 function RequireClient(props: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
+          <Route path="settings/*" element={<SettingsPage />} />
           <Route path=":module/*" element={<ComingSoon />} />
         </Route>
 
