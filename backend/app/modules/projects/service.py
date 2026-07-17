@@ -146,6 +146,7 @@ async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> 
         "pm_id": payload.pm_id or str(principal.user["_id"]),
         "team_ids": payload.team_ids,
         "milestone_schedule": [m.model_dump() for m in payload.milestone_schedule],
+        "schedule": payload.schedule.model_dump() if payload.schedule else {},
         "budget": {
             "planned": payload.planned_budget, "committed": 0.0,
             "actual": 0.0, "currency": payload.currency,
@@ -533,8 +534,12 @@ async def _assert_may_approve(
     approver_role = definition.get("approver_role") or ""
     role_name = principal.role.get("name", "")
 
+    # A stage routed to the `client` position is signed off only through scoped
+    # client-portal access. Keyed off the seeded `is_client_portal` role flag —
+    # NOT the role name — so a full-module user can never stand in for the client
+    # (acceptance #9), and renaming the client-contact role can't break it.
     if engines.is_client_approval(definition) and approver_role == "client":
-        if not principal.role.get("is_client_portal") and role_name.lower() != "client_contact":
+        if not principal.role.get("is_client_portal"):
             raise DomainError(
                 PERMISSION_DENIED,
                 f"Stage '{definition['key']}' is a client approval; it can only be "

@@ -24,13 +24,20 @@ CLIENT_RESOURCES = [
 ]
 
 
-def _role(name: str, levels: dict[str, Level]) -> dict:
-    """Full resource->Level map; anything unspecified defaults to NONE."""
+def _role(name: str, levels: dict[str, Level], is_client_portal: bool = False) -> dict:
+    """Full resource->Level map; anything unspecified defaults to NONE.
+
+    `is_client_portal` marks a scoped, approval-only client user type: it may
+    sign off the stages routed to the `client` position through the portal, but
+    never gets full module access (PROJECT_MANAGEMENT.md §9, acceptance #9). The
+    projects approval guard keys off this flag, not the role's name.
+    """
     permissions = {res: int(levels.get(res, Level.NONE)) for res in CLIENT_RESOURCES}
     return {
         "name": name,
         "permissions": permissions,
         "is_system": True,  # seeded default; still editable, but flagged
+        "is_client_portal": is_client_portal,
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
     }
@@ -57,7 +64,7 @@ def default_roles() -> list[dict]:
         _role("Viewer", {"dashboard": r, "calendar": r}),
         # approval-only: sees the portal surface; stage approvals come through
         # the scoped client-portal flow (Phase 10), never full module access
-        _role("client_contact", {"dashboard": v, "projects": v}),
+        _role("client_contact", {"dashboard": v, "projects": v}, is_client_portal=True),
     ]
 
 

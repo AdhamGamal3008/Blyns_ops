@@ -4,7 +4,18 @@ loops, physical thresholds, and the CRM/Inventory/Finance integrations."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 BASE = "/api/v1/projects"
+
+STAGE1_DOCS = (
+    "quotation_approved", "contract_signed", "client_info_present",
+    "scope_present", "initial_drawings_present",
+)
+
+
+def _iso(days: int) -> str:
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
 
 
 # --- helpers -----------------------------------------------------------------
@@ -766,6 +777,106 @@ async def test_client_position_rejects_full_module_approvers(client_client):
     res = await _approve(client_client, pid, 1)  # Owner: full access, no portal
     assert res.status_code == 403
     assert "client-portal" in res.json()["error"]["message"]
+
+
+async def test_client_portal_user_signs_off_a_client_stage(
+    client, client_client, onboarded_company
+):
+    """The scoped client-portal flow actually works: a client_contact (the
+    seeded is_client_portal role) approves a client stage that staff prepared —
+    and has no other project access (acceptance #9)."""
+    slug = onboarded_company["slug"]
+    await client_client.patch(f"{BASE}/config/stages/lead_conversion",
+                              json={"approver_role": "client"})
+    project = await _create_project(client_client)
+    pid = project["id"]
+    # staff (Owner, WRITE) prepares the draft and submits it for the client
+    await _supply(client_client, pid, 1, *STAGE1_DOCS)
+    await _submit(client_client, pid, 1)
+
+    portal = await _employee(client, client_client, slug, "client_contact", "portal")
+
+    # the client signs off through the portal → the stage advances
+    res = await client.post(f"{BASE}/{pid}/stages/1/approve", json={}, headers=portal)
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["next_stage"]["order"] == 2
+
+    # …but portal access is approval-only: no create, no submit, no other writes
+    assert (await client.post(BASE, json={"name": "x"}, headers=portal)).status_code == 403
+    assert (await client.post(f"{BASE}/{pid}/stages/2/submit", json={},
+                              headers=portal)).status_code == 403
+
+
+async def test_projects_view_without_portal_flag_cannot_approve(
+    client, client_client, onboarded_company
+):
+    """The guard keys off the is_client_portal flag, not `projects` VIEW: a
+    plain VIEW role created through the API (no flag) is turned away."""
+    slug = onboarded_company["slug"]
+    res = await client_client.post("/api/v1/settings/roles", json={
+        "name": "Reviewer", "permissions": {"dashboard": 2, "projects": 1},  # projects=VIEW
+    })
+    assert res.status_code == 201, res.text
+
+    await client_client.patch(f"{BASE}/config/stages/lead_conversion",
+                              json={"approver_role": "client"})
+    project = await _create_project(client_client)
+    pid = project["id"]
+    await _supply(client_client, pid, 1, *STAGE1_DOCS)
+    await _submit(client_client, pid, 1)
+
+    reviewer = await _employee(client, client_client, slug, "Reviewer", "rev")
+    res = await client.post(f"{BASE}/{pid}/stages/1/approve", json={}, headers=reviewer)
+    assert res.status_code == 403  # VIEW alone is not portal access
+
+
+# --- calendar contribution (§14) ---------------------------------------------
+
+async def test_calendar_surfaces_every_pm_event_type(client_client):
+    """§14: the PM calendar contributes milestone, stage_due, delivery,
+    acclimation, and gate_due events from the project's schedule."""
+    await _create_project(client_client, name="Scheduled Tower", milestone_schedule=[
+        {"key": "kickoff", "name": "Kickoff", "due_date": _iso(2)},
+    ], schedule={
+        "delivery_date": _iso(10),
+        "acclimation_start": _iso(11),
+        "acclimation_end": _iso(14),
+        "stage_targets": [{"stage_key": "site_survey", "due_date": _iso(5)}],
+        "gate_deadlines": [
+            {"gate_key": "timber_moisture_content", "stage_key": "installation",
+             "due_at": _iso(12)},
+        ],
+    })
+
+    res = await client_client.get("/api/v1/calendar",
+                                  params={"from": _iso(0), "to": _iso(30)})
+    assert res.status_code == 200, res.text
+    types = {e["type"] for e in res.json()["data"] if e["source_module"] == "projects"}
+    assert types == {"milestone", "stage_due", "delivery", "acclimation", "gate_due"}
+
+    # a narrow window keeps only what falls inside it (range filtering)
+    res = await client_client.get("/api/v1/calendar",
+                                  params={"from": _iso(0), "to": _iso(3)})
+    types = {e["type"] for e in res.json()["data"] if e["source_module"] == "projects"}
+    assert types == {"milestone"}  # only the day-2 kickoff is in [0, 3]
+
+
+async def test_calendar_project_events_respect_read_permission(
+    client, client_client, onboarded_company
+):
+    """A user who cannot READ projects sees no project events on the calendar,
+    even though they can open the calendar (CLIENT_DASHBOARD §6)."""
+    slug = onboarded_company["slug"]
+    await _create_project(client_client, name="Hidden", milestone_schedule=[
+        {"key": "m", "name": "Milestone", "due_date": _iso(3)},
+    ])
+
+    # Viewer: calendar READ, projects NONE
+    viewer = await _employee(client, client_client, slug, "Viewer", "cal-viewer")
+    res = await client.get("/api/v1/calendar", headers=viewer,
+                           params={"from": _iso(0), "to": _iso(30)})
+    assert res.status_code == 200
+    assert not [e for e in res.json()["data"] if e["source_module"] == "projects"]
 
 
 # --- RBAC gates ---------------------------------------------------------------

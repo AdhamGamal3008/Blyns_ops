@@ -81,19 +81,61 @@ def _event(
 
 
 async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
+    """The PM module's full calendar contribution (PROJECT_MANAGEMENT.md §14):
+    milestone dates, stage target dates, the Stage-12 delivery date, the
+    acclimation window (§8), and gate deadlines."""
     events = []
-    pipeline = [
-        {"$match": {"is_deleted": {"$ne": True}}},
-        {"$unwind": "$milestone_schedule"},
-        {"$match": {"milestone_schedule.due_date": {"$gte": start, "$lte": end}}},
-    ]
-    async for doc in db.projects.aggregate(pipeline):
-        m = doc["milestone_schedule"]
-        events.append(_event(
-            "projects", "milestone", f"{doc['_id']}:{m['key']}",
-            f"{doc['name']} — {m['name']}", m["due_date"], None, True,
-            "project", doc["_id"],
-        ))
+
+    def _in_range(d: datetime | None) -> bool:
+        return d is not None and start <= d <= end
+
+    async for doc in db.projects.find({"is_deleted": {"$ne": True}}):
+        pid, name = doc["_id"], doc["name"]
+
+        for m in doc.get("milestone_schedule") or []:
+            if _in_range(m.get("due_date")):
+                events.append(_event(
+                    "projects", "milestone", f"{pid}:{m['key']}",
+                    f"{name} — {m['name']}", m["due_date"], None, True,
+                    "project", pid,
+                ))
+
+        sched = doc.get("schedule") or {}
+
+        for target in sched.get("stage_targets") or []:
+            if _in_range(target.get("due_date")):
+                events.append(_event(
+                    "projects", "stage_due", f"{pid}:{target['stage_key']}",
+                    f"{name} — {target['stage_key']} target", target["due_date"],
+                    None, True, "project", pid,
+                ))
+
+        if _in_range(sched.get("delivery_date")):
+            events.append(_event(
+                "projects", "delivery", f"{pid}:delivery",
+                f"{name} — delivery", sched["delivery_date"], None, True,
+                "project", pid,
+            ))
+
+        # acclimation is a window; show it if it overlaps the requested range
+        acc_start = sched.get("acclimation_start")
+        if acc_start is not None:
+            acc_end = sched.get("acclimation_end") or acc_start
+            if acc_start <= end and acc_end >= start:
+                events.append(_event(
+                    "projects", "acclimation", f"{pid}:acclimation",
+                    f"{name} — acclimation", acc_start,
+                    sched.get("acclimation_end"), True, "project", pid,
+                ))
+
+        for gate in sched.get("gate_deadlines") or []:
+            if _in_range(gate.get("due_at")):
+                events.append(_event(
+                    "projects", "gate_due", f"{pid}:{gate['gate_key']}",
+                    f"{name} — {gate['gate_key']} due", gate["due_at"], None,
+                    False, "project", pid,
+                ))
+
     return events
 
 

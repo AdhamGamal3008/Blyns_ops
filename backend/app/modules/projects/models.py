@@ -22,6 +22,34 @@ class Milestone(BaseModel):
     due_date: datetime
 
 
+class StageTarget(BaseModel):
+    """A target date for reaching/clearing a stage — calendar `stage_due` (§14)."""
+
+    stage_key: str = Field(min_length=1)
+    due_date: datetime
+
+
+class GateDeadline(BaseModel):
+    """A deadline for a physical gate — calendar `gate_due` (§14)."""
+
+    gate_key: str = Field(min_length=1)
+    stage_key: str | None = None
+    due_at: datetime
+
+
+class ProjectSchedule(BaseModel):
+    """Dated planning items the calendar surfaces beyond milestones (§14): stage
+    target dates, the Stage-12 delivery date, the acclimation window (§8), and
+    gate deadlines. All optional — a project may schedule as much or little as
+    it wants."""
+
+    delivery_date: datetime | None = None          # Stage 12 → `delivery`
+    acclimation_start: datetime | None = None       # §8 window → `acclimation`
+    acclimation_end: datetime | None = None
+    stage_targets: list[StageTarget] = Field(default_factory=list)
+    gate_deadlines: list[GateDeadline] = Field(default_factory=list)
+
+
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
     scope: str | None = None
@@ -29,6 +57,7 @@ class ProjectCreate(BaseModel):
     pm_id: str | None = None
     team_ids: list[str] = Field(default_factory=list)
     milestone_schedule: list[Milestone] = Field(default_factory=list)
+    schedule: ProjectSchedule | None = None
     planned_budget: float = Field(default=0, ge=0)
     currency: str = Field(default="USD", min_length=3, max_length=3)
 
@@ -40,6 +69,7 @@ class ProjectPatch(BaseModel):
     pm_id: str | None = None
     team_ids: list[str] | None = None
     milestone_schedule: list[Milestone] | None = None
+    schedule: ProjectSchedule | None = None
     planned_budget: float | None = Field(default=None, ge=0)
     status: ProjectStatus | None = None
 
