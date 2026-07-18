@@ -227,3 +227,27 @@ input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -
 /* --- inventory --------------------------------------------------------- */
 .qty-in { color: var(--ok); }
 .qty-out { color: var(--danger); }
+
+/* --- projects timeline / stepper --------------------------------------- */
+.stepper { list-style: none; margin: 0; padding: 0; }
+.step {
+  display: flex; gap: 10px; align-items: flex-start; padding: 8px;
+  border-radius: 8px; cursor: pointer; border: 1px solid transparent;
+}
+.step:hover { background: var(--bg); }
+.step.active { background: var(--bg); border-color: var(--border); }
+.step.future { opacity: 0.5; cursor: default; }
+.step.future:hover { background: transparent; }
+.step-num {
+  width: 24px; height: 24px; flex-shrink: 0; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.step-name { font-weight: 600; font-size: 13px; }
+.step-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.step-block {
+  font-size: 12px; color: #991b1b; background: #fee2e2;
+  border-radius: 6px; padding: 4px 8px; margin-top: 4px;
+}
+.mod-projects.legend-dot { background: var(--mod-projects); }

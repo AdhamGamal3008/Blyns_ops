@@ -18,6 +18,7 @@ export interface RoleInfo {
   id: string;
   name: string;
   permissions: Record<string, PermissionLevel>;
+  is_client_portal?: boolean; // scoped approval-only client-contact (PM §9)
 }
 
 export interface ClientMe {

@@ -239,8 +239,9 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
     }
     return {
         "project_id": project_id,
-        "code": project["code"],
-        "current_stage_order": project["current_stage_order"],
+        # tolerate legacy/partial docs that predate the stage machine
+        "code": project.get("code"),
+        "current_stage_order": project.get("current_stage_order"),
         "milestones": project.get("milestone_schedule") or [],
         "stages": [
             {
@@ -261,6 +262,11 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
 async def board(principal: ClientPrincipal, project_id: str) -> dict:
     """§12 — the current stage's tasks/gates for the Kanban view."""
     project = await _project(principal, project_id)
+    if not project.get("current_stage_order"):
+        # a legacy/partial doc never entered the machine — nothing to board
+        return {"project_id": project_id, "stage": None, "tasks": [],
+                "waiting_on": [], "blocked_by": [], "blocking_reason": None,
+                "open_reports": []}
     order = int(project["current_stage_order"])
     definition = await _definition(principal, order)
     instance = await repo.stage_instance(principal.tenant_db, project["_id"], order)

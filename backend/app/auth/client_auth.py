@@ -183,5 +183,8 @@ async def client_me(principal: ClientPrincipal = Depends(current_client_user)):
             "id": str(principal.role["_id"]),
             "name": principal.role["name"],
             "permissions": principal.role["permissions"],
+            # scoped client-portal user type (PROJECT_MANAGEMENT.md §9): lets the
+            # SPA surface stage approvals to a client-contact without WRITE
+            "is_client_portal": bool(principal.role.get("is_client_portal", False)),
         },
     })
