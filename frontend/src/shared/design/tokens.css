@@ -1,0 +1,114 @@
+/* =============================================================================
+   Blyns design system — token layer (single source of truth).
+
+   Every downstream color / space / type / motion value references a token from
+   this file. No raw hex belongs anywhere else in the new design system.
+
+   LOAD ORDER: this file is imported BEFORE the legacy `styles.css`, so while the
+   old stylesheet still exists the four role names it also defines
+   (--surface, --border, --text, --danger) resolve to their legacy values and
+   the current app renders unchanged. Phase 1 freezes the tokens; components are
+   restyled onto these roles in later phases, and `styles.css` retires with them.
+
+   Contrast: text/role pairings are verified against WCAG AA by
+   src/__tests__/contrast.test.ts, which reads this file directly.
+   ========================================================================== */
+
+:root {
+  /* --- Base palette (the four brand colors) ------------------------------ */
+  --paper:     #F9F8F6;   /* warm canvas */
+  --ink:       #1C1D1F;   /* primary text / dark chrome */
+  --oxblood:   #8C1D24;   /* brand / primary action */
+  --champagne: #C9A054;   /* accent — detailing only, never a fill or small text */
+
+  /* --- Neutral ramp (warm grays, ink -> paper) -------------------------- */
+  --n-900: #1C1D1F; --n-800: #2A2B2E; --n-700: #3C3D40; --n-600: #55565A;
+  --n-500: #6E6F73; --n-400: #8A8B8F; --n-300: #ADAEB1; --n-200: #D3D2CE;
+  --n-100: #E9E8E4; --n-50:  #F9F8F6;
+
+  /* --- Brand (oxblood) ramp --------------------------------------------- */
+  --brand-700: #6E141A; --brand-600: #7D181F; --brand-500: #8C1D24;
+  --brand-400: #A63640; --brand-300: #C15E66; --brand-50:  #F7E9EA;
+
+  /* --- Accent (champagne) ramp ------------------------------------------ */
+  --gold-700: #9A7735; --gold-600: #B08C44; --gold-500: #C9A054;
+  --gold-400: #D6B679; --gold-300: #E3CDA1; --gold-50:  #F7EFDD;
+
+  /* --- Semantic — harmonized, distinct from brand oxblood ---------------
+     Foregrounds darkened from the spec's starting values so text on the paired
+     `-bg` tint (and paper on the solid fill) clears WCAG AA (>= 4.5:1):
+       success #3E7C5A -> #316A4B   warning #B4791F -> #8A5A12
+       danger  #C0392B -> #B5342A   info    #3E5C76 (unchanged)                */
+  --success: #316A4B; --success-bg: #E7F0EB;
+  --warning: #8A5A12; --warning-bg: #F6ECD8;   /* ochre, NOT the gold accent */
+  --danger:  #B5342A; --danger-bg:  #F7E6E4;   /* brighter/warmer than oxblood */
+  --info:    #3E5C76; --info-bg:    #E7EDF2;
+
+  /* --- Surface / text / border roles ------------------------------------ */
+  --surface:         var(--paper);
+  --surface-raised:  #FFFFFF;
+  --surface-sunken:  #F1EFEA;
+  --surface-inverse: var(--ink);      /* dark chrome: sidebars, command bar */
+  --border:          var(--n-200);
+  --border-strong:   var(--n-300);
+  --text:            var(--n-800);
+  --text-muted:      var(--n-500);    /* AA on paper/raised; use --n-600 on sunken */
+  --text-on-brand:   var(--paper);
+  --text-on-inverse: #EDECE8;
+
+  /* Focus ring: champagne on inverse surfaces (6.9:1). On light surfaces it is
+     ~2.3:1, so the Phase-2 focus-visible style layers it over --focus-ring-edge
+     (gold-700, 3.9:1 on paper) to keep the indicator >= 3:1. */
+  --focus-ring:      var(--gold-500);
+  --focus-ring-edge: var(--gold-700);
+
+  /* --- Typography ------------------------------------------------------- */
+  --font-display: "Fraunces", Georgia, serif;   /* titles, KPI numbers, pipeline */
+  --font-ui:      "Inter", system-ui, sans-serif;
+  --font-data:    var(--font-ui);               /* pair with tabular-nums in use */
+
+  --step--1: 0.833rem; --step-0: 1rem;    --step-1: 1.2rem;   --step-2: 1.44rem;
+  --step-3:  1.728rem; --step-4: 2.074rem; --step-5: 2.488rem; --step-6: 2.986rem;
+
+  --leading-tight:  1.15; --leading-normal: 1.5;
+  --tracking-tight: -0.01em; --tracking-caps: 0.06em;
+
+  /* --- Space ------------------------------------------------------------ */
+  --sp-1: 4px; --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  /* --- Radius ----------------------------------------------------------- */
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-pill: 999px;
+
+  /* --- Elevation -------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(28, 29, 31, 0.06);
+  --shadow-md: 0 4px 12px rgba(28, 29, 31, 0.08);
+  --shadow-lg: 0 12px 32px rgba(28, 29, 31, 0.12);
+
+  /* --- Motion ----------------------------------------------------------- */
+  --dur-instant: 80ms; --dur-fast: 140ms; --dur-base: 220ms;
+  --dur-slow: 360ms;   --dur-page: 480ms;
+  --ease-out:   cubic-bezier(0.2, 0, 0, 1);
+  --ease-inout: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark theme (Phase 8) — mechanism is scaffolded by ThemeProvider, which stamps
+   `data-theme` on <html>. Values are intentionally deferred; uncomment and tune
+   in Phase 8.
+:root[data-theme="dark"] {
+  --surface: var(--ink);
+  --surface-raised: #26272A;
+  ...
+}
+*/
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

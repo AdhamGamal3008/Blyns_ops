@@ -21,7 +21,13 @@ features) still hold, but this work is planned, branched, and tracked on its own
 - **This file is the entry point.** When starting the initiative, have Claude Code
   read this document first, then work its 8 phases **in order**, one phase per
   session: read the phase → propose the component/file list (and a screenshot
-  where possible) → get approval → implement → visual QA → commit.
+  where possible) → get approval → implement → visual QA → commit → **stop**.
+- **Mandatory stop after every phase.** Claude Code must halt at the end of each
+  phase and wait for your explicit go-ahead before starting the next one. This is
+  your control point — use it to run the app yourself, run your own tests, and
+  review the result. Do not batch phases, do not roll into the next phase
+  automatically, even if a phase finished quickly or seems trivial. Only an
+  explicit instruction from you ("continue" / "start Phase N") resumes the work.
 - **Work on a dedicated branch** (e.g. `design-system`) so the visual refactor is
   isolated from the stable build until you're ready to merge.
 - **Freeze the token layer (Phase 1) before styling anything.** Everything
@@ -46,7 +52,9 @@ Stop after the plan and wait for my approval.
 ```
 
 Then run one phase at a time: "implement Phase N, then show me the Storybook /
-screenshots and the visual-QA result."
+screenshots and the visual-QA result, and stop." After you have run it, tested
+it, and reviewed it yourself, reply "continue" to release the next phase. Nothing
+proceeds without that.
 
 ---
 
@@ -209,6 +217,9 @@ Storybook "Foundations" page.
 outside `tokens.css`); reduced-motion honored; contrast rules pass an automated
 check.
 
+**⏹ Stop here.** Phase 1 is complete. Do not start Phase 2 — wait for the user to
+run, test, and review, then explicitly say to continue.
+
 ---
 
 ## Phase 2 — Primitive component library
@@ -233,6 +244,9 @@ all states.
 **Acceptance:** keyboard-operable, visible focus, no raw hex, every state present,
 reduced-motion respected.
 
+**⏹ Stop here.** Phase 2 is complete. Do not start Phase 3 — wait for the user to
+run, test, and review, then explicitly say to continue.
+
 ---
 
 ## Phase 3 — App shell & responsive navigation
@@ -255,6 +269,9 @@ rest inherits.
 **Acceptance:** navigation is intentional at 375px, 768px, 1280px; 44px minimum
 touch targets; safe-area insets respected.
 
+**⏹ Stop here.** Phase 3 is complete. Do not start Phase 4 — wait for the user to
+run, test, and review, then explicitly say to continue.
+
 ---
 
 ## Phase 4 — Data-dense surfaces
@@ -273,6 +290,9 @@ Tables, forms, and dashboards — where "premium" is won or lost.
 
 **Acceptance:** a 20-column table is usable at 375px via card collapse; charts read
 clearly in the palette; every async surface has skeleton + empty + error states.
+
+**⏹ Stop here.** Phase 4 is complete. Do not start Phase 5 — wait for the user to
+run, test, and review, then explicitly say to continue.
 
 ---
 
@@ -295,6 +315,9 @@ Per-surface polish, plus the one signature element.
 **Acceptance:** the pipeline is legible and beautiful at mobile and desktop; each
 module uses the shared shell, tables, and states — no bespoke one-offs.
 
+**⏹ Stop here.** Phase 5 is complete. Do not start Phase 6 — wait for the user to
+run, test, and review, then explicitly say to continue.
+
 ---
 
 ## Phase 6 — Motion & polish
@@ -309,6 +332,9 @@ Give motion a consistent language; restraint reads as premium.
 
 **Acceptance:** no animation exceeds `--dur-page`; disabling motion leaves every
 flow fully usable.
+
+**⏹ Stop here.** Phase 6 is complete. Do not start Phase 7 — wait for the user to
+run, test, and review, then explicitly say to continue.
 
 ---
 
@@ -325,6 +351,9 @@ A dedicated pass across every screen at mobile widths.
 **Acceptance:** every route is beautiful and fully operable on a 375px viewport;
 no layout breaks between 360px and 1536px.
 
+**⏹ Stop here.** Phase 7 is complete. Do not start Phase 8 — wait for the user to
+run, test, and review, then explicitly say to continue.
+
 ---
 
 ## Phase 8 — Accessibility, theming & visual QA
@@ -339,3 +368,6 @@ no layout breaks between 360px and 1536px.
 
 **Acceptance:** AA passes, keyboard-only completes core flows, visual snapshots are
 committed as the baseline.
+
+**⏹ Stop here.** Phase 8 is complete — this is the final phase and the initiative
+is done. Stop and wait for the user's final review and sign-off before any merge.
