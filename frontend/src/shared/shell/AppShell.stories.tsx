@@ -73,13 +73,6 @@ const meta = {
   title: "Shell/AppShell",
   component: AppShell,
   parameters: { layout: "fullscreen", fullBleed: true },
-  decorators: [
-    (Story) => (
-      <MemoryRouter initialEntries={["/projects"]}>
-        <Story />
-      </MemoryRouter>
-    ),
-  ],
   args: {
     brand: { title: "Oakwood Interiors", subtitle: "Blyns workspace" },
     nav,
@@ -96,7 +89,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const Client: Story = {};
+export const Client: Story = {
+  decorators: [
+    (Story) => (
+      <MemoryRouter initialEntries={["/projects"]}>
+        <Story />
+      </MemoryRouter>
+    ),
+  ],
+};
 
 export const Admin: Story = {
   decorators: [
