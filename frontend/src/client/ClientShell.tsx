@@ -1,18 +1,37 @@
 // Tenant shell: sidebar filtered by role map + enabled modules — a module at
-// NONE never appears in navigation (docs/AUTH_RBAC.md acceptance).
+// NONE never appears in navigation (docs/AUTH_RBAC.md acceptance). Chrome is the
+// design-system AppShell; screen content still flows through <Outlet>.
 
-import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  Contact,
+  FolderKanban,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  Receipt,
+  Settings,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { clientLogout, clientMe } from "../shared/auth";
+import { AppShell, type CommandItem, type ShellNavItem } from "../shared/shell";
 import type { ClientMe } from "../shared/types";
-import { Spinner } from "../shared/ui";
+import { Spinner } from "../shared/ui/Spinner/Spinner";
 
-const MODULE_NAV: { key: string; label: string; route: string }[] = [
-  { key: "projects", label: "Projects", route: "/app/projects" },
-  { key: "crm", label: "CRM", route: "/app/crm" },
-  { key: "inventory", label: "Inventory", route: "/app/inventory" },
-  { key: "finance", label: "Finance", route: "/app/finance" },
-  { key: "settings", label: "Settings", route: "/app/settings" },
+const DASHBOARD: ShellNavItem = {
+  key: "dashboard",
+  label: "Dashboard",
+  to: "/app",
+  end: true,
+  icon: <LayoutDashboard size={20} />,
+};
+
+const MODULES: { key: string; label: string; route: string; icon: ReactNode }[] = [
+  { key: "projects", label: "Projects", route: "/app/projects", icon: <FolderKanban size={20} /> },
+  { key: "crm", label: "CRM", route: "/app/crm", icon: <Contact size={20} /> },
+  { key: "inventory", label: "Inventory", route: "/app/inventory", icon: <Package size={20} /> },
+  { key: "finance", label: "Finance", route: "/app/finance", icon: <Receipt size={20} /> },
+  { key: "settings", label: "Settings", route: "/app/settings", icon: <Settings size={20} /> },
 ];
 
 export function ClientShell() {
@@ -29,55 +48,62 @@ export function ClientShell() {
     if (error) navigate("/login");
   }, [error, navigate]);
 
-  if (!me) return <Spinner />;
-
-  const visible = MODULE_NAV.filter(
-    (m) =>
-      me.company.enabled_modules.includes(m.key) &&
-      (me.role.permissions[m.key] ?? 0) >= 1, // ≥ VIEW
-  );
+  if (!me) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center" }}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   async function logout() {
     await clientLogout();
     navigate("/login");
   }
 
-  const current = MODULE_NAV.find((m) => location.pathname.startsWith(m.route));
+  const visibleModules = MODULES.filter(
+    (m) =>
+      me.company.enabled_modules.includes(m.key) &&
+      (me.role.permissions[m.key] ?? 0) >= 1, // ≥ VIEW
+  );
+
+  const nav: ShellNavItem[] = [
+    DASHBOARD,
+    ...visibleModules.map((m) => ({ key: m.key, label: m.label, to: m.route, icon: m.icon })),
+  ];
+
+  const current = visibleModules.find((m) => location.pathname.startsWith(m.route));
+  const title = current ? current.label : "Dashboard";
+
+  const commands: CommandItem[] = [
+    ...nav.map((item) => ({
+      id: `nav-${item.key}`,
+      label: item.label,
+      group: "Navigate",
+      icon: item.icon,
+      onSelect: () => navigate(item.to),
+    })),
+    {
+      id: "sign-out",
+      label: "Sign out",
+      group: "Account",
+      icon: <LogOut size={18} />,
+      onSelect: () => void logout(),
+    },
+  ];
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">
-          {me.company.name}
-          <small>Blyns ERP workspace</small>
-        </div>
-        <NavLink to="/app" end className={({ isActive }) =>
-          `nav-item ${isActive ? "active" : ""}`}>
-          Dashboard
-        </NavLink>
-        {visible.map((m) => (
-          <NavLink key={m.key} to={m.route} className={({ isActive }) =>
-            `nav-item ${isActive ? "active" : ""}`}>
-            {m.label}
-          </NavLink>
-        ))}
-        <div className="spacer" />
-        <button className="nav-item" style={{ background: "none", border: 0, cursor: "pointer", font: "inherit", textAlign: "left" }}
-          onClick={logout}>
-          Sign out
-        </button>
-      </aside>
-      <div className="main">
-        <header className="topbar">
-          <h2 style={{ fontSize: 16 }}>{current?.label ?? "Dashboard"}</h2>
-          <span className="who">
-            <b>{me.name}</b> · {me.role.name}
-          </span>
-        </header>
-        <div className="content">
-          <Outlet context={me} />
-        </div>
-      </div>
-    </div>
+    <AppShell
+      brand={{ title: me.company.name, subtitle: "Blyns workspace" }}
+      nav={nav}
+      user={{ name: me.name, role: me.role.name }}
+      onSignOut={() => void logout()}
+      title={title}
+      breadcrumbs={[{ label: title }]}
+      commands={commands}
+      mobileTabs={nav.slice(0, 5)}
+    >
+      <Outlet context={me} />
+    </AppShell>
   );
 }

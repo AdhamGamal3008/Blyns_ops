@@ -6,22 +6,26 @@ import "../src/shared/design/tokens.css";
 import "../src/shared/design/fonts.css";
 
 // Every story renders on the paper canvas with the UI font, so components are
-// reviewed in their real context.
-const withCanvas: Decorator = (Story) => (
-  <div
-    style={{
-      background: "var(--surface)",
-      color: "var(--text)",
-      fontFamily: "var(--font-ui)",
-      fontSize: "var(--step-0)",
-      lineHeight: "var(--leading-normal)",
-      padding: "var(--sp-6)",
-      minHeight: "100vh",
-    }}
-  >
-    <Story />
-  </div>
-);
+// reviewed in their real context. Full-bleed stories (parameters.fullBleed,
+// e.g. the app shell) skip the padded wrapper.
+const withCanvas: Decorator = (Story, context) => {
+  if (context.parameters.fullBleed) return <Story />;
+  return (
+    <div
+      style={{
+        background: "var(--surface)",
+        color: "var(--text)",
+        fontFamily: "var(--font-ui)",
+        fontSize: "var(--step-0)",
+        lineHeight: "var(--leading-normal)",
+        padding: "var(--sp-6)",
+        minHeight: "100vh",
+      }}
+    >
+      <Story />
+    </div>
+  );
+};
 
 const preview: Preview = {
   decorators: [withCanvas],
