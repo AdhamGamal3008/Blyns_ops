@@ -1,0 +1,26 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.label {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--text);
+}
+.required {
+  color: var(--danger);
+  margin-left: 2px;
+}
+.hint {
+  font-size: var(--step--1);
+  color: var(--text-muted);
+  margin: 0;
+}
+.error {
+  font-size: var(--step--1);
+  color: var(--danger);
+  font-weight: 500;
+  margin: 0;
+}

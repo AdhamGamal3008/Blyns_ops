@@ -1,0 +1,91 @@
+.root {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.body {
+  flex: 1;
+  min-width: 0;
+}
+.title {
+  font-weight: 600;
+  margin: 0;
+}
+.message {
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  margin-top: var(--sp-1);
+}
+.action {
+  flex-shrink: 0;
+}
+
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  padding: var(--sp-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.dismiss:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: var(--text);
+}
+.dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 1px;
+}
+
+/* --- tones --- */
+.info {
+  background: var(--info-bg);
+  border-color: color-mix(in srgb, var(--info) 30%, transparent);
+}
+.info .icon {
+  color: var(--info);
+}
+.success {
+  background: var(--success-bg);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+.success .icon {
+  color: var(--success);
+}
+.warning {
+  background: var(--warning-bg);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+.warning .icon {
+  color: var(--warning);
+}
+.danger {
+  background: var(--danger-bg);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.danger .icon {
+  color: var(--danger);
+}
+.neutral {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+}
+.neutral .icon {
+  color: var(--text-muted);
+}

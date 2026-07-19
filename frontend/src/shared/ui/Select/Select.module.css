@@ -1,0 +1,105 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  color: var(--text);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    outline-color var(--dur-fast) var(--ease-out);
+}
+.md {
+  min-height: 44px;
+}
+.compact {
+  min-height: 36px;
+  font-size: var(--step--1);
+}
+.trigger:hover:not(:disabled) {
+  border-color: var(--n-400);
+}
+.trigger:focus-visible {
+  border-color: var(--gold-600);
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 1px;
+}
+.trigger[data-invalid] {
+  border-color: var(--danger);
+}
+.trigger[data-placeholder] {
+  color: var(--n-400);
+}
+.trigger:disabled {
+  opacity: 0.55;
+  background: var(--surface-sunken);
+  cursor: not-allowed;
+}
+.triggerIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.content {
+  min-width: var(--radix-select-trigger-width);
+  max-height: var(--radix-select-content-available-height);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  font-family: var(--font-ui);
+  color: var(--text);
+  overflow: hidden;
+  z-index: 60;
+  transform-origin: var(--radix-select-content-transform-origin);
+  animation: pop var(--dur-fast) var(--ease-out);
+}
+.viewport {
+  padding: var(--sp-1);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--step-0);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+.item[data-highlighted] {
+  background: var(--surface-sunken);
+}
+.item[data-state="checked"] {
+  color: var(--oxblood);
+  font-weight: 600;
+}
+.item[data-disabled] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.indicator {
+  display: inline-flex;
+  color: var(--oxblood);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
