@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
 import { STATUS_TONE, money, type Invoice } from "./types";
 
 export function InvoicesSection(props: { canWrite: boolean; openNew?: boolean }) {

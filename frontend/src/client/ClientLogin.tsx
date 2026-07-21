@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { changePassword, clientLogin } from "../shared/auth";
-import { Button, Card, ErrorNote, Field } from "../shared/ui";
+import { Button, Card, ErrorNote, Field } from "../shared/legacy-ui";
 
 export function ClientLogin() {
   const navigate = useNavigate();

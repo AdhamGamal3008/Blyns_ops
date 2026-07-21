@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
 import { STATUS_TONE, money, type Bill } from "./types";
 
 export function BillsSection(props: { canWrite: boolean }) {

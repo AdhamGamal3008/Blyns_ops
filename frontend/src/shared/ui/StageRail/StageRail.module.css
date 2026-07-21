@@ -59,9 +59,17 @@ button.hit:focus-visible {
   font-size: var(--step--1);
   color: var(--n-400);
 }
+/* The rail stays a spine: the reason is teased here and shown in full in the
+   stage panel, so a long blocker never stretches one stage past its neighbours. */
 .blocking {
   font-size: var(--step--1);
   color: var(--danger);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
 /* --- states --- */

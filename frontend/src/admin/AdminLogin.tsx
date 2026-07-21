@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminLogin } from "../shared/auth";
-import { Button, Card, ErrorNote, Field } from "../shared/ui";
+import { Button, Card, ErrorNote, Field } from "../shared/legacy-ui";
 
 export function AdminLogin() {
   const navigate = useNavigate();

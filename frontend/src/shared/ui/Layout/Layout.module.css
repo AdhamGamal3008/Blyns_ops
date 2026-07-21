@@ -1,0 +1,37 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack-gap, var(--sp-5));
+}
+
+/* Responsive card/KPI grid: as many columns as fit at --grid-min. */
+.grid {
+  display: grid;
+  gap: var(--grid-gap, var(--sp-4));
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 220px), 100%), 1fr));
+}
+
+/* Main column + a narrower rail; stacks below the shell's content breakpoint. */
+.split {
+  display: grid;
+  gap: var(--sp-5);
+  align-items: start;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) var(--split-aside, 340px);
+  }
+  .splitAsideFirst {
+    grid-template-columns: var(--split-aside, 340px) minmax(0, 1fr);
+  }
+}
+
+/* Horizontal row that wraps rather than overflowing on narrow screens. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--row-gap, var(--sp-3));
+}

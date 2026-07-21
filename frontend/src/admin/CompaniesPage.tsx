@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../shared/api";
 import type { Company } from "../shared/types";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../shared/ui";
+import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../shared/legacy-ui";
 
 const ALL_MODULES = ["dashboard", "settings", "projects", "crm", "inventory", "finance"];
 

@@ -62,6 +62,17 @@
   background: var(--brand-50);
 }
 
+.table tbody tr.clickableRow {
+  cursor: pointer;
+}
+.table tbody tr.clickableRow:hover {
+  background: var(--surface-sunken);
+}
+.table tbody tr.clickableRow:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: -2px;
+}
+
 .numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;

@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Card, ErrorNote, Spinner } from "../../shared/ui";
+import { Badge, Card, ErrorNote, Spinner } from "../../shared/legacy-ui";
 import {
   money,
   type Aging,

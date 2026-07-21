@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Card, ErrorNote, Spinner } from "../../shared/ui";
+import { Card, ErrorNote, Spinner } from "../../shared/legacy-ui";
 import type { LowStockRow } from "./types";
 
 export function LowStockSection() {

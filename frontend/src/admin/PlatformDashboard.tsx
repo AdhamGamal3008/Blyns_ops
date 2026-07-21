@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../shared/api";
 import type { PlatformDashboard as Dash } from "../shared/types";
-import { Badge, Button, Card, ErrorNote, formatBytes, Spinner, timeAgo } from "../shared/ui";
+import { Badge, Button, Card, ErrorNote, formatBytes, Spinner, timeAgo } from "../shared/legacy-ui";
 
 function Meter(props: { pct: number }) {
   const cls = props.pct > 90 ? "danger" : props.pct > 75 ? "warn" : "";

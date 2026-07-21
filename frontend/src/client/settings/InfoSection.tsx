@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Card, Spinner } from "../../shared/ui";
+import { Badge, Card, Spinner } from "../../shared/legacy-ui";
 
 interface SecurityView {
   failed_login_threshold: number;

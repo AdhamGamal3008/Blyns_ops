@@ -42,6 +42,8 @@ export interface DataTableProps<T> {
   searchable?: boolean;
   searchPlaceholder?: string;
   onSelectionChange?: (ids: string[]) => void;
+  /** Makes rows activatable by click, Enter, or Space (e.g. open a detail view). */
+  onRowClick?: (row: T) => void;
   emptyText?: string;
 }
 
@@ -54,6 +56,7 @@ export function DataTable<T>({
   searchable = true,
   searchPlaceholder = "Search…",
   onSelectionChange,
+  onRowClick,
   emptyText = "No results.",
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -201,7 +204,26 @@ export function DataTable<T>({
               </tr>
             ) : (
               rows.map((row) => (
-                <tr key={row.id} className={cn(row.getIsSelected() && styles.selectedRow)}>
+                <tr
+                  key={row.id}
+                  className={cn(
+                    row.getIsSelected() && styles.selectedRow,
+                    onRowClick && styles.clickableRow,
+                  )}
+                  tabIndex={onRowClick ? 0 : undefined}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                  onKeyDown={
+                    onRowClick
+                      ? (e) => {
+                          if (e.target !== e.currentTarget) return; // let cell controls win
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            onRowClick(row.original);
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   {row.getVisibleCells().map((cell) => {
                     const meta = cell.column.columnDef.meta as ColMeta | undefined;
                     const isSelect = cell.column.id === "__select";

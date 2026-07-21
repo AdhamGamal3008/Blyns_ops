@@ -3,9 +3,22 @@
 // actual also draws down the Stage-8 commitment, so a posted cost refreshes the
 // parent budget header.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import {
+  Badge,
+  Button,
+  CardHeader,
+  Checkbox,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  Field,
+  FormModal,
+  Input,
+  Select,
+} from "../../shared/ui";
 import { humanize, money, type JobCost } from "./types";
 
 const COST_TYPES: JobCost["cost_type"][] = ["labor", "material", "subcontractor", "machine"];
@@ -25,55 +38,81 @@ export function JobCostsSection(props: {
 
   useEffect(load, [load]);
 
-  if (!items) return <Spinner />;
+  const total = (items ?? []).reduce((s, c) => s + c.amount, 0);
 
-  const total = items.reduce((s, c) => s + c.amount, 0);
+  const columns: DataTableColumn<JobCost>[] = [
+    {
+      key: "cost_type",
+      header: "Type",
+      sortable: true,
+      accessor: (c) => <Badge tone="neutral">{c.cost_type}</Badge>,
+      sortValue: (c) => c.cost_type,
+    },
+    { key: "description", header: "Description", accessor: (c) => c.description || "—" },
+    {
+      key: "stage_key",
+      header: "Stage",
+      sortable: true,
+      accessor: (c) => humanize(c.stage_key),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      numeric: true,
+      sortable: true,
+      accessor: (c) => money(c.amount, props.currency),
+      sortValue: (c) => c.amount,
+    },
+    {
+      key: "posted",
+      header: "Posted",
+      accessor: (c) => (c.posted_to_finance_ref ? <Badge tone="success">ledger</Badge> : "—"),
+    },
+  ];
 
   return (
-    <>
-      <Card
-        title={`Job costs (${money(total, props.currency)})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>Add cost</Button>
-        )}
+    <section>
+      <CardHeader
+        title="Job costs"
+        description={`${money(total, props.currency)} captured across ${items?.length ?? 0} entries`}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              Add cost
+            </Button>
+          )
+        }
+      />
+      <DataState
+        loading={!items && !error}
+        error={items ? null : error}
+        onRetry={load}
+        isEmpty={items?.length === 0}
+        emptyTitle="No costs captured yet"
+        emptyDescription="Labor and material actuals post to Finance and roll into the budget."
       >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Type</th><th>Description</th><th>Stage</th>
-              <th style={{ textAlign: "right" }}>Amount</th><th>Posted</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((c) => (
-              <tr key={c.id}>
-                <td><Badge tone="neutral">{c.cost_type}</Badge></td>
-                <td>{c.description || <span className="muted">—</span>}</td>
-                <td className="muted">{humanize(c.stage_key)}</td>
-                <td style={{ textAlign: "right" }}>{money(c.amount, props.currency)}</td>
-                <td>
-                  {c.posted_to_finance_ref
-                    ? <Badge tone="ok">ledger</Badge>
-                    : <span className="muted">—</span>}
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr><td colSpan={5} className="muted">No costs captured yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <CostModal projectId={props.projectId}
-          onDone={(ok) => { setCreating(false); if (ok) { load(); props.onChanged(); } }} />
-      )}
-    </>
+        <DataTable
+          data={items ?? []}
+          columns={columns}
+          getRowId={(c) => c.id}
+          searchPlaceholder="Search costs…"
+        />
+      </DataState>
+
+      <CostModal
+        open={creating}
+        projectId={props.projectId}
+        currency={props.currency}
+        onDone={(ok) => { setCreating(false); if (ok) { load(); props.onChanged(); } }}
+      />
+    </section>
   );
 }
 
-function CostModal(props: { projectId: string; onDone: (ok: boolean) => void }) {
+function CostModal(props: {
+  open: boolean; projectId: string; currency: string; onDone: (ok: boolean) => void;
+}) {
   const [costType, setCostType] = useState<JobCost["cost_type"]>("labor");
   const [description, setDescription] = useState("");
   const [hours, setHours] = useState("");
@@ -111,45 +150,43 @@ function CostModal(props: { projectId: string; onDone: (ok: boolean) => void }) 
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 14 }}>Add job cost</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Cost type">
-            <select value={costType}
-              onChange={(e) => setCostType(e.target.value as JobCost["cost_type"])}>
-              {COST_TYPES.map((t) => <option key={t} value={t}>{humanize(t)}</option>)}
-            </select>
-          </Field>
-          <Field label="Description">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <Field label={isLabor ? "Hours" : "Quantity"}>
-            <input type="number" step="any" min="0"
-              value={isLabor ? hours : quantity}
-              onChange={(e) => (isLabor ? setHours : setQuantity)(e.target.value)} required />
-          </Field>
-          <Field label="Unit cost">
-            <input type="number" step="any" min="0" value={unitCost}
-              onChange={(e) => setUnitCost(e.target.value)} required />
-          </Field>
-          <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "4px 0 8px" }}>
-            <input type="checkbox" style={{ width: "auto" }} checked={post}
-              onChange={(e) => setPost(e.target.checked)} />
-            <span style={{ fontSize: 13 }}>Post to Finance (Dr COGS / Cr AP)</span>
-          </label>
-          <p className="muted" style={{ fontSize: 13 }}>
-            Amount <b>{money(amount)}</b>
-          </p>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy || amount <= 0}>
-              {busy ? "Posting…" : "Add cost"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="Add job cost"
+      description={`Amount ${money(amount, props.currency)}`}
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not post the cost"
+      busy={busy}
+      submitDisabled={amount <= 0}
+      submitLabel="Add cost"
+      busyLabel="Posting…"
+    >
+      <Field label="Cost type">
+        <Select
+          value={costType}
+          onValueChange={(v) => setCostType(v as JobCost["cost_type"])}
+          options={COST_TYPES.map((t) => ({ value: t, label: humanize(t) }))}
+        />
+      </Field>
+      <Field label="Description">
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+      </Field>
+      <Field label={isLabor ? "Hours" : "Quantity"} required>
+        <Input type="number" step="any" min="0" required
+          value={isLabor ? hours : quantity}
+          onChange={(e) => (isLabor ? setHours : setQuantity)(e.target.value)} />
+      </Field>
+      <Field label="Unit cost" required>
+        <Input type="number" step="any" min="0" value={unitCost} required
+          onChange={(e) => setUnitCost(e.target.value)} />
+      </Field>
+      <Checkbox
+        label="Post to Finance (Dr COGS / Cr AP)"
+        checked={post}
+        onCheckedChange={(v) => setPost(v === true)}
+      />
+    </FormModal>
   );
 }

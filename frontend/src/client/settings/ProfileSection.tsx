@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import { Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
 
 interface Profile {
   name?: string;

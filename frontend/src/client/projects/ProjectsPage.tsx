@@ -1,11 +1,27 @@
 // Project Management portfolio (docs/modules/PROJECT_MANAGEMENT.md §12). The
 // list is the entry point; a row opens the 16-stage detail view.
 
+import { FolderKanban, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { api } from "../../shared/api";
+import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  EmptyState,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  Select,
+  Stack,
+} from "../../shared/ui";
 import { PROJECT_TONE, humanize, money, type Project } from "./types";
 
 export function ProjectsPage() {
@@ -24,78 +40,131 @@ export function ProjectsPage() {
 
   useEffect(load, [load]);
 
-  if (!projects) return <Spinner />;
+  const columns: DataTableColumn<Project>[] = [
+    {
+      key: "code",
+      header: "Code",
+      sortable: true,
+      accessor: (p) => p.code ?? "—",
+    },
+    {
+      key: "name",
+      header: "Project",
+      sortable: true,
+      accessor: (p) => <b>{p.name}</b>,
+      sortValue: (p) => p.name,
+    },
+    {
+      key: "stage",
+      header: "Stage",
+      sortable: true,
+      accessor: (p) =>
+        `${p.current_stage_order ? `${p.current_stage_order}/16 · ` : ""}${humanize(p.current_stage_key)}`,
+      sortValue: (p) => p.current_stage_order ?? 0,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      accessor: (p) => (
+        <Badge tone={PROJECT_TONE[p.status] ?? "neutral"}>
+          {(p.status ?? "—").replace("_", " ")}
+        </Badge>
+      ),
+      sortValue: (p) => p.status ?? "",
+    },
+    {
+      key: "budget",
+      header: "Planned budget",
+      numeric: true,
+      sortable: true,
+      accessor: (p) => money(p.budget?.planned ?? 0, p.budget?.currency ?? "USD"),
+      sortValue: (p) => p.budget?.planned ?? 0,
+    },
+  ];
 
   return (
-    <>
-      <Card
-        title={`Projects (${projects.length})`}
-        actions={canWrite && (
-          <Button onClick={() => setCreating(true)}>New project</Button>
-        )}
+    <Stack>
+      <PageHeader
+        title="Projects"
+        description={
+          projects
+            ? `${projects.length} project${projects.length === 1 ? "" : "s"} in the stage-gate pipeline`
+            : "Portfolio of stage-gate projects"
+        }
+        actions={
+          canWrite && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus size={16} aria-hidden="true" />
+              New project
+            </Button>
+          )
+        }
+      />
+
+      {error != null && projects != null && (
+        <Banner tone="danger" title="Could not refresh projects">
+          {errorText(error)}
+        </Banner>
+      )}
+
+      <DataState
+        loading={!projects && !error}
+        error={projects ? null : error}
+        onRetry={load}
+        isEmpty={projects?.length === 0}
+        empty={
+          <EmptyState
+            icon={<FolderKanban size={24} />}
+            title="No projects yet"
+            description={
+              canWrite
+                ? "Create one to start the 16-stage machine."
+                : "Projects appear here once a manager creates them."
+            }
+            action={canWrite && <Button onClick={() => setCreating(true)}>New project</Button>}
+          />
+        }
       >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Code</th><th>Name</th><th>Stage</th><th>Status</th>
-              <th style={{ textAlign: "right" }}>Planned budget</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.map((p) => (
-              <tr key={p.id} style={{ cursor: "pointer" }}
-                onClick={() => navigate(`/app/projects/${p.id}`)}>
-                <td className="muted">{p.code ?? "—"}</td>
-                <td><b>{p.name}</b></td>
-                <td className="muted">
-                  {p.current_stage_order ? `${p.current_stage_order}/16 · ` : ""}
-                  {humanize(p.current_stage_key)}
-                </td>
-                <td>
-                  <Badge tone={PROJECT_TONE[p.status] ?? "neutral"}>
-                    {(p.status ?? "—").replace("_", " ")}
-                  </Badge>
-                </td>
-                <td style={{ textAlign: "right" }}>
-                  {money(p.budget?.planned ?? 0, p.budget?.currency ?? "USD")}
-                </td>
-              </tr>
-            ))}
-            {projects.length === 0 && (
-              <tr><td colSpan={5} className="muted">
-                No projects yet.{canWrite && " Create one to start the stage machine."}
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <ProjectModal onDone={(id) => {
+        <DataTable
+          data={projects ?? []}
+          columns={columns}
+          getRowId={(p) => p.id}
+          searchPlaceholder="Search projects…"
+          onRowClick={(p) => navigate(`/app/projects/${p.id}`)}
+        />
+      </DataState>
+
+      <ProjectModal
+        open={creating}
+        onDone={(id) => {
           setCreating(false);
           if (id) navigate(`/app/projects/${id}`);
-        }} />
-      )}
-    </>
+        }}
+      />
+    </Stack>
   );
 }
 
 interface AccountOption { id: string; name: string }
 
-function ProjectModal(props: { onDone: (createdId: string | null) => void }) {
+const NO_ACCOUNT = "__none";
+
+function ProjectModal(props: { open: boolean; onDone: (createdId: string | null) => void }) {
   const [name, setName] = useState("");
   const [scope, setScope] = useState("");
   const [budget, setBudget] = useState("0");
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(NO_ACCOUNT);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (!props.open) return;
     // linking a CRM account is optional (§1); offer it only if CRM is readable
     api<AccountOption[]>("/crm/accounts?page_size=100")
       .then((r) => setAccounts(r.data)).catch(() => setAccounts([]));
-  }, []);
+  }, [props.open]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -107,7 +176,7 @@ function ProjectModal(props: { onDone: (createdId: string | null) => void }) {
         body: {
           name,
           scope: scope || null,
-          crm_account_id: accountId || null,
+          crm_account_id: accountId === NO_ACCOUNT ? null : accountId,
           planned_budget: Number(budget),
         },
       });
@@ -119,43 +188,40 @@ function ProjectModal(props: { onDone: (createdId: string | null) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(null)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 4 }}>New project</h3>
-        <p className="muted" style={{ marginBottom: 16, fontSize: 13 }}>
-          Enters the machine at Stage 1 (Lead Conversion), waiting on its
-          onboarding documents.
-        </p>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} required
-              placeholder="e.g. Tower A Lobby Cladding" />
-          </Field>
-          <Field label="Scope">
-            <input value={scope} onChange={(e) => setScope(e.target.value)}
-              placeholder="Short description of the works" />
-          </Field>
-          <Field label="Client account (CRM)">
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">— none —</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Planned budget">
-            <input type="number" step="any" min="0" value={budget}
-              onChange={(e) => setBudget(e.target.value)} />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(null)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create project"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(null)}
+      title="New project"
+      description="Enters the machine at Stage 1 (Lead Conversion), waiting on its onboarding documents."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the project"
+      busy={busy}
+      submitLabel="Create project"
+      busyLabel="Creating…"
+    >
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} required
+          placeholder="e.g. Tower A Lobby Cladding" />
+      </Field>
+      <Field label="Scope">
+        <Input value={scope} onChange={(e) => setScope(e.target.value)}
+          placeholder="Short description of the works" />
+      </Field>
+      <Field label="Client account (CRM)">
+        <Select
+          value={accountId}
+          onValueChange={setAccountId}
+          options={[
+            { value: NO_ACCOUNT, label: "— none —" },
+            ...accounts.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+        />
+      </Field>
+      <Field label="Planned budget">
+        <Input type="number" step="any" min="0" value={budget}
+          onChange={(e) => setBudget(e.target.value)} />
+      </Field>
+    </FormModal>
   );
 }

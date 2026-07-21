@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../shared/api";
 import type { ActivityEntry, ClientMe } from "../../shared/types";
-import { Button, Card, timeAgo } from "../../shared/ui";
+import { Button, Card, timeAgo } from "../../shared/legacy-ui";
 
 const POLL_MS = 15_000;
 

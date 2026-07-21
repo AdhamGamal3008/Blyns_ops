@@ -2,13 +2,31 @@
 // automated tasks, and the submit → approve / reject flow. Every mutation
 // refreshes both this panel and the parent timeline/budget.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  CardHeader,
+  Checkbox,
+  DataState,
+  EmptyState,
+  errorText,
+  Field,
+  Input,
+  Modal,
+  Row,
+  Select,
+  Stack,
+} from "../../shared/ui";
 import {
   STAGE_TONE, humanize,
   type GateRule, type StageDetail, type ValidationCheck,
 } from "./types";
+import styles from "./StagePanel.module.css";
 
 export function StagePanel(props: {
   projectId: string;
@@ -78,161 +96,188 @@ export function StagePanel(props: {
 
   if (notReached) {
     return (
-      <Card title={`Stage ${order}`}>
-        <p className="muted">This stage has not been reached yet.</p>
+      <Card>
+        <EmptyState
+          title={`Stage ${order} has not been reached`}
+          description="The pipeline opens this stage once the preceding gate is approved."
+        />
       </Card>
     );
   }
-  if (!detail) return <Card><Spinner /></Card>;
+  if (!detail) {
+    return (
+      <Card>
+        <DataState loading={!error} error={error} onRetry={load}>
+          {null}
+        </DataState>
+      </Card>
+    );
+  }
 
   const { definition, instance, evaluation, approval } = detail;
   const supplied = new Set(instance.documents_supplied ?? []);
   const docGates = definition.entry_gates.filter((g) => g.type === "document");
   const status = instance.status;
+  const checks = validation ?? approval?.auto_validation?.checks;
 
   return (
-    <Card
-      title={`Stage ${definition.order} · ${definition.name}`}
-      actions={<Badge tone={STAGE_TONE[status]}>{status.replace("_", " ")}</Badge>}
-    >
-      <ErrorNote error={error} />
-
-      {instance.blocking_reason && (
-        <p className="step-block" style={{ marginTop: 0 }}>{instance.blocking_reason}</p>
-      )}
-      <p className="muted" style={{ fontSize: 13 }}>
-        Approver: <b>{humanize(definition.approver_role ?? "—")}</b>
-        {definition.co_approver_roles?.length
-          ? ` · co-approver ${definition.co_approver_roles.map(humanize).join(", ")}` : ""}
-        {instance.recovery_loops > 0 && ` · ↻ ${instance.recovery_loops} recovery loop(s)`}
-      </p>
-
-      {/* entry documents (§6 document check) */}
-      {docGates.length > 0 && (
-        <Section title="Entry documents">
-          {docGates.map((g) => (
-            <Row key={g.key} label={humanize(g.key)}>
-              {supplied.has(g.key)
-                ? <Badge tone="ok">supplied</Badge>
-                : canWrite
-                  ? <Button variant="ghost" disabled={busy}
-                      onClick={() => act(() => api(
-                        `/projects/${projectId}/stages/${order}/documents/${g.key}`,
-                        { method: "POST", body: {} }))}>Mark supplied</Button>
-                  : <Badge tone="warn">missing</Badge>}
-            </Row>
-          ))}
-        </Section>
-      )}
-
-      {/* physical gates (§8) */}
-      {definition.quality_gates.length > 0 && (
-        <Section title="Quality gates">
-          {definition.quality_gates.map((key) => {
-            const result = detail.gate_results
-              .filter((r) => r.gate_key === key).at(-1);
-            return (
-              <Row key={key} label={humanize(key)}>
-                {result
-                  ? <Badge tone={result.severe ? "danger" : result.passed ? "ok" : "warn"}>
-                      {result.severe ? "severe" : result.passed ? "passed" : "failed"}
-                    </Badge>
-                  : <Badge tone="neutral">no result</Badge>}
-                {canWrite && gateRules[key] && (
-                  <Button variant="ghost" disabled={busy}
-                    onClick={() => setLogging(gateRules[key])}>Log result</Button>
-                )}
-              </Row>
-            );
-          })}
-        </Section>
-      )}
-
-      {/* automated tasks (§6) */}
-      {(instance.task_results?.length ?? 0) > 0 && (
-        <Section title="Automated tasks">
-          {instance.task_results!.map((t) => (
-            <Row key={t.task} label={humanize(t.task)}>
-              <Badge tone={t.status === "done" ? "ok" : "neutral"}>{t.status}</Badge>
-              {canWrite && (
-                <Button variant="ghost" disabled={busy}
-                  onClick={() => act(() => api(
-                    `/projects/${projectId}/stages/${order}/tasks/${t.task}/run`,
-                    { method: "POST" }))}>Re-run</Button>
-              )}
-            </Row>
-          ))}
-        </Section>
-      )}
-
-      {/* blockers surfaced by the decision engine */}
-      {(evaluation.waiting_on.length > 0 || evaluation.blocked_by.length > 0) && (
-        <Section title="Blockers">
-          {[...evaluation.waiting_on, ...evaluation.blocked_by].map((b) => (
-            <p key={b} className="muted" style={{ fontSize: 13, margin: "2px 0" }}>• {b}</p>
-          ))}
-        </Section>
-      )}
-
-      {/* auto-validation result (from submit, or a pending approval) */}
-      {(validation ?? approval?.auto_validation?.checks) && (
-        <Section title="Automated validation">
-          {(validation ?? approval!.auto_validation!.checks).map((c) => (
-            <Row key={c.key} label={humanize(c.key)}>
-              <Badge tone={c.passed ? "ok" : "danger"}>{c.passed ? "pass" : "fail"}</Badge>
-              <span className="muted" style={{ fontSize: 12 }}>{c.detail}</span>
-            </Row>
-          ))}
-        </Section>
-      )}
-
-      {/* actions */}
-      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-        {canWrite && ["in_progress", "waiting", "blocked", "validation", "rejected"].includes(status) && (
-          <Button disabled={busy} onClick={submit}>Submit for approval</Button>
-        )}
-        {status === "pending_approval" && canApprove && (
+    <Card>
+      <CardHeader
+        title={`Stage ${definition.order} · ${definition.name}`}
+        description={
           <>
-            <Button disabled={busy}
-              onClick={() => act(() => api(
-                `/projects/${projectId}/stages/${order}/approve`,
-                { method: "POST", body: {} }))}>Approve</Button>
-            <Button variant="danger" disabled={busy}
-              onClick={() => setRejecting(true)}>Reject</Button>
+            Approver <b>{humanize(definition.approver_role ?? "—")}</b>
+            {definition.co_approver_roles?.length
+              ? ` · co-approver ${definition.co_approver_roles.map(humanize).join(", ")}` : ""}
+            {instance.recovery_loops > 0 && ` · ↻ ${instance.recovery_loops} recovery loop(s)`}
           </>
+        }
+        actions={
+          <Badge tone={STAGE_TONE[status] ?? "neutral"}>{status.replace("_", " ")}</Badge>
+        }
+      />
+
+      <Stack gap={4}>
+        {error != null && (
+          <Banner tone="danger" title="That action failed">
+            {errorText(error)}
+          </Banner>
         )}
-        {status === "approved" && <span className="muted">Stage approved.</span>}
-        {status === "on_hold" && (
-          <span className="muted">On hold — resolve the open report to continue.</span>
+        {instance.blocking_reason && (
+          <Banner tone="warning" title="Blocked">{instance.blocking_reason}</Banner>
         )}
-      </div>
+
+        {/* entry documents (§6 document check) */}
+        {docGates.length > 0 && (
+          <Section title="Entry documents">
+            {docGates.map((g) => (
+              <ItemRow key={g.key} label={humanize(g.key)}>
+                {supplied.has(g.key)
+                  ? <Badge tone="success">supplied</Badge>
+                  : canWrite
+                    ? (
+                      <Button variant="ghost" size="compact" disabled={busy}
+                        onClick={() => act(() => api(
+                          `/projects/${projectId}/stages/${order}/documents/${g.key}`,
+                          { method: "POST", body: {} }))}>Mark supplied</Button>
+                    )
+                    : <Badge tone="warning">missing</Badge>}
+              </ItemRow>
+            ))}
+          </Section>
+        )}
+
+        {/* physical gates (§8) */}
+        {definition.quality_gates.length > 0 && (
+          <Section title="Quality gates">
+            {definition.quality_gates.map((key) => {
+              const result = detail.gate_results.filter((r) => r.gate_key === key).at(-1);
+              return (
+                <ItemRow key={key} label={humanize(key)}>
+                  {result
+                    ? (
+                      <Badge tone={result.severe ? "danger" : result.passed ? "success" : "warning"}>
+                        {result.severe ? "severe" : result.passed ? "passed" : "failed"}
+                      </Badge>
+                    )
+                    : <Badge tone="neutral">no result</Badge>}
+                  {canWrite && gateRules[key] && (
+                    <Button variant="ghost" size="compact" disabled={busy}
+                      onClick={() => setLogging(gateRules[key])}>Log result</Button>
+                  )}
+                </ItemRow>
+              );
+            })}
+          </Section>
+        )}
+
+        {/* automated tasks (§6) */}
+        {(instance.task_results?.length ?? 0) > 0 && (
+          <Section title="Automated tasks">
+            {instance.task_results!.map((t) => (
+              <ItemRow key={t.task} label={humanize(t.task)}>
+                <Badge tone={t.status === "done" ? "success" : "neutral"}>{t.status}</Badge>
+                {canWrite && (
+                  <Button variant="ghost" size="compact" disabled={busy}
+                    onClick={() => act(() => api(
+                      `/projects/${projectId}/stages/${order}/tasks/${t.task}/run`,
+                      { method: "POST" }))}>Re-run</Button>
+                )}
+              </ItemRow>
+            ))}
+          </Section>
+        )}
+
+        {/* blockers surfaced by the decision engine */}
+        {(evaluation.waiting_on.length > 0 || evaluation.blocked_by.length > 0) && (
+          <Section title="Blockers">
+            <ul className={styles.blockers}>
+              {[...evaluation.waiting_on, ...evaluation.blocked_by].map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </Section>
+        )}
+
+        {/* auto-validation result (from submit, or a pending approval) */}
+        {checks && (
+          <Section title="Automated validation">
+            {checks.map((c) => (
+              <ItemRow key={c.key} label={humanize(c.key)} hint={c.detail}>
+                <Badge tone={c.passed ? "success" : "danger"}>{c.passed ? "pass" : "fail"}</Badge>
+              </ItemRow>
+            ))}
+          </Section>
+        )}
+
+        <Row>
+          {canWrite && ["in_progress", "waiting", "blocked", "validation", "rejected"].includes(status) && (
+            <Button disabled={busy} onClick={submit}>Submit for approval</Button>
+          )}
+          {status === "pending_approval" && canApprove && (
+            <>
+              <Button disabled={busy}
+                onClick={() => act(() => api(
+                  `/projects/${projectId}/stages/${order}/approve`,
+                  { method: "POST", body: {} }))}>Approve</Button>
+              <Button variant="danger" disabled={busy}
+                onClick={() => setRejecting(true)}>Reject</Button>
+            </>
+          )}
+          {status === "approved" && <span className={styles.note}>Stage approved.</span>}
+          {status === "on_hold" && (
+            <span className={styles.note}>On hold — resolve the open report to continue.</span>
+          )}
+        </Row>
+      </Stack>
 
       {logging && (
         <GateResultModal projectId={projectId} order={order} rule={logging}
           onDone={(ok) => { setLogging(null); if (ok) refresh(); }} />
       )}
-      {rejecting && (
-        <RejectModal projectId={projectId} order={order}
-          onDone={(ok) => { setRejecting(false); if (ok) refresh(); }} />
-      )}
+      <RejectModal open={rejecting} projectId={projectId} order={order}
+        onDone={(ok) => { setRejecting(false); if (ok) refresh(); }} />
     </Card>
   );
 }
 
 function Section(props: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 14 }}>
-      <div className="kpi-label" style={{ fontSize: 11, marginBottom: 4 }}>{props.title}</div>
+    <section>
+      <h4 className={styles.sectionTitle}>{props.title}</h4>
       {props.children}
-    </div>
+    </section>
   );
 }
 
-function Row(props: { label: string; children: React.ReactNode }) {
+function ItemRow(props: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
-      <span style={{ flex: 1, fontSize: 13 }}>{props.label}</span>
-      {props.children}
+    <div className={styles.itemRow}>
+      <span className={styles.itemLabel}>
+        {props.label}
+        {props.hint && <span className={styles.itemHint}>{props.hint}</span>}
+      </span>
+      <span className={styles.itemActions}>{props.children}</span>
     </div>
   );
 }
@@ -276,61 +321,77 @@ function GateResultModal(props: {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 4 }}>Log {humanize(rule.key)}</h3>
-        <p className="muted" style={{ marginBottom: 14, fontSize: 13 }}>
-          The engine scores this against the seeded threshold — you record the
-          readings, not the verdict.
-        </p>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
+    <Modal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Log ${humanize(rule.key)}`}
+      description="The engine scores this against the seeded threshold — you record the readings, not the verdict."
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
+          <Button type="submit" form="gate-result-form" disabled={busy}>
+            {busy ? "Saving…" : "Log result"}
+          </Button>
+        </>
+      }
+    >
+      <form id="gate-result-form" onSubmit={submit}>
+        <Stack gap={4}>
+          {error != null && (
+            <Banner tone="danger" title="Could not log the result">
+              {errorText(error)}
+            </Banner>
+          )}
+
           {isInspection ? (
-            checklist.map((c) => (
-              <label key={c} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0" }}>
-                <input type="checkbox" style={{ width: "auto" }} checked={checks[c]}
-                  onChange={(e) => setChecks({ ...checks, [c]: e.target.checked })} />
-                <span style={{ fontSize: 13 }}>{c}</span>
-              </label>
-            ))
+            <Stack gap={2}>
+              {checklist.map((c) => (
+                <Checkbox
+                  key={c}
+                  label={c}
+                  checked={checks[c]}
+                  onCheckedChange={(v) => setChecks({ ...checks, [c]: v === true })}
+                />
+              ))}
+            </Stack>
           ) : (
-            <>
+            <Stack gap={3}>
               {readings.map((r, i) => (
-                <div key={i} style={{ display: "flex", gap: 8 }}>
-                  <Field label="Location">
-                    <input value={r.location} placeholder="e.g. panel-A"
+                <Row key={i}>
+                  <Field label="Location" className={styles.grow}>
+                    <Input value={r.location} placeholder="e.g. panel-A"
                       onChange={(e) => {
                         const next = [...readings];
                         next[i] = { ...r, location: e.target.value };
                         setReadings(next);
                       }} />
                   </Field>
-                  <Field label="Value">
-                    <input type="number" step="any" value={r.value} required
+                  <Field label="Value" className={styles.grow}>
+                    <Input type="number" step="any" value={r.value} required
                       onChange={(e) => {
                         const next = [...readings];
                         next[i] = { ...r, value: e.target.value };
                         setReadings(next);
                       }} />
                   </Field>
-                </div>
+                </Row>
               ))}
-              <Button variant="ghost"
-                onClick={() => setReadings([...readings, { location: "", value: "" }])}>
-                + Add reading
-              </Button>
-            </>
+              <div>
+                <Button type="button" variant="ghost" size="compact"
+                  onClick={() => setReadings([...readings, { location: "", value: "" }])}>
+                  <Plus size={15} aria-hidden="true" />
+                  Add reading
+                </Button>
+              </div>
+            </Stack>
           )}
+
           <Field label="Notes">
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Log result"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </Stack>
+      </form>
+    </Modal>
   );
 }
 
@@ -338,11 +399,13 @@ const REPORT_TYPES = [
   "change", "issue", "ncr", "capa", "rfi", "missing_information", "qa",
 ] as const;
 
+const DEFAULT_REPORT_TYPE = "__default";
+
 function RejectModal(props: {
-  projectId: string; order: number; onDone: (ok: boolean) => void;
+  open: boolean; projectId: string; order: number; onDone: (ok: boolean) => void;
 }) {
   const [comment, setComment] = useState("");
-  const [type, setType] = useState("");
+  const [type, setType] = useState(DEFAULT_REPORT_TYPE);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
@@ -353,7 +416,7 @@ function RejectModal(props: {
     try {
       await api(`/projects/${props.projectId}/stages/${props.order}/reject`, {
         method: "POST",
-        body: { comment, report_type: type || null },
+        body: { comment, report_type: type === DEFAULT_REPORT_TYPE ? null : type },
       });
       props.onDone(true);
     } catch (err) {
@@ -363,35 +426,43 @@ function RejectModal(props: {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 4 }}>Reject stage</h3>
-        <p className="muted" style={{ marginBottom: 14, fontSize: 13 }}>
-          Opens a typed report, increments the recovery loop, and reopens the
-          stage for resubmission.
-        </p>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Reason (required)">
-            <input value={comment} onChange={(e) => setComment(e.target.value)} required
+    <Modal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="Reject stage"
+      description="Opens a typed report, increments the recovery loop, and reopens the stage for resubmission."
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
+          <Button type="submit" form="reject-stage-form" variant="danger" disabled={busy}>
+            {busy ? "Rejecting…" : "Reject stage"}
+          </Button>
+        </>
+      }
+    >
+      <form id="reject-stage-form" onSubmit={submit}>
+        <Stack gap={4}>
+          {error != null && (
+            <Banner tone="danger" title="Could not reject the stage">
+              {errorText(error)}
+            </Banner>
+          )}
+          <Field label="Reason" required>
+            <Input value={comment} onChange={(e) => setComment(e.target.value)} required
               placeholder="What must change before resubmission" />
           </Field>
-          <Field label="Report type (optional — defaults to the stage's recovery type)">
-            <select value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="">— default —</option>
-              {REPORT_TYPES.map((t) => (
-                <option key={t} value={t}>{humanize(t)}</option>
-              ))}
-            </select>
+          <Field label="Report type" hint="Defaults to the stage's own recovery type.">
+            <Select
+              value={type}
+              onValueChange={setType}
+              options={[
+                { value: DEFAULT_REPORT_TYPE, label: "— default —" },
+                ...REPORT_TYPES.map((t) => ({ value: t, label: humanize(t) })),
+              ]}
+            />
           </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" variant="danger" disabled={busy}>
-              {busy ? "Rejecting…" : "Reject stage"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+        </Stack>
+      </form>
+    </Modal>
   );
 }

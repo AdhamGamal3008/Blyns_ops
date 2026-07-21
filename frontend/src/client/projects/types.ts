@@ -1,3 +1,5 @@
+import type { BadgeTone } from "../../shared/ui";
+
 // Shapes for the Project Management module (docs/modules/PROJECT_MANAGEMENT.md).
 // The 16-stage stage-gate machine: a project holds current_stage_* + a timeline
 // of stage instances; each stage carries gates, tasks, and an approval.
@@ -169,30 +171,30 @@ export interface JobCost {
 
 // --- presentation helpers ----------------------------------------------------
 
-export const STAGE_TONE: Record<StageStatus, string> = {
+export const STAGE_TONE: Record<StageStatus, BadgeTone> = {
   pending: "neutral",
-  waiting: "warn",
-  blocked: "warn",
-  in_progress: "neutral",
-  validation: "neutral",
-  pending_approval: "warn",
-  approved: "ok",
+  waiting: "warning",
+  blocked: "warning",
+  in_progress: "info",
+  validation: "info",
+  pending_approval: "brand",
+  approved: "success",
   rejected: "danger",
   on_hold: "danger",
 };
 
-export const PROJECT_TONE: Record<Project["status"], string> = {
-  active: "ok",
+export const PROJECT_TONE: Record<Project["status"], BadgeTone> = {
+  active: "success",
   on_hold: "danger",
-  completed: "ok",
+  completed: "success",
   archived: "neutral",
   cancelled: "danger",
 };
 
-export const REPORT_TONE: Record<string, string> = {
+export const REPORT_TONE: Record<string, BadgeTone> = {
   open: "danger",
-  in_progress: "warn",
-  resolved: "ok",
+  in_progress: "warning",
+  resolved: "success",
   closed: "neutral",
 };
 

@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../shared/api";
 import type { CalendarEvent } from "../../shared/types";
-import { Button, Card } from "../../shared/ui";
+import { Button, Card } from "../../shared/legacy-ui";
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 

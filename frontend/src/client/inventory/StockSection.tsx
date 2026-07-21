@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/ui";
+import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
 import { DEFAULT_UNIT, type Product, type StockLevel, type Warehouse } from "./types";
 
 export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {

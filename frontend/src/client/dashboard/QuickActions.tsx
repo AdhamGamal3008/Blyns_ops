@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../shared/api";
 import type { QuickAction } from "../../shared/types";
-import { Button, Card } from "../../shared/ui";
+import { Button, Card } from "../../shared/legacy-ui";
 
 export function QuickActions() {
   const navigate = useNavigate();

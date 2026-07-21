@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api";
 import type { KpiSet } from "../../shared/types";
-import { Card } from "../../shared/ui";
+import { Card } from "../../shared/legacy-ui";
 
 const KPI_DEFS: { key: keyof KpiSet; label: string; money?: boolean }[] = [
   { key: "open_projects", label: "Open projects" },
