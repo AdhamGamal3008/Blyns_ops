@@ -1,0 +1,276 @@
+.rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+}
+
+.hit {
+  display: flex;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.hit:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+.connector {
+  background: var(--border);
+  border-radius: var(--r-pill);
+  transition: background-color var(--dur-slow) var(--ease-out);
+}
+/* the completed spine reads as quiet ink, keeping gold + oxblood rare */
+.connectorReached {
+  background: var(--n-700);
+}
+
+.name {
+  font-weight: 600;
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+.meta {
+  font-size: var(--step--1);
+  color: var(--n-400);
+}
+.blocking {
+  font-size: var(--step--1);
+  color: var(--danger);
+}
+
+/* --- states --- */
+.done .dot {
+  background: var(--n-700);
+  border-color: var(--n-700);
+  color: var(--paper);
+}
+.done .name {
+  color: var(--text);
+}
+
+/* champagne marks the live gate */
+.gate .dot {
+  border-color: var(--gold-500);
+  background: var(--gold-50);
+  color: var(--gold-700);
+  animation: gatePulse 2.6s var(--ease-inout) infinite;
+}
+.gate .name {
+  color: var(--text);
+}
+.gate .meta {
+  color: var(--gold-700);
+  font-weight: 600;
+}
+
+.active .dot {
+  border-color: var(--n-700);
+  color: var(--text);
+}
+.active .name {
+  color: var(--text);
+}
+
+.warn .dot {
+  border-color: var(--warning);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.warn .name {
+  color: var(--text);
+}
+.warn .meta {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* oxblood is reserved for a rejected / held stage */
+.alert .dot {
+  background: var(--oxblood);
+  border-color: var(--oxblood);
+  color: var(--text-on-brand);
+}
+.alert .name {
+  color: var(--text);
+}
+.alert .meta {
+  color: var(--oxblood);
+  font-weight: 600;
+}
+
+.current .name {
+  font-weight: 700;
+}
+.selected .dot {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 3px;
+}
+
+@keyframes gatePulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold-500) 22%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold-500) 10%, transparent);
+  }
+}
+
+/* --- horizontal rail --- */
+.horizontal {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: var(--sp-2);
+}
+.horizontal .stage {
+  flex: 0 0 136px;
+  scroll-snap-align: center;
+}
+.horizontal .hit {
+  flex-direction: column;
+}
+.horizontal .marker {
+  display: flex;
+  align-items: center;
+}
+.horizontal .connector {
+  flex: 1;
+  height: 2px;
+  margin-left: var(--sp-2);
+}
+.horizontal .stage:last-child .connector {
+  display: none;
+}
+.horizontal .body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-3);
+  padding-right: var(--sp-3);
+}
+
+/* --- vertical timeline --- */
+.vertical {
+  display: flex;
+  flex-direction: column;
+}
+.vertical .hit {
+  flex-direction: row;
+  gap: var(--sp-3);
+}
+.vertical .marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+}
+.vertical .connector {
+  width: 2px;
+  flex: 1;
+  min-height: 18px;
+  margin-top: var(--sp-2);
+}
+.vertical .stage:last-child .connector {
+  display: none;
+}
+.vertical .body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-5);
+}
+
+/* --- auto: horizontal on desktop, vertical timeline on mobile --- */
+@media (min-width: 768px) {
+  .auto {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    padding-bottom: var(--sp-2);
+  }
+  .auto .stage {
+    flex: 0 0 136px;
+    scroll-snap-align: center;
+  }
+  .auto .hit {
+    flex-direction: column;
+  }
+  .auto .marker {
+    display: flex;
+    align-items: center;
+  }
+  .auto .connector {
+    flex: 1;
+    height: 2px;
+    margin-left: var(--sp-2);
+  }
+  .auto .stage:last-child .connector {
+    display: none;
+  }
+  .auto .body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: var(--sp-3);
+    padding-right: var(--sp-3);
+  }
+}
+
+@media (max-width: 767px) {
+  .auto {
+    display: flex;
+    flex-direction: column;
+  }
+  .auto .hit {
+    flex-direction: row;
+    gap: var(--sp-3);
+  }
+  .auto .marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: stretch;
+  }
+  .auto .connector {
+    width: 2px;
+    flex: 1;
+    min-height: 18px;
+    margin-top: var(--sp-2);
+  }
+  .auto .stage:last-child .connector {
+    display: none;
+  }
+  .auto .body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: var(--sp-5);
+  }
+}
