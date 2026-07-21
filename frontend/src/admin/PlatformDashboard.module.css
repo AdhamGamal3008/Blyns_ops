@@ -1,0 +1,40 @@
+/* Capacity tile: the number leads, the bar confirms. */
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.capLabel {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.capValue {
+  font-family: var(--font-display);
+  font-size: var(--step-4);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.capHint {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+
+/* Seats: the fraction is the value, the bar shows how close to the ceiling. */
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  align-items: flex-end;
+  min-inline-size: 5.5rem;
+  font-variant-numeric: tabular-nums;
+}

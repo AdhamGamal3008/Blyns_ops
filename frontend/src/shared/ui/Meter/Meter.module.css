@@ -1,0 +1,40 @@
+.track {
+  block-size: 6px;
+  inline-size: 100%;
+  border-radius: var(--r-pill);
+  background: var(--n-200);
+  overflow: hidden;
+}
+
+.fill {
+  block-size: 100%;
+  border-radius: var(--r-pill);
+  background: var(--fill, var(--n-700));
+  transition: inline-size var(--dur-slow) var(--ease-out);
+}
+
+.ok {
+  --fill: var(--n-700);
+}
+.warn {
+  --fill: var(--warning);
+}
+.danger {
+  --fill: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}
+
+/* Forced-colors strips the fill colour, so keep the bar readable by outline. */
+@media (forced-colors: active) {
+  .track {
+    border: 1px solid CanvasText;
+  }
+  .fill {
+    background: Highlight;
+  }
+}

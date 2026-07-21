@@ -15,7 +15,9 @@ export function PageHeader({ title, description, actions, className }: PageHeade
     <div className={cn(styles.root, className)}>
       <div className={styles.text}>
         <h1 className={styles.title}>{title}</h1>
-        {description != null && <p className={styles.description}>{description}</p>}
+        {/* A div, not a p: page descriptions routinely carry badges and chips,
+            and a block element inside a <p> is invalid nesting. */}
+        {description != null && <div className={styles.description}>{description}</div>}
       </div>
       {actions != null && <div className={styles.actions}>{actions}</div>}
     </div>

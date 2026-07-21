@@ -38,7 +38,8 @@ export function CardHeader({ title, description, actions, children, className }:
     <header className={cn(styles.header, className)}>
       <div className={styles.headingGroup}>
         {title != null && <h3 className={styles.title}>{title}</h3>}
-        {description != null && <p className={styles.description}>{description}</p>}
+        {/* See PageHeader: a description may hold chips, so it cannot be a <p>. */}
+        {description != null && <div className={styles.description}>{description}</div>}
         {children}
       </div>
       {actions != null && <div className={styles.actions}>{actions}</div>}

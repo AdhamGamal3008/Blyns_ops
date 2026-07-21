@@ -1,0 +1,29 @@
+.seats {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  align-items: flex-end;
+  min-inline-size: 5.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.noWrap {
+  flex-wrap: nowrap;
+}
+
+/* Shown once, then never again — make it unmistakable and easy to copy. */
+.tempPw {
+  display: block;
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-sunken);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--step-1);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: center;
+  color: var(--text);
+  user-select: all;
+  overflow-wrap: anywhere;
+}

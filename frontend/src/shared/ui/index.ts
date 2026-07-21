@@ -1,7 +1,5 @@
-// The design-system kit (Phases 2–4). Screens import from here:
+// The design-system kit. Every screen imports from here:
 //   import { Button, Card, DataTable } from "../../shared/ui";
-// The pre-refactor kit still lives in `shared/legacy-ui.tsx` for screens that
-// have not been migrated yet.
 
 export { Avatar, type AvatarProps } from "./Avatar/Avatar";
 export { Badge, type BadgeProps, type BadgeTone, type BadgeVariant } from "./Badge/Badge";
@@ -41,6 +39,7 @@ export {
   Stack,
   type StackProps,
 } from "./Layout/Layout";
+export { Meter, type MeterProps } from "./Meter/Meter";
 export { NativeSelect, type NativeSelectProps } from "./NativeSelect/NativeSelect";
 export { Pagination, type PaginationProps } from "./Pagination/Pagination";
 export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from "./Radio/Radio";
