@@ -1,0 +1,111 @@
+.root {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-ui);
+}
+
+.circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--r-pill);
+  border: 2px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.label {
+  font-weight: 600;
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+.description {
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+
+/* states */
+.complete .circle {
+  background: var(--oxblood);
+  border-color: var(--oxblood);
+  color: var(--text-on-brand);
+}
+.current .circle {
+  border-color: var(--oxblood);
+  color: var(--oxblood);
+}
+.current .label,
+.complete .label {
+  color: var(--text);
+}
+
+/* --- horizontal --- */
+.horizontal {
+  display: flex;
+}
+.horizontal .step {
+  flex: 1;
+  min-width: 0;
+}
+.horizontal .step:last-child {
+  flex: 0 0 auto;
+}
+.horizontal .marker {
+  display: flex;
+  align-items: center;
+}
+.horizontal .connector {
+  flex: 1;
+  height: 2px;
+  margin: 0 var(--sp-2);
+  background: var(--border);
+  border-radius: var(--r-pill);
+}
+.horizontal .complete .connector {
+  background: var(--oxblood);
+}
+.horizontal .body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-2);
+  padding-right: var(--sp-4);
+}
+
+/* --- vertical --- */
+.vertical {
+  display: flex;
+  flex-direction: column;
+}
+.vertical .step {
+  display: flex;
+  gap: var(--sp-3);
+}
+.vertical .marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.vertical .connector {
+  width: 2px;
+  flex: 1;
+  min-height: 20px;
+  margin: var(--sp-1) 0;
+  background: var(--border);
+  border-radius: var(--r-pill);
+}
+.vertical .complete .connector {
+  background: var(--oxblood);
+}
+.vertical .body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-4);
+}

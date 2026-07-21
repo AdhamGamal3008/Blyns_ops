@@ -1,0 +1,175 @@
+.root {
+  font-family: var(--font-ui);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.search {
+  width: 280px;
+  max-width: 100%;
+}
+.selectedCount {
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--oxblood);
+}
+
+.scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-raised);
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.table td {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+.table tbody tr:nth-child(even) {
+  background: var(--surface-sunken);
+}
+.table tbody tr:hover {
+  background: color-mix(in srgb, var(--oxblood) 5%, var(--surface-raised));
+}
+.table tbody tr.selectedRow {
+  background: var(--brand-50);
+}
+
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.selectCell {
+  width: 44px;
+}
+
+.sortBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0;
+}
+.sortBtn:hover {
+  color: var(--text);
+}
+.sortBtn:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+.sortIcon {
+  display: inline-flex;
+  color: var(--n-400);
+}
+
+.empty {
+  padding: var(--sp-7);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  flex-wrap: wrap;
+}
+.count {
+  font-size: var(--step--1);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- mobile: each row collapses into a label–value card --- */
+@media (max-width: 767px) {
+  .scroll {
+    overflow-x: visible;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+  }
+  .table {
+    display: block;
+  }
+  .table thead {
+    display: none;
+  }
+  .table tbody {
+    display: block;
+  }
+  .table tbody tr {
+    display: block;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--sp-3);
+    padding: var(--sp-1) var(--sp-2);
+  }
+  .table tbody tr.selectedRow {
+    border-color: var(--oxblood);
+    background: var(--brand-50);
+  }
+  .table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: var(--sp-2) var(--sp-3);
+    text-align: right;
+  }
+  .table tbody tr td:last-child {
+    border-bottom: none;
+  }
+  .table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-align: left;
+  }
+  .numeric {
+    text-align: right;
+  }
+  .selectCell {
+    width: auto;
+    justify-content: flex-start;
+  }
+  .selectCell::before {
+    content: "";
+  }
+}

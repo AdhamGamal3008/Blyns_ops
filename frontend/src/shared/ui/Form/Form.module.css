@@ -1,0 +1,57 @@
+.section {
+  padding-bottom: var(--sp-6);
+}
+.section + .section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-6);
+}
+.sectionHead {
+  margin-bottom: var(--sp-4);
+}
+.sectionTitle {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+}
+.sectionDesc {
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  margin: var(--sp-1) 0 0;
+  max-width: 60ch;
+}
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+.grid2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+@media (max-width: 640px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
+.sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  padding: var(--sp-4) 0;
+  padding-bottom: max(var(--sp-4), env(safe-area-inset-bottom));
+}
