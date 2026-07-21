@@ -44,6 +44,19 @@
   --danger:  #B5342A; --danger-bg:  #F7E6E4;   /* brighter/warmer than oxblood */
   --info:    #3E5C76; --info-bg:    #E7EDF2;
 
+  /* --- Module colour-keys ------------------------------------------------
+     Used to tint calendar chips, activity dots, and any cross-module legend.
+     Drawn from the palette above rather than inventing six new hues, so a
+     multi-module view still reads as one product. (Legacy `--mod-*` in
+     styles.css is the pre-refactor set and is deliberately left alone.)     */
+  --accent-projects:  var(--brand-500);
+  --accent-crm:       var(--info);
+  --accent-inventory: var(--warning);
+  --accent-finance:   var(--success);
+  --accent-settings:  var(--n-500);
+  --accent-dashboard: var(--gold-700);
+  --accent-calendar:  var(--gold-700);
+
   /* --- Surface / text / border roles ------------------------------------ */
   --surface:         var(--paper);
   --surface-raised:  #FFFFFF;

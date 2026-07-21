@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../shared/api";
 import type { QuickAction } from "../../shared/types";
-import { Button, Card } from "../../shared/legacy-ui";
+import { Button, Row } from "../../shared/ui";
 
 export function QuickActions() {
   const navigate = useNavigate();
@@ -19,15 +19,17 @@ export function QuickActions() {
   if (!actions || actions.length === 0) return null;
 
   return (
-    <Card title="Quick actions">
-      <div className="quick-actions">
-        {actions.map((a) => (
-          <Button key={a.key} variant="ghost"
-            onClick={() => navigate(a.target_route.replace(/^\/app/, "/app"))}>
-            {a.label}
-          </Button>
-        ))}
-      </div>
-    </Card>
+    <Row gap={2}>
+      {actions.map((a, i) => (
+        <Button
+          key={a.key}
+          // the server returns these in priority order, so lead with the first
+          variant={i === 0 ? "primary" : "secondary"}
+          onClick={() => navigate(a.target_route)}
+        >
+          {a.label}
+        </Button>
+      ))}
+    </Row>
   );
 }

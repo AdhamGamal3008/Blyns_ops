@@ -4,11 +4,19 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Card, ErrorNote, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  type BadgeTone,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+} from "../../shared/ui";
 import type { Movement, Product, Warehouse } from "./types";
+import styles from "./MovementsSection.module.css";
 
-const TONE: Record<string, string> = {
-  receipt: "ok", issue: "warn", transfer: "neutral", adjustment: "danger",
+const TONE: Record<string, BadgeTone> = {
+  receipt: "success", issue: "warning", transfer: "info", adjustment: "danger",
 };
 
 export function MovementsSection() {
@@ -28,46 +36,78 @@ export function MovementsSection() {
 
   useEffect(load, [load]);
 
-  if (!movements) return <Spinner />;
-
   const product = (id: string) => products.find((p) => p.id === id);
   const warehouse = (id: string) => warehouses.find((w) => w.id === id);
 
+  const columns: DataTableColumn<Movement>[] = [
+    {
+      key: "occurred_at",
+      header: "When",
+      sortable: true,
+      accessor: (m) => new Date(m.occurred_at).toLocaleString(),
+      sortValue: (m) => m.occurred_at,
+    },
+    {
+      key: "product",
+      header: "Product",
+      sortable: true,
+      accessor: (m) => (
+        <>
+          <b>{product(m.product_id)?.name ?? "—"}</b>
+          <div>{product(m.product_id)?.sku}</div>
+        </>
+      ),
+      sortValue: (m) => product(m.product_id)?.name ?? "",
+    },
+    {
+      key: "warehouse",
+      header: "Warehouse",
+      sortable: true,
+      accessor: (m) => warehouse(m.warehouse_id)?.name ?? "—",
+      sortValue: (m) => warehouse(m.warehouse_id)?.name ?? "",
+    },
+    {
+      key: "type",
+      header: "Type",
+      sortable: true,
+      accessor: (m) => <Badge tone={TONE[m.type] ?? "neutral"}>{m.type}</Badge>,
+      sortValue: (m) => m.type,
+    },
+    {
+      key: "qty",
+      header: "Qty",
+      numeric: true,
+      sortable: true,
+      accessor: (m) => (
+        <b className={m.qty < 0 ? styles.out : styles.in}>
+          {m.qty > 0 ? `+${m.qty}` : m.qty}
+        </b>
+      ),
+      sortValue: (m) => m.qty,
+    },
+    { key: "note", header: "Note", accessor: (m) => m.note ?? "—" },
+  ];
+
   return (
-    <Card title={`Movement ledger (${movements.length})`}>
-      <ErrorNote error={error} />
-      <table className="table">
-        <thead>
-          <tr>
-            <th>When</th><th>Product</th><th>Warehouse</th><th>Type</th>
-            <th style={{ textAlign: "right" }}>Qty</th><th>Note</th>
-          </tr>
-        </thead>
-        <tbody>
-          {movements.map((m) => (
-            <tr key={m.id}>
-              <td className="muted">
-                {new Date(m.occurred_at).toLocaleString()}
-              </td>
-              <td>
-                <b>{product(m.product_id)?.name ?? "—"}</b>
-                <div className="muted">{product(m.product_id)?.sku}</div>
-              </td>
-              <td className="muted">{warehouse(m.warehouse_id)?.name ?? "—"}</td>
-              <td><Badge tone={TONE[m.type] ?? "neutral"}>{m.type}</Badge></td>
-              <td style={{ textAlign: "right" }}>
-                <b className={m.qty < 0 ? "qty-out" : "qty-in"}>
-                  {m.qty > 0 ? `+${m.qty}` : m.qty}
-                </b>
-              </td>
-              <td className="muted">{m.note ?? "—"}</td>
-            </tr>
-          ))}
-          {movements.length === 0 && (
-            <tr><td colSpan={6} className="muted">No movements yet.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </Card>
+    <section>
+      <CardHeader
+        title="Movement ledger"
+        description="Immutable by design — corrections are posted as new adjustments."
+      />
+      <DataState
+        loading={!movements && !error}
+        error={movements ? null : error}
+        onRetry={load}
+        isEmpty={movements?.length === 0}
+        emptyTitle="No movements yet"
+      >
+        <DataTable
+          data={movements ?? []}
+          columns={columns}
+          getRowId={(m) => m.id}
+          searchPlaceholder="Search movements…"
+        />
+      </DataState>
+    </section>
   );
 }

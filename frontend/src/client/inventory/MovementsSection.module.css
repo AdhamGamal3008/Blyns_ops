@@ -1,0 +1,8 @@
+/* Direction of a movement, not a success/failure judgement — stock leaving is
+   normal. Kept quiet: ink for in, ochre for out. */
+.in {
+  color: var(--text);
+}
+.out {
+  color: var(--warning);
+}

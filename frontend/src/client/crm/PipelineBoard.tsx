@@ -2,9 +2,22 @@
 // amounts, and the deal list underneath. Stage moves go through
 // PATCH /crm/deals/{id}/stage so the `lost_reason` rule is enforced server-side.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  NativeSelect,
+} from "../../shared/ui";
+import styles from "./PipelineBoard.module.css";
 
 interface StageBucket {
   stage: string;
@@ -68,54 +81,82 @@ export function PipelineBoard(props: { canWrite: boolean }) {
     }
   }
 
-  if (!pipeline || !deals) return <Spinner />;
+  const ready = pipeline && deals;
 
   return (
-    <>
-      <Card
-        title={`Pipeline — ${money(pipeline.open_value)} open`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New deal</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <div className="pipe-board">
-          {pipeline.stages.map((s) => (
-            <div key={s.stage} className={`pipe-col ${s.is_terminal ? "terminal" : ""}`}>
-              <div className="pipe-col-head">
-                <b>{s.stage}</b>
-                <span className="muted">{s.count}</span>
-              </div>
-              <div className="pipe-col-total">{money(s.amount)}</div>
-              {deals.filter((d) => d.stage === s.stage).map((d) => (
-                <div key={d.id} className="pipe-card" title={d.lost_reason ?? ""}>
-                  <div className="pipe-card-title">{d.title}</div>
-                  <div className="muted">{money(d.amount, d.currency)}</div>
-                  {props.canWrite && !s.is_terminal && (
-                    <select value={d.stage} className="pipe-move"
-                      onChange={(e) => move(d, e.target.value)}>
-                      {pipeline.stages.map((o) => (
-                        <option key={o.stage} value={o.stage}>{o.stage}</option>
-                      ))}
-                    </select>
-                  )}
-                  {s.is_terminal && <Badge tone={s.stage === "won" ? "ok" : "danger"}>
-                    {s.stage}
-                  </Badge>}
+    <section>
+      <CardHeader
+        title="Pipeline"
+        description={pipeline ? `${money(pipeline.open_value)} open` : "Deal flow by stage"}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New deal
+            </Button>
+          )
+        }
+      />
+
+      {error != null && ready && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
+      )}
+
+      <DataState loading={!ready && !error} error={ready ? null : error} onRetry={load}>
+        {ready && (
+          <div className={styles.board}>
+            {pipeline.stages.map((s) => {
+              const cards = deals.filter((d) => d.stage === s.stage);
+              return (
+                <div
+                  key={s.stage}
+                  className={`${styles.col} ${s.is_terminal ? styles.terminal : ""}`}
+                >
+                  <div className={styles.colHead} data-testid="stage-head">
+                    <b>{s.stage}</b>
+                    <span className={styles.count}>{s.count}</span>
+                  </div>
+                  <div className={styles.colTotal} data-testid="stage-total">
+                    {money(s.amount)}
+                  </div>
+
+                  {cards.length === 0 && <p className={styles.empty}>No deals</p>}
+
+                  {cards.map((d) => (
+                    <article key={d.id} className={styles.card} title={d.lost_reason ?? ""}>
+                      <span className={styles.cardTitle}>{d.title}</span>
+                      <span className={styles.cardAmount}>{money(d.amount, d.currency)}</span>
+                      {props.canWrite && !s.is_terminal && (
+                        <NativeSelect
+                          data-testid="deal-stage"
+                          selectSize="compact"
+                          aria-label={`Move ${d.title} to another stage`}
+                          value={d.stage}
+                          onChange={(e) => move(d, e.target.value)}
+                          options={pipeline.stages.map((o) => ({
+                            value: o.stage,
+                            label: o.stage,
+                          }))}
+                        />
+                      )}
+                      {s.is_terminal && (
+                        <Badge tone={s.stage === "won" ? "success" : "danger"}>{s.stage}</Badge>
+                      )}
+                    </article>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </Card>
+              );
+            })}
+          </div>
+        )}
+      </DataState>
+
       {moving && (
         <LostReasonModal deal={moving}
           onDone={(ok) => { setMoving(null); if (ok) load(); }} />
       )}
-      {creating && (
-        <DealModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
-      )}
-    </>
+      <DealModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    </section>
   );
 }
 
@@ -140,28 +181,26 @@ function LostReasonModal(props: { deal: Deal; onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>Mark “{props.deal.title}” lost</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Reason (required)">
-            <input value={reason} onChange={(e) => setReason(e.target.value)}
-              required placeholder="e.g. price, timing, competitor" />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" variant="danger" disabled={busy}>
-              {busy ? "Saving…" : "Mark lost"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Mark “${props.deal.title}” lost`}
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not update the deal"
+      busy={busy}
+      destructive
+      submitLabel="Mark lost"
+    >
+      <Field label="Reason" required>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)}
+          required placeholder="e.g. price, timing, competitor" />
+      </Field>
+    </FormModal>
   );
 }
 
-function DealModal(props: { onDone: (ok: boolean) => void }) {
+function DealModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("0");
   const [close, setClose] = useState("");
@@ -188,27 +227,26 @@ function DealModal(props: { onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New deal</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Title">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-          </Field>
-          <Field label="Amount">
-            <input type="number" min="0" value={amount}
-              onChange={(e) => setAmount(e.target.value)} />
-          </Field>
-          <Field label="Expected close date">
-            <input type="date" value={close} onChange={(e) => setClose(e.target.value)} />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create deal"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New deal"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the deal"
+      busy={busy}
+      submitLabel="Create deal"
+    >
+      <Field label="Title" required>
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+      </Field>
+      <Field label="Amount">
+        <Input type="number" min="0" value={amount}
+          onChange={(e) => setAmount(e.target.value)} />
+      </Field>
+      <Field label="Expected close date">
+        <Input type="date" value={close} onChange={(e) => setClose(e.target.value)} />
+      </Field>
+    </FormModal>
   );
 }

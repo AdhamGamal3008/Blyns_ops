@@ -60,10 +60,10 @@ describe("PipelineBoard", () => {
 
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
     // empty stages still render as columns (acceptance #3)
-    const heads = [...document.querySelectorAll(".pipe-col-head b")].map((e) => e.textContent);
+    const heads = [...document.querySelectorAll('[data-testid="stage-head"] b')].map((e) => e.textContent);
     expect(heads).toEqual(["new", "qualified", "proposal", "negotiation", "won", "lost"]);
     // each column shows its own summed amount, in stage order
-    const totals = [...document.querySelectorAll(".pipe-col-total")].map((e) => e.textContent);
+    const totals = [...document.querySelectorAll('[data-testid="stage-total"]')].map((e) => e.textContent);
     expect(totals).toEqual(["$3,500", "$0", "$4,000", "$0", "$0", "$0"]);
     // open pipeline value in the card title
     expect(screen.getByText(/\$7,500 open/)).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe("PipelineBoard", () => {
     render(<PipelineBoard canWrite={true} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
-    const selects = document.querySelectorAll("select.pipe-move");
+    const selects = document.querySelectorAll('select[data-testid="deal-stage"]');
     fireEvent.change(selects[0], { target: { value: "lost" } });
 
     // no PATCH yet — the reason modal opens first
@@ -99,7 +99,7 @@ describe("PipelineBoard", () => {
     render(<PipelineBoard canWrite={true} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
-    const selects = document.querySelectorAll("select.pipe-move");
+    const selects = document.querySelectorAll('select[data-testid="deal-stage"]');
     fireEvent.change(selects[0], { target: { value: "qualified" } });
 
     await waitFor(() => {
@@ -113,7 +113,7 @@ describe("PipelineBoard", () => {
     stubFetch();
     render(<PipelineBoard canWrite={false} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
-    expect(document.querySelectorAll("select.pipe-move").length).toBe(0);
+    expect(document.querySelectorAll('select[data-testid="deal-stage"]').length).toBe(0);
     expect(screen.queryByText("New deal")).not.toBeInTheDocument();
   });
 });

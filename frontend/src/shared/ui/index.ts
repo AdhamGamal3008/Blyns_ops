@@ -41,6 +41,7 @@ export {
   Stack,
   type StackProps,
 } from "./Layout/Layout";
+export { NativeSelect, type NativeSelectProps } from "./NativeSelect/NativeSelect";
 export { Pagination, type PaginationProps } from "./Pagination/Pagination";
 export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from "./Radio/Radio";
 export { Select, type SelectOption, type SelectProps } from "./Select/Select";

@@ -1,8 +1,21 @@
 // Contacts (§1) — a contact optionally belongs to an account.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  Select,
+} from "../../shared/ui";
 
 interface Contact {
   id: string;
@@ -18,6 +31,8 @@ interface Account {
   id: string;
   name: string;
 }
+
+const NO_ACCOUNT = "__none";
 
 export function ContactsSection(props: { canWrite: boolean }) {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
@@ -48,62 +63,91 @@ export function ContactsSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!contacts) return <Spinner />;
+  const columns: DataTableColumn<Contact>[] = [
+    {
+      key: "name",
+      header: "Name",
+      sortable: true,
+      sortValue: (c) => `${c.first_name} ${c.last_name}`,
+      accessor: (c) => (
+        <>
+          <b>{c.first_name} {c.last_name}</b>
+          {c.title && <div>{c.title}</div>}
+        </>
+      ),
+    },
+    {
+      key: "account",
+      header: "Account",
+      sortable: true,
+      accessor: (c) => accountName(c.account_id),
+      sortValue: (c) => accountName(c.account_id),
+    },
+    { key: "email", header: "Email", sortable: true, accessor: (c) => c.email ?? "—" },
+    { key: "phone", header: "Phone", accessor: (c) => c.phone ?? "—" },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (c: Contact) => (
+            <Button variant="ghost" size="compact" onClick={() => remove(c)}>Delete</Button>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Contacts (${contacts.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New contact</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Account</th><th>Email</th><th>Phone</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {contacts.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <b>{c.first_name} {c.last_name}</b>
-                  {c.title && <div className="muted">{c.title}</div>}
-                </td>
-                <td className="muted">{accountName(c.account_id)}</td>
-                <td className="muted">{c.email ?? "—"}</td>
-                <td className="muted">{c.phone ?? "—"}</td>
-                {props.canWrite && (
-                  <td style={{ textAlign: "right" }}>
-                    <Button variant="ghost" onClick={() => remove(c)}>Delete</Button>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {contacts.length === 0 && (
-              <tr><td colSpan={5} className="muted">No contacts yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <ContactModal accounts={accounts}
-          onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    <section>
+      <CardHeader
+        title="Contacts"
+        description={contacts ? `${contacts.length} people` : "People at your accounts"}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New contact
+            </Button>
+          )
+        }
+      />
+
+      {error != null && contacts != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-    </>
+
+      <DataState
+        loading={!contacts && !error}
+        error={contacts ? null : error}
+        onRetry={load}
+        isEmpty={contacts?.length === 0}
+        emptyTitle="No contacts yet"
+      >
+        <DataTable
+          data={contacts ?? []}
+          columns={columns}
+          getRowId={(c) => c.id}
+          searchPlaceholder="Search contacts…"
+        />
+      </DataState>
+
+      <ContactModal
+        open={creating}
+        accounts={accounts}
+        onDone={(ok) => { setCreating(false); if (ok) load(); }}
+      />
+    </section>
   );
 }
 
-function ContactModal(props: { accounts: Account[]; onDone: (ok: boolean) => void }) {
+function ContactModal(props: {
+  open: boolean; accounts: Account[]; onDone: (ok: boolean) => void;
+}) {
   const [first, setFirst] = useState("");
   const [last, setLast] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [title, setTitle] = useState("");
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(NO_ACCOUNT);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
@@ -117,7 +161,7 @@ function ContactModal(props: { accounts: Account[]; onDone: (ok: boolean) => voi
         body: {
           first_name: first, last_name: last,
           email: email || null, phone: phone || null, title: title || null,
-          account_id: accountId || null,
+          account_id: accountId === NO_ACCOUNT ? null : accountId,
         },
       });
       props.onDone(true);
@@ -128,40 +172,41 @@ function ContactModal(props: { accounts: Account[]; onDone: (ok: boolean) => voi
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New contact</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="First name">
-            <input value={first} onChange={(e) => setFirst(e.target.value)} required />
-          </Field>
-          <Field label="Last name">
-            <input value={last} onChange={(e) => setLast(e.target.value)} required />
-          </Field>
-          <Field label="Account">
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">— none —</option>
-              {props.accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Title">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </Field>
-          <Field label="Email">
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label="Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create contact"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New contact"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the contact"
+      busy={busy}
+      submitLabel="Create contact"
+    >
+      <Field label="First name" required>
+        <Input value={first} onChange={(e) => setFirst(e.target.value)} required />
+      </Field>
+      <Field label="Last name" required>
+        <Input value={last} onChange={(e) => setLast(e.target.value)} required />
+      </Field>
+      <Field label="Account">
+        <Select
+          value={accountId}
+          onValueChange={setAccountId}
+          options={[
+            { value: NO_ACCOUNT, label: "— none —" },
+            ...props.accounts.map((a) => ({ value: a.id, label: a.name })),
+          ]}
+        />
+      </Field>
+      <Field label="Title">
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+      </Field>
+      <Field label="Email">
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+      </Field>
+    </FormModal>
   );
 }

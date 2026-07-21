@@ -1,9 +1,23 @@
 // Leads (§1) + conversion (§2): converting creates/links account + contact +
 // deal server-side and stamps `converted_to`, so the row goes read-only after.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  type BadgeTone,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+} from "../../shared/ui";
 
 interface Lead {
   id: string;
@@ -19,9 +33,9 @@ interface Lead {
   };
 }
 
-const STATUS_TONE: Record<string, string> = {
-  new: "neutral", contacted: "neutral", qualified: "ok",
-  unqualified: "danger", converted: "ok",
+const STATUS_TONE: Record<string, BadgeTone> = {
+  new: "neutral", contacted: "info", qualified: "success",
+  unqualified: "danger", converted: "success",
 };
 
 export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
@@ -37,62 +51,78 @@ export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
 
   useEffect(load, [load]);
 
-  if (!leads) return <Spinner />;
+  const columns: DataTableColumn<Lead>[] = [
+    { key: "name", header: "Name", sortable: true, accessor: (l) => <b>{l.name}</b>, sortValue: (l) => l.name },
+    { key: "email", header: "Email", sortable: true, accessor: (l) => l.email ?? "—" },
+    { key: "source", header: "Source", sortable: true, accessor: (l) => l.source ?? "—" },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      accessor: (l) => <Badge tone={STATUS_TONE[l.status] ?? "neutral"}>{l.status}</Badge>,
+      sortValue: (l) => l.status,
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (l: Lead) =>
+            l.status === "converted" ? (
+              <span>converted</span>
+            ) : (
+              <Button variant="ghost" size="compact" onClick={() => setConverting(l)}>
+                Convert
+              </Button>
+            ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Leads (${leads.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New lead</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Email</th><th>Source</th><th>Status</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((l) => (
-              <tr key={l.id}>
-                <td><b>{l.name}</b></td>
-                <td className="muted">{l.email ?? "—"}</td>
-                <td className="muted">{l.source ?? "—"}</td>
-                <td><Badge tone={STATUS_TONE[l.status] ?? "neutral"}>{l.status}</Badge></td>
-                {props.canWrite && (
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {l.status === "converted" ? (
-                      <span className="muted">converted</span>
-                    ) : (
-                      <Button variant="ghost" onClick={() => setConverting(l)}>
-                        Convert
-                      </Button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-            {leads.length === 0 && (
-              <tr><td colSpan={5} className="muted">No leads yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <LeadModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    <section>
+      <CardHeader
+        title="Leads"
+        description={leads ? `${leads.length} in the funnel` : "Inbound and sourced leads"}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New lead
+            </Button>
+          )
+        }
+      />
+
+      {error != null && leads != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
+
+      <DataState
+        loading={!leads && !error}
+        error={leads ? null : error}
+        onRetry={load}
+        isEmpty={leads?.length === 0}
+        emptyTitle="No leads yet"
+        emptyDescription="Capture one to start the funnel."
+      >
+        <DataTable
+          data={leads ?? []}
+          columns={columns}
+          getRowId={(l) => l.id}
+          searchPlaceholder="Search leads…"
+        />
+      </DataState>
+
+      <LeadModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
       {converting && (
         <ConvertModal lead={converting}
           onDone={(ok) => { setConverting(null); if (ok) load(); }} />
       )}
-    </>
+    </section>
   );
 }
 
-function LeadModal(props: { onDone: (ok: boolean) => void }) {
+function LeadModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -122,31 +152,30 @@ function LeadModal(props: { onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New lead</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
-          <Field label="Email">
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label="Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          <Field label="Source">
-            <input value={source} onChange={(e) => setSource(e.target.value)}
-              placeholder="referral, web, event…" />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create lead"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New lead"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the lead"
+      busy={busy}
+      submitLabel="Create lead"
+    >
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} required />
+      </Field>
+      <Field label="Email">
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+      </Field>
+      <Field label="Source">
+        <Input value={source} onChange={(e) => setSource(e.target.value)}
+          placeholder="referral, web, event…" />
+      </Field>
+    </FormModal>
   );
 }
 
@@ -180,35 +209,30 @@ function ConvertModal(props: { lead: Lead; onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 4 }}>Convert “{props.lead.name}”</h3>
-        <p className="muted" style={{ marginBottom: 16, fontSize: 13 }}>
-          Creates a linked account, contact and deal.
-        </p>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Account name">
-            <input value={accountName} onChange={(e) => setAccountName(e.target.value)}
-              required />
-          </Field>
-          <Field label="Deal title">
-            <input value={dealTitle} onChange={(e) => setDealTitle(e.target.value)}
-              required />
-          </Field>
-          <Field label="Deal amount">
-            <input type="number" min="0" value={amount}
-              onChange={(e) => setAmount(e.target.value)} />
-          </Field>
-          <Field label="Expected close date">
-            <input type="date" value={close} onChange={(e) => setClose(e.target.value)} />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Converting…" : "Convert"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Convert “${props.lead.name}”`}
+      description="Creates a linked account, contact and deal."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not convert the lead"
+      busy={busy}
+      submitLabel="Convert"
+      busyLabel="Converting…"
+    >
+      <Field label="Account name" required>
+        <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} required />
+      </Field>
+      <Field label="Deal title" required>
+        <Input value={dealTitle} onChange={(e) => setDealTitle(e.target.value)} required />
+      </Field>
+      <Field label="Deal amount">
+        <Input type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </Field>
+      <Field label="Expected close date">
+        <Input type="date" value={close} onChange={(e) => setClose(e.target.value)} />
+      </Field>
+    </FormModal>
   );
 }

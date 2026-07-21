@@ -1,0 +1,128 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.monthLabel {
+  min-width: 9.5rem;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.dow {
+  background: var(--surface-sunken);
+  padding: var(--sp-2) var(--sp-2);
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: calc(var(--step--1) * 0.86);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-600, var(--text-muted));
+}
+
+.cell {
+  background: var(--surface-raised);
+  min-height: 5.5rem;
+  padding: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dim {
+  background: var(--surface-sunken);
+}
+.dim .dayNum {
+  color: var(--text-muted);
+}
+
+.dayNum {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  align-self: flex-start;
+  min-width: 1.55rem;
+  padding: 1px 0;
+  text-align: center;
+  border-radius: var(--r-pill);
+}
+/* Today is marked, not shouted. */
+.today .dayNum {
+  background: var(--ink);
+  color: var(--text-on-inverse);
+  font-weight: 700;
+}
+
+.chip {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-sm);
+  border-left: 3px solid var(--chip-accent, var(--n-400));
+  background: color-mix(in srgb, var(--chip-accent, var(--n-400)) 12%, var(--surface-raised));
+  font-family: var(--font-ui);
+  font-size: calc(var(--step--1) * 0.86);
+  color: var(--text);
+}
+
+.more {
+  font-family: var(--font-ui);
+  font-size: calc(var(--step--1) * 0.86);
+  color: var(--text-muted);
+  padding-left: var(--sp-1);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-transform: capitalize;
+}
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--chip-accent, var(--n-400));
+}
+
+@media (max-width: 640px) {
+  .cell {
+    min-height: 3.6rem;
+    padding: var(--sp-1);
+  }
+  /* Below this width a chip's text is unreadable anyway — the dot carries the
+     signal that something is scheduled, and the day opens the detail. */
+  .chip {
+    text-indent: -9999px;
+    height: 6px;
+    padding: 0;
+    border-left: none;
+    background: var(--chip-accent, var(--n-400));
+  }
+}

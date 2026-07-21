@@ -1,0 +1,54 @@
+.filter {
+  width: 9rem;
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.item:last-child {
+  border-bottom: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
+  background: var(--chip-accent, var(--n-400));
+}
+
+.body {
+  min-width: 0;
+}
+
+.line {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  margin: 2px 0 0;
+  font-family: var(--font-ui);
+  font-size: calc(var(--step--1) * 0.9);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.more {
+  margin-top: var(--sp-3);
+}

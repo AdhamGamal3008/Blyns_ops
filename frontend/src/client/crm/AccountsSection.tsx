@@ -1,8 +1,24 @@
 // Accounts (§1). Deleting is guarded server-side while open deals exist.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  type BadgeTone,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  NativeSelect,
+  Select,
+} from "../../shared/ui";
 
 interface Account {
   id: string;
@@ -14,8 +30,8 @@ interface Account {
 }
 
 const STATUSES = ["prospect", "customer", "inactive"];
-const TONE: Record<string, string> = {
-  prospect: "neutral", customer: "ok", inactive: "warn",
+const TONE: Record<string, BadgeTone> = {
+  prospect: "neutral", customer: "success", inactive: "warning",
 };
 
 export function AccountsSection(props: { canWrite: boolean }) {
@@ -51,61 +67,81 @@ export function AccountsSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!accounts) return <Spinner />;
+  const columns: DataTableColumn<Account>[] = [
+    { key: "name", header: "Name", sortable: true, accessor: (a) => <b>{a.name}</b>, sortValue: (a) => a.name },
+    { key: "industry", header: "Industry", sortable: true, accessor: (a) => a.industry ?? "—" },
+    { key: "phone", header: "Phone", accessor: (a) => a.phone ?? "—" },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      sortValue: (a) => a.status,
+      accessor: (a) =>
+        props.canWrite ? (
+          // inline status change: a native picker keeps the row compact
+          <NativeSelect
+            selectSize="compact"
+            aria-label={`Status for ${a.name}`}
+            value={a.status}
+            onChange={(e) => setStatus(a, e.target.value)}
+            options={STATUSES.map((s) => ({ value: s, label: s }))}
+          />
+        ) : (
+          <Badge tone={TONE[a.status] ?? "neutral"}>{a.status}</Badge>
+        ),
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (a: Account) => (
+            <Button variant="ghost" size="compact" onClick={() => remove(a)}>Delete</Button>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Accounts (${accounts.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New account</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Industry</th><th>Phone</th><th>Status</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((a) => (
-              <tr key={a.id}>
-                <td><b>{a.name}</b></td>
-                <td className="muted">{a.industry ?? "—"}</td>
-                <td className="muted">{a.phone ?? "—"}</td>
-                <td>
-                  {props.canWrite ? (
-                    <select value={a.status} style={{ width: 130 }}
-                      onChange={(e) => setStatus(a, e.target.value)}>
-                      {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  ) : (
-                    <Badge tone={TONE[a.status] ?? "neutral"}>{a.status}</Badge>
-                  )}
-                </td>
-                {props.canWrite && (
-                  <td style={{ textAlign: "right" }}>
-                    <Button variant="ghost" onClick={() => remove(a)}>Delete</Button>
-                  </td>
-                )}
-              </tr>
-            ))}
-            {accounts.length === 0 && (
-              <tr><td colSpan={5} className="muted">No accounts yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <AccountModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    <section>
+      <CardHeader
+        title="Accounts"
+        description={accounts ? `${accounts.length} on the books` : "Customer and prospect accounts"}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New account
+            </Button>
+          )
+        }
+      />
+
+      {error != null && accounts != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-    </>
+
+      <DataState
+        loading={!accounts && !error}
+        error={accounts ? null : error}
+        onRetry={load}
+        isEmpty={accounts?.length === 0}
+        emptyTitle="No accounts yet"
+        emptyDescription="Convert a lead, or create one directly."
+      >
+        <DataTable
+          data={accounts ?? []}
+          columns={columns}
+          getRowId={(a) => a.id}
+          searchPlaceholder="Search accounts…"
+        />
+      </DataState>
+
+      <AccountModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    </section>
   );
 }
 
-function AccountModal(props: { onDone: (ok: boolean) => void }) {
+function AccountModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
   const [name, setName] = useState("");
   const [industry, setIndustry] = useState("");
   const [phone, setPhone] = useState("");
@@ -130,31 +166,32 @@ function AccountModal(props: { onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New account</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
-          <Field label="Industry">
-            <input value={industry} onChange={(e) => setIndustry(e.target.value)} />
-          </Field>
-          <Field label="Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          <Field label="Status">
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Create account"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New account"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the account"
+      busy={busy}
+      submitLabel="Create account"
+    >
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} required />
+      </Field>
+      <Field label="Industry">
+        <Input value={industry} onChange={(e) => setIndustry(e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+      </Field>
+      <Field label="Status">
+        <Select
+          value={status}
+          onValueChange={setStatus}
+          options={STATUSES.map((s) => ({ value: s, label: s }))}
+        />
+      </Field>
+    </FormModal>
   );
 }
