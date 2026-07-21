@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { changePassword, clientLogin } from "../shared/auth";
-import { Button, Card, ErrorNote, Field } from "../shared/legacy-ui";
+import { LoginLayout } from "../shared/login/LoginLayout";
+import { Button, Field, Input, Stack } from "../shared/ui";
 
 export function ClientLogin() {
   const navigate = useNavigate();
@@ -49,50 +50,49 @@ export function ClientLogin() {
   }
 
   return (
-    <div className="login-wrap">
-      <div className="login-box">
-        <Card>
-          <h1>Blyns ERP</h1>
-          <p className="sub">
-            {mustReset
-              ? "Set a new password to continue (first login)."
-              : "Sign in to your company workspace."}
-          </p>
-          <ErrorNote error={error} />
-          {!mustReset ? (
-            <form onSubmit={submitLogin}>
-              <Field label="Company">
-                <input value={company} onChange={(e) => setCompany(e.target.value)}
-                  placeholder="acme" autoFocus required />
-              </Field>
-              <Field label="Email">
-                <input type="email" value={email}
-                  onChange={(e) => setEmail(e.target.value)} required />
-              </Field>
-              <Field label="Password">
-                <input type="password" value={password}
-                  onChange={(e) => setPassword(e.target.value)} required />
-              </Field>
-              <Button type="submit" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
-              </Button>
-            </form>
-          ) : (
-            <form onSubmit={submitReset}>
-              <Field label="New password (min 8 chars)">
-                <input type="password" value={newPassword} minLength={8}
-                  onChange={(e) => setNewPassword(e.target.value)} autoFocus required />
-              </Field>
-              <Button type="submit" disabled={busy}>
-                {busy ? "Saving…" : "Set password & continue"}
-              </Button>
-            </form>
-          )}
-          <p className="sub" style={{ marginTop: 16 }}>
-            Platform operator? <a href="/admin/login">Admin sign-in</a>
-          </p>
-        </Card>
-      </div>
-    </div>
+    <LoginLayout
+      realm="Company workspace"
+      lede={
+        mustReset
+          ? "Set a new password to continue — this is your first sign-in."
+          : "Sign in to your company workspace."
+      }
+      error={error}
+      footer={<>Platform operator? <a href="/admin/login">Admin sign-in</a></>}
+    >
+      {!mustReset ? (
+        <form onSubmit={submitLogin}>
+          <Stack gap={4}>
+            <Field label="Company">
+              <Input value={company} onChange={(e) => setCompany(e.target.value)}
+                placeholder="acme" autoFocus required />
+            </Field>
+            <Field label="Email">
+              <Input type="email" value={email}
+                onChange={(e) => setEmail(e.target.value)} required />
+            </Field>
+            <Field label="Password">
+              <Input type="password" value={password}
+                onChange={(e) => setPassword(e.target.value)} required />
+            </Field>
+            <Button type="submit" fullWidth disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
+          </Stack>
+        </form>
+      ) : (
+        <form onSubmit={submitReset}>
+          <Stack gap={4}>
+            <Field label="New password" hint="At least 8 characters.">
+              <Input type="password" value={newPassword} minLength={8}
+                onChange={(e) => setNewPassword(e.target.value)} autoFocus required />
+            </Field>
+            <Button type="submit" fullWidth disabled={busy}>
+              {busy ? "Saving…" : "Set password & continue"}
+            </Button>
+          </Stack>
+        </form>
+      )}
+    </LoginLayout>
   );
 }

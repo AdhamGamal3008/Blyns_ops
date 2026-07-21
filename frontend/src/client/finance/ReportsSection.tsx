@@ -2,44 +2,51 @@
 // checks are surfaced, not hidden — a book that stops balancing should be
 // visible at a glance.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../../shared/api";
-import { Badge, Card, ErrorNote, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Card,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  Grid,
+  KpiCard,
+  Stack,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../shared/ui";
 import {
   money,
   type Aging,
+  type AgingItem,
   type BalanceSheet,
   type Pnl,
   type TrialBalance,
+  type TrialBalanceRow,
 } from "./types";
-
-const REPORTS = [
-  { key: "trial-balance", label: "Trial balance" },
-  { key: "pnl", label: "Profit & loss" },
-  { key: "balance-sheet", label: "Balance sheet" },
-  { key: "ar", label: "AR aging" },
-  { key: "ap", label: "AP aging" },
-] as const;
+import styles from "./Finance.module.css";
 
 export function ReportsSection() {
-  const [report, setReport] = useState<string>("trial-balance");
-
   return (
-    <>
-      <div className="quick-actions" style={{ marginBottom: 16 }}>
-        {REPORTS.map((r) => (
-          <button key={r.key}
-            className={`btn ${report === r.key ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setReport(r.key)}>
-            {r.label}
-          </button>
-        ))}
-      </div>
-      {report === "trial-balance" && <TrialBalanceReport />}
-      {report === "pnl" && <PnlReport />}
-      {report === "balance-sheet" && <BalanceSheetReport />}
-      {(report === "ar" || report === "ap") && <AgingReport kind={report} />}
-    </>
+    <Tabs defaultValue="trial-balance">
+      <TabsList>
+        <TabsTrigger value="trial-balance">Trial balance</TabsTrigger>
+        <TabsTrigger value="pnl">Profit &amp; loss</TabsTrigger>
+        <TabsTrigger value="balance-sheet">Balance sheet</TabsTrigger>
+        <TabsTrigger value="ar">AR aging</TabsTrigger>
+        <TabsTrigger value="ap">AP aging</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="trial-balance"><TrialBalanceReport /></TabsContent>
+      <TabsContent value="pnl"><PnlReport /></TabsContent>
+      <TabsContent value="balance-sheet"><BalanceSheetReport /></TabsContent>
+      <TabsContent value="ar"><AgingReport kind="ar" /></TabsContent>
+      <TabsContent value="ap"><AgingReport kind="ap" /></TabsContent>
+    </Tabs>
   );
 }
 
@@ -47,219 +54,257 @@ function useReport<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<unknown>(null);
   const load = useCallback(() => {
+    setError(null);
     api<T>(path).then((r) => setData(r.data)).catch(setError);
   }, [path]);
   useEffect(load, [load]);
-  return { data, error };
+  return { data, error, reload: load };
+}
+
+/** Whether the books balance is the headline, not a footnote. */
+function BalanceBadge({ balanced }: { balanced: boolean }) {
+  return (
+    <Badge tone={balanced ? "success" : "danger"} variant={balanced ? "soft" : "solid"}>
+      {balanced ? "balanced" : "out of balance"}
+    </Badge>
+  );
+}
+
+function StatementRow(props: { label: ReactNode; value: ReactNode; indent?: boolean; total?: boolean }) {
+  return (
+    <tr className={props.total ? styles.totalRow : undefined}>
+      <td style={props.indent ? { paddingLeft: "var(--sp-6)" } : undefined}>{props.label}</td>
+      <td className={styles.num}>{props.value}</td>
+    </tr>
+  );
 }
 
 export function TrialBalanceReport() {
-  const { data, error } = useReport<TrialBalance>("/finance/reports/trial-balance");
-  if (error) return <ErrorNote error={error} />;
-  if (!data) return <Spinner />;
+  const { data, error, reload } = useReport<TrialBalance>("/finance/reports/trial-balance");
+
+  const columns: DataTableColumn<TrialBalanceRow>[] = [
+    { key: "code", header: "Code", sortable: true },
+    { key: "name", header: "Account", sortable: true, accessor: (r) => <b>{r.name}</b> },
+    { key: "type", header: "Type", sortable: true },
+    {
+      key: "debit",
+      header: "Debit",
+      numeric: true,
+      sortable: true,
+      accessor: (r) => (r.debit ? money(r.debit) : "—"),
+      sortValue: (r) => r.debit,
+    },
+    {
+      key: "credit",
+      header: "Credit",
+      numeric: true,
+      sortable: true,
+      accessor: (r) => (r.credit ? money(r.credit) : "—"),
+      sortValue: (r) => r.credit,
+    },
+  ];
 
   return (
-    <Card
-      title="Trial balance"
-      actions={
-        <Badge tone={data.balanced ? "ok" : "danger"}>
-          {data.balanced ? "balanced" : "OUT OF BALANCE"}
-        </Badge>
-      }
-    >
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Code</th><th>Account</th><th>Type</th>
-            <th style={{ textAlign: "right" }}>Debit</th>
-            <th style={{ textAlign: "right" }}>Credit</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted">{r.code}</td>
-              <td><b>{r.name}</b></td>
-              <td className="muted">{r.type}</td>
-              <td style={{ textAlign: "right" }}>{r.debit ? money(r.debit) : "—"}</td>
-              <td style={{ textAlign: "right" }}>{r.credit ? money(r.credit) : "—"}</td>
-            </tr>
-          ))}
-          {data.rows.length === 0 && (
-            <tr><td colSpan={5} className="muted">Nothing posted yet.</td></tr>
-          )}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={3}><b>Total</b></td>
-            <td style={{ textAlign: "right" }}><b>{money(data.debit_total)}</b></td>
-            <td style={{ textAlign: "right" }}><b>{money(data.credit_total)}</b></td>
-          </tr>
-        </tfoot>
-      </table>
-    </Card>
+    <section>
+      <CardHeader
+        title="Trial balance"
+        description={
+          data ? `Debits ${money(data.debit_total)} · Credits ${money(data.credit_total)}` : undefined
+        }
+        actions={data && <BalanceBadge balanced={data.balanced} />}
+      />
+      <DataState
+        loading={!data && !error}
+        error={data ? null : error}
+        onRetry={reload}
+        isEmpty={data?.rows.length === 0}
+        emptyTitle="Nothing posted yet"
+      >
+        <DataTable
+          data={data?.rows ?? []}
+          columns={columns}
+          getRowId={(r) => r.account_id}
+          pageSize={20}
+          searchPlaceholder="Search accounts…"
+        />
+      </DataState>
+    </section>
   );
 }
 
 function PnlReport() {
-  const { data, error } = useReport<Pnl>("/finance/reports/pnl");
-  if (error) return <ErrorNote error={error} />;
-  if (!data) return <Spinner />;
+  const { data, error, reload } = useReport<Pnl>("/finance/reports/pnl");
 
   return (
-    <Card title="Profit &amp; loss">
-      <table className="table">
-        <tbody>
-          <tr><td colSpan={2}><b>Income</b></td></tr>
-          {data.income.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted" style={{ paddingLeft: 20 }}>{r.name}</td>
-              <td style={{ textAlign: "right" }}>{money(r.amount)}</td>
-            </tr>
-          ))}
-          <tr>
-            <td><b>Total income</b></td>
-            <td style={{ textAlign: "right" }}><b>{money(data.income_total)}</b></td>
-          </tr>
-          <tr><td colSpan={2}><b>Expense</b></td></tr>
-          {data.expense.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted" style={{ paddingLeft: 20 }}>{r.name}</td>
-              <td style={{ textAlign: "right" }}>{money(r.amount)}</td>
-            </tr>
-          ))}
-          <tr>
-            <td><b>Total expense</b></td>
-            <td style={{ textAlign: "right" }}><b>{money(data.expense_total)}</b></td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr>
-            <td><b>Net profit</b></td>
-            <td style={{ textAlign: "right" }}>
-              <b className={data.net_profit >= 0 ? "qty-in" : "qty-out"}>
-                {money(data.net_profit)}
-              </b>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </Card>
+    <section>
+      <CardHeader title="Profit &amp; loss" />
+      <DataState loading={!data && !error} error={data ? null : error} onRetry={reload}>
+        {data && (
+          <Stack gap={4}>
+            <Grid min={200}>
+              <KpiCard label="Income" value={money(data.income_total)} />
+              <KpiCard label="Expense" value={money(data.expense_total)} />
+              <KpiCard
+                label="Net profit"
+                value={money(data.net_profit)}
+                delta={{
+                  value: data.income_total
+                    ? `${Math.round((data.net_profit / data.income_total) * 100)}% margin`
+                    : "—",
+                  direction: data.net_profit >= 0 ? "up" : "down",
+                }}
+              />
+            </Grid>
+
+            <Card padded={false}>
+              <table className={styles.statement}>
+                <tbody>
+                  <tr><th colSpan={2}>Income</th></tr>
+                  {data.income.map((r) => (
+                    <StatementRow key={r.account_id} indent label={r.name} value={money(r.amount)} />
+                  ))}
+                  <StatementRow total label="Total income" value={money(data.income_total)} />
+
+                  <tr><th colSpan={2}>Expense</th></tr>
+                  {data.expense.map((r) => (
+                    <StatementRow key={r.account_id} indent label={r.name} value={money(r.amount)} />
+                  ))}
+                  <StatementRow total label="Total expense" value={money(data.expense_total)} />
+
+                  <StatementRow total label="Net profit" value={money(data.net_profit)} />
+                </tbody>
+              </table>
+            </Card>
+          </Stack>
+        )}
+      </DataState>
+    </section>
   );
 }
 
 function BalanceSheetReport() {
-  const { data, error } = useReport<BalanceSheet>("/finance/reports/balance-sheet");
-  if (error) return <ErrorNote error={error} />;
-  if (!data) return <Spinner />;
+  const { data, error, reload } = useReport<BalanceSheet>("/finance/reports/balance-sheet");
 
   return (
-    <Card
-      title="Balance sheet"
-      actions={
-        <Badge tone={data.balanced ? "ok" : "danger"}>
-          {data.balanced ? "balanced" : "OUT OF BALANCE"}
-        </Badge>
-      }
-    >
-      <table className="table">
-        <tbody>
-          <tr><td colSpan={2}><b>Assets</b></td></tr>
-          {data.assets.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted" style={{ paddingLeft: 20 }}>{r.name}</td>
-              <td style={{ textAlign: "right" }}>{money(r.balance)}</td>
-            </tr>
-          ))}
-          <tr>
-            <td><b>Total assets</b></td>
-            <td style={{ textAlign: "right" }}><b>{money(data.assets_total)}</b></td>
-          </tr>
-          <tr><td colSpan={2}><b>Liabilities</b></td></tr>
-          {data.liabilities.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted" style={{ paddingLeft: 20 }}>{r.name}</td>
-              <td style={{ textAlign: "right" }}>{money(-r.balance)}</td>
-            </tr>
-          ))}
-          <tr><td colSpan={2}><b>Equity</b></td></tr>
-          {data.equity.map((r) => (
-            <tr key={r.account_id}>
-              <td className="muted" style={{ paddingLeft: 20 }}>{r.name}</td>
-              <td style={{ textAlign: "right" }}>{money(-r.balance)}</td>
-            </tr>
-          ))}
-          <tr>
-            <td className="muted" style={{ paddingLeft: 20 }}>
-              Retained earnings (this period)
-            </td>
-            <td style={{ textAlign: "right" }}>{money(data.retained_earnings)}</td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr>
-            <td><b>Liabilities + equity</b></td>
-            <td style={{ textAlign: "right" }}>
-              <b>{money(data.liabilities_and_equity_total)}</b>
-            </td>
-          </tr>
-        </tfoot>
-      </table>
-    </Card>
+    <section>
+      <CardHeader
+        title="Balance sheet"
+        actions={data && <BalanceBadge balanced={data.balanced} />}
+      />
+      <DataState loading={!data && !error} error={data ? null : error} onRetry={reload}>
+        {data && (
+          <Card padded={false}>
+            <table className={styles.statement}>
+              <tbody>
+                <tr><th colSpan={2}>Assets</th></tr>
+                {data.assets.map((r) => (
+                  <StatementRow key={r.account_id} indent label={r.name} value={money(r.balance)} />
+                ))}
+                <StatementRow total label="Total assets" value={money(data.assets_total)} />
+
+                <tr><th colSpan={2}>Liabilities</th></tr>
+                {data.liabilities.map((r) => (
+                  <StatementRow key={r.account_id} indent label={r.name} value={money(-r.balance)} />
+                ))}
+
+                <tr><th colSpan={2}>Equity</th></tr>
+                {data.equity.map((r) => (
+                  <StatementRow key={r.account_id} indent label={r.name} value={money(-r.balance)} />
+                ))}
+                <StatementRow
+                  indent
+                  label="Retained earnings (this period)"
+                  value={money(data.retained_earnings)}
+                />
+
+                <StatementRow
+                  total
+                  label="Liabilities + equity"
+                  value={money(data.liabilities_and_equity_total)}
+                />
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </DataState>
+    </section>
   );
 }
 
-function AgingReport(props: { kind: "ar" | "ap" }) {
-  const { data, error } = useReport<Aging>(
-    `/finance/reports/aging?type=${props.kind}`
-  );
-  if (error) return <ErrorNote error={error} />;
-  if (!data) return <Spinner />;
+const BUCKETS = ["current", "0-30", "31-60", "61-90", "90+"];
 
-  const labels = ["current", "0-30", "31-60", "61-90", "90+"];
+function AgingReport(props: { kind: "ar" | "ap" }) {
+  const { data, error, reload } = useReport<Aging>(
+    `/finance/reports/aging?type=${props.kind}`,
+  );
+
+  const columns: DataTableColumn<AgingItem>[] = [
+    { key: "number", header: "Number", sortable: true, accessor: (i) => i.number ?? "—" },
+    {
+      key: "party",
+      header: props.kind === "ar" ? "Customer" : "Vendor",
+      sortable: true,
+      accessor: (i) => <b>{i.party}</b>,
+      sortValue: (i) => i.party,
+    },
+    {
+      key: "due_date",
+      header: "Due",
+      sortable: true,
+      accessor: (i) => new Date(i.due_date).toLocaleDateString(),
+      sortValue: (i) => i.due_date,
+    },
+    {
+      key: "days_overdue",
+      header: "Days overdue",
+      numeric: true,
+      sortable: true,
+      accessor: (i) => (i.days_overdue > 0 ? <b className={styles.owing}>{i.days_overdue}</b> : "—"),
+      sortValue: (i) => i.days_overdue,
+    },
+    {
+      key: "outstanding",
+      header: "Outstanding",
+      numeric: true,
+      sortable: true,
+      accessor: (i) => money(i.outstanding),
+      sortValue: (i) => i.outstanding,
+    },
+  ];
+
   return (
-    <Card title={`${props.kind.toUpperCase()} aging — ${money(data.total)} open`}>
-      <div className="kpi-grid" style={{ marginBottom: 16 }}>
-        {labels.map((label) => (
-          <div key={label} className="card kpi">
-            <div className="kpi-label">{label === "current" ? "Not due" : `${label} days`}</div>
-            <div className="kpi-value" style={{ fontSize: 20 }}>
-              {money(data.buckets[label]?.total ?? 0)}
-            </div>
-            <div className="muted" style={{ fontSize: 11 }}>
-              {data.buckets[label]?.count ?? 0} doc(s)
-            </div>
-          </div>
-        ))}
-      </div>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Number</th><th>{props.kind === "ar" ? "Customer" : "Vendor"}</th>
-            <th>Due</th>
-            <th style={{ textAlign: "right" }}>Days overdue</th>
-            <th style={{ textAlign: "right" }}>Outstanding</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.items.map((i) => (
-            <tr key={i.id}>
-              <td className="muted">{i.number ?? "—"}</td>
-              <td><b>{i.party}</b></td>
-              <td className="muted">{new Date(i.due_date).toLocaleDateString()}</td>
-              <td style={{ textAlign: "right" }}>
-                {i.days_overdue > 0
-                  ? <b className="qty-out">{i.days_overdue}</b>
-                  : <span className="muted">—</span>}
-              </td>
-              <td style={{ textAlign: "right" }}>{money(i.outstanding)}</td>
-            </tr>
-          ))}
-          {data.items.length === 0 && (
-            <tr><td colSpan={5} className="muted">Nothing outstanding.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </Card>
+    <section>
+      <CardHeader
+        title={`${props.kind.toUpperCase()} aging`}
+        description={data ? `${money(data.total)} open` : undefined}
+      />
+      <DataState loading={!data && !error} error={data ? null : error} onRetry={reload}>
+        {data && (
+          <Stack gap={4}>
+            <Grid min={168}>
+              {BUCKETS.map((label) => (
+                <KpiCard
+                  key={label}
+                  label={label === "current" ? "Not due" : `${label} days`}
+                  value={money(data.buckets[label]?.total ?? 0)}
+                  hint={`${data.buckets[label]?.count ?? 0} doc(s)`}
+                />
+              ))}
+            </Grid>
+
+            {data.items.length === 0 ? (
+              <DataState isEmpty emptyTitle="Nothing outstanding">{null}</DataState>
+            ) : (
+              <DataTable
+                data={data.items}
+                columns={columns}
+                getRowId={(i) => i.id}
+                searchPlaceholder="Search documents…"
+              />
+            )}
+          </Stack>
+        )}
+      </DataState>
+    </section>
   );
 }

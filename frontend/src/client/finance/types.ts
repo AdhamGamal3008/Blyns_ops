@@ -1,3 +1,5 @@
+import type { BadgeTone } from "../../shared/ui";
+
 // Shared shapes for the Finance section (docs/modules/FINANCE.md §1).
 
 export interface Account {
@@ -102,9 +104,9 @@ export interface Aging {
   total: number;
 }
 
-export const STATUS_TONE: Record<string, string> = {
-  draft: "neutral", sent: "warn", partly_paid: "warn",
-  paid: "ok", void: "danger",
+export const STATUS_TONE: Record<string, BadgeTone> = {
+  draft: "neutral", sent: "info", partly_paid: "warning",
+  paid: "success", void: "danger",
 };
 
 export function money(n: number, currency = "USD"): string {

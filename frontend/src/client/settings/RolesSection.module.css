@@ -65,6 +65,19 @@
   flex-wrap: nowrap;
 }
 
+/* A one-time password is meant to be read aloud and typed — give it room. */
+.tempPw {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: var(--step-0);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  user-select: all;
+}
+
 .grantCount {
   display: inline-flex;
   align-items: center;

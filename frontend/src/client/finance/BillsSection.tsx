@@ -1,9 +1,23 @@
 // Vendor bills (AP) — the mirror of invoices (§1).
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+} from "../../shared/ui";
 import { STATUS_TONE, money, type Bill } from "./types";
+import styles from "./Finance.module.css";
 
 export function BillsSection(props: { canWrite: boolean }) {
   const [bills, setBills] = useState<Bill[] | null>(null);
@@ -44,73 +58,110 @@ export function BillsSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!bills) return <Spinner />;
+  const columns: DataTableColumn<Bill>[] = [
+    { key: "number", header: "Number", sortable: true, accessor: (b) => b.number ?? "—" },
+    {
+      key: "vendor",
+      header: "Vendor",
+      sortable: true,
+      accessor: (b) => <b>{b.vendor_ref?.name}</b>,
+      sortValue: (b) => b.vendor_ref?.name ?? "",
+    },
+    {
+      key: "due_date",
+      header: "Due",
+      sortable: true,
+      accessor: (b) => new Date(b.due_date).toLocaleDateString(),
+      sortValue: (b) => b.due_date,
+    },
+    {
+      key: "total",
+      header: "Total",
+      numeric: true,
+      sortable: true,
+      accessor: (b) => money(b.total, b.currency),
+      sortValue: (b) => b.total,
+    },
+    {
+      key: "outstanding",
+      header: "Outstanding",
+      numeric: true,
+      sortable: true,
+      sortValue: (b) => b.total - (b.paid_amount ?? 0),
+      accessor: (b) => {
+        const outstanding = b.total - (b.paid_amount ?? 0);
+        return (
+          <b className={outstanding > 0 ? styles.owing : styles.settled}>
+            {money(outstanding, b.currency)}
+          </b>
+        );
+      },
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      accessor: (b) => <Badge tone={STATUS_TONE[b.status] ?? "neutral"}>{b.status}</Badge>,
+      sortValue: (b) => b.status,
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (b: Bill) => (
+            <>
+              {b.status === "draft" && (
+                <Button variant="ghost" size="compact" onClick={() => send(b)}>Post</Button>
+              )}
+              {(b.status === "sent" || b.status === "partly_paid") && (
+                <Button variant="ghost" size="compact" onClick={() => pay(b)}>Pay in full</Button>
+              )}
+            </>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Bills (${bills.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New bill</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Number</th><th>Vendor</th><th>Due</th>
-              <th style={{ textAlign: "right" }}>Total</th>
-              <th style={{ textAlign: "right" }}>Outstanding</th>
-              <th>Status</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {bills.map((b) => {
-              const outstanding = b.total - (b.paid_amount ?? 0);
-              return (
-                <tr key={b.id}>
-                  <td className="muted">{b.number ?? "—"}</td>
-                  <td><b>{b.vendor_ref?.name}</b></td>
-                  <td className="muted">
-                    {new Date(b.due_date).toLocaleDateString()}
-                  </td>
-                  <td style={{ textAlign: "right" }}>{money(b.total, b.currency)}</td>
-                  <td style={{ textAlign: "right" }}>
-                    <b className={outstanding > 0 ? "qty-out" : "qty-in"}>
-                      {money(outstanding, b.currency)}
-                    </b>
-                  </td>
-                  <td>
-                    <Badge tone={STATUS_TONE[b.status] ?? "neutral"}>{b.status}</Badge>
-                  </td>
-                  {props.canWrite && (
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {b.status === "draft" && (
-                        <Button variant="ghost" onClick={() => send(b)}>Post</Button>
-                      )}
-                      {(b.status === "sent" || b.status === "partly_paid") && (
-                        <Button variant="ghost" onClick={() => pay(b)}>Pay in full</Button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-            {bills.length === 0 && (
-              <tr><td colSpan={7} className="muted">No bills yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <BillModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    <section>
+      <CardHeader
+        title="Bills"
+        description="Vendor bills — the accounts-payable mirror of invoices."
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New bill
+            </Button>
+          )
+        }
+      />
+
+      {error != null && bills != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-    </>
+
+      <DataState
+        loading={!bills && !error}
+        error={bills ? null : error}
+        onRetry={load}
+        isEmpty={bills?.length === 0}
+        emptyTitle="No bills yet"
+      >
+        <DataTable
+          data={bills ?? []}
+          columns={columns}
+          getRowId={(b) => b.id}
+          searchPlaceholder="Search bills…"
+        />
+      </DataState>
+
+      <BillModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    </section>
   );
 }
 
-function BillModal(props: { onDone: (ok: boolean) => void }) {
+function BillModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
   const [vendor, setVendor] = useState("");
   const [due, setDue] = useState("");
   const [description, setDescription] = useState("");
@@ -144,40 +195,37 @@ function BillModal(props: { onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New bill</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Vendor">
-            <input value={vendor} onChange={(e) => setVendor(e.target.value)} required />
-          </Field>
-          <Field label="Due date">
-            <input type="date" value={due} onChange={(e) => setDue(e.target.value)}
-              required />
-          </Field>
-          <Field label="Description">
-            <input value={description} onChange={(e) => setDescription(e.target.value)}
-              required />
-          </Field>
-          <Field label="Qty">
-            <input type="number" step="any" min="0.0001" value={qty}
-              onChange={(e) => setQty(e.target.value)} required />
-          </Field>
-          <Field label="Unit price">
-            <input type="number" step="any" min="0" value={unitPrice}
-              onChange={(e) => setUnitPrice(e.target.value)} required />
-          </Field>
-          <Field label="Tax rate (%)">
-            <input type="number" step="any" min="0" max="100" value={taxRate}
-              onChange={(e) => setTaxRate(e.target.value)} />
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save draft"}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New bill"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not save the bill"
+      busy={busy}
+      submitLabel="Save draft"
+    >
+      <Field label="Vendor" required>
+        <Input value={vendor} onChange={(e) => setVendor(e.target.value)} required />
+      </Field>
+      <Field label="Due date" required>
+        <Input type="date" value={due} onChange={(e) => setDue(e.target.value)} required />
+      </Field>
+      <Field label="Description" required>
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} required />
+      </Field>
+      <Field label="Qty">
+        <Input type="number" step="any" min="0.0001" value={qty}
+          onChange={(e) => setQty(e.target.value)} required />
+      </Field>
+      <Field label="Unit price">
+        <Input type="number" step="any" min="0" value={unitPrice}
+          onChange={(e) => setUnitPrice(e.target.value)} required />
+      </Field>
+      <Field label="Tax rate (%)">
+        <Input type="number" step="any" min="0" max="100" value={taxRate}
+          onChange={(e) => setTaxRate(e.target.value)} />
+      </Field>
+    </FormModal>
   );
 }

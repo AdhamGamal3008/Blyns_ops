@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Card, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Card,
+  CardHeader,
+  DataState,
+  Row,
+  Split,
+  Stack,
+} from "../../shared/ui";
+import styles from "./RolesSection.module.css";
 
 interface SecurityView {
   failed_login_threshold: number;
@@ -20,44 +29,57 @@ interface ModuleView {
 export function InfoSection() {
   const [security, setSecurity] = useState<SecurityView | null>(null);
   const [modules, setModules] = useState<ModuleView[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    api<SecurityView>("/settings/security").then((r) => setSecurity(r.data)).catch(() => {});
-    api<ModuleView[]>("/settings/modules").then((r) => setModules(r.data)).catch(() => {});
+    api<SecurityView>("/settings/security").then((r) => setSecurity(r.data)).catch(setError);
+    api<ModuleView[]>("/settings/modules").then((r) => setModules(r.data)).catch(setError);
   }, []);
 
-  if (!security || !modules) return <Spinner />;
-
   return (
-    <div className="two-col">
-      <Card title="Security policy (set by platform operator)">
-        <table className="table">
-          <tbody>
-            <tr>
-              <td>Failed-login threshold</td>
-              <td><b>{security.failed_login_threshold}</b> attempts</td>
-            </tr>
-            <tr>
-              <td>Lockout window</td>
-              <td><b>{security.lockout_minutes}</b> minutes</td>
-            </tr>
-            <tr>
-              <td>Client editable</td>
-              <td>{security.editable ? "yes" : "no — contact the platform operator"}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="muted">{security.note}</p>
-      </Card>
-      <Card title="Modules (enabled by platform operator)">
-        <div className="quick-actions">
-          {modules.map((m) => (
-            <Badge key={m.module} tone={m.enabled ? "ok" : "neutral"}>
-              {m.module}
-            </Badge>
-          ))}
-        </div>
-      </Card>
-    </div>
+    <DataState loading={(!security || !modules) && !error} error={error}>
+      {security && modules && (
+        <Split asideWidth={320}>
+          <Card>
+            <CardHeader
+              title="Security policy"
+              description="Set by the platform operator."
+            />
+            <table className={styles.overview}>
+              <tbody>
+                <tr>
+                  <th scope="row" className={styles.roleCell}>Failed-login threshold</th>
+                  <td className={styles.levelCell}><b>{security.failed_login_threshold}</b> attempts</td>
+                </tr>
+                <tr>
+                  <th scope="row" className={styles.roleCell}>Lockout window</th>
+                  <td className={styles.levelCell}><b>{security.lockout_minutes}</b> minutes</td>
+                </tr>
+                <tr>
+                  <th scope="row" className={styles.roleCell}>Client editable</th>
+                  <td className={styles.levelCell}>
+                    {security.editable ? "yes" : "no — contact the platform operator"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <Stack gap={2}>
+              <p>{security.note}</p>
+            </Stack>
+          </Card>
+
+          <Card>
+            <CardHeader title="Modules" description="Enabled by the platform operator." />
+            <Row gap={2}>
+              {modules.map((m) => (
+                <Badge key={m.module} tone={m.enabled ? "success" : "neutral"}>
+                  {m.module}
+                </Badge>
+              ))}
+            </Row>
+          </Card>
+        </Split>
+      )}
+    </DataState>
   );
 }

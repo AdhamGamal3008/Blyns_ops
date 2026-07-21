@@ -2,7 +2,7 @@
 // number and can be sent; a posted invoice can only be paid or voided; a void
 // must state a reason.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InvoicesSection } from "../client/finance/InvoicesSection";
 
@@ -126,7 +126,9 @@ describe("InvoicesSection", () => {
     const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
     expect(amount.value).toBe("300");
 
-    fireEvent.click(screen.getByText("Record payment", { selector: "button[type=submit]" }));
+    // the row button and the dialog's submit share a label; scope to the dialog
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Record payment" }));
     await waitFor(() => {
       const post = postCall(mock);
       expect(String(post![0])).toContain("/finance/payments");

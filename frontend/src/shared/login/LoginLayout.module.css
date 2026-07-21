@@ -1,0 +1,73 @@
+/* Sign-in is the first thing anyone sees. Ink field, one card, nothing else. */
+.wrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-5);
+  background:
+    radial-gradient(
+      120% 80% at 50% -10%,
+      color-mix(in srgb, var(--oxblood) 22%, var(--ink)) 0%,
+      var(--ink) 62%
+    );
+}
+
+.box {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.brand {
+  text-align: center;
+  margin-bottom: var(--sp-5);
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-on-inverse);
+  margin: 0;
+}
+.realm {
+  display: inline-block;
+  margin-top: var(--sp-2);
+  padding: 2px var(--sp-3);
+  border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--gold-500) 45%, transparent);
+  font-family: var(--font-ui);
+  font-size: calc(var(--step--1) * 0.9);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-400);
+}
+
+.card {
+  padding: var(--sp-6);
+}
+
+.lede {
+  margin: 0 0 var(--sp-5);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+
+.switch {
+  margin: var(--sp-5) 0 0;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: color-mix(in srgb, var(--text-on-inverse) 72%, transparent);
+}
+.switch a {
+  color: var(--gold-400);
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: var(--sp-5);
+  }
+}

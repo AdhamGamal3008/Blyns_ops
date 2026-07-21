@@ -3,7 +3,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Button, Card, ErrorNote, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Banner,
+  CardHeader,
+  Checkbox,
+  DataState,
+  errorText,
+  Row,
+} from "../../shared/ui";
+import styles from "./RolesSection.module.css";
 
 interface MapEntry {
   id: string;
@@ -30,9 +39,12 @@ export function ApproversSection(props: { canWrite: boolean }) {
 
   useEffect(load, [load]);
 
+  const holds = (entry: MapEntry, roleName: string) =>
+    entry.client_roles.some((cr) => cr.toLowerCase() === roleName.toLowerCase());
+
   async function toggle(entry: MapEntry, roleName: string) {
-    const next = entry.client_roles.includes(roleName)
-      ? entry.client_roles.filter((r) => r !== roleName)
+    const next = holds(entry, roleName)
+      ? entry.client_roles.filter((r) => r.toLowerCase() !== roleName.toLowerCase())
       : [...entry.client_roles, roleName];
     setError(null);
     try {
@@ -45,44 +57,62 @@ export function ApproversSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!entries) return <Spinner />;
-
   return (
-    <Card title="Approver roles → client roles (stage-gate approvals)">
-      <ErrorNote error={error} />
-      <table className="table">
-        <thead>
-          <tr><th>Position</th><th>Resolves to client roles</th></tr>
-        </thead>
-        <tbody>
-          {entries.map((e) => (
-            <tr key={e.id}>
-              <td><b>{e.approver_role}</b></td>
-              <td>
-                <div className="quick-actions">
-                  {roles.map((r) => (
-                    props.canWrite ? (
-                      <label key={r.id}
-                        style={{ display: "flex", gap: 4, fontSize: 12 }}>
-                        <input type="checkbox" style={{ width: "auto" }}
-                          checked={e.client_roles.some(
-                            (cr) => cr.toLowerCase() === r.name.toLowerCase(),
-                          )}
-                          onChange={() => toggle(e, r.name)} />
-                        {r.name}
-                      </label>
-                    ) : (
-                      e.client_roles.some(
-                        (cr) => cr.toLowerCase() === r.name.toLowerCase(),
-                      ) && <Button key={r.id} variant="ghost">{r.name}</Button>
-                    )
-                  ))}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+    <section>
+      <CardHeader
+        title="Approver roles"
+        description="Which client roles can sign off each stage-gate position."
+      />
+
+      {error != null && entries != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
+      )}
+
+      <DataState
+        loading={!entries && !error}
+        error={entries ? null : error}
+        onRetry={load}
+        isEmpty={entries?.length === 0}
+        emptyTitle="No approver positions"
+      >
+        <div className={styles.scroll}>
+          <table className={styles.overview}>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.roleHead}>Position</th>
+                <th scope="col" className={styles.roleHead}>Resolves to client roles</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(entries ?? []).map((e) => (
+                <tr key={e.id}>
+                  <th scope="row" className={styles.roleCell}>
+                    <span className={styles.roleName}>{e.approver_role}</span>
+                  </th>
+                  <td className={styles.roleCell}>
+                    <Row gap={4}>
+                      {roles.map((r) =>
+                        props.canWrite ? (
+                          <Checkbox
+                            key={r.id}
+                            label={r.name}
+                            checked={holds(e, r.name)}
+                            onCheckedChange={() => toggle(e, r.name)}
+                          />
+                        ) : (
+                          holds(e, r.name) && (
+                            <Badge key={r.id} tone="brand">{r.name}</Badge>
+                          )
+                        ),
+                      )}
+                    </Row>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DataState>
+    </section>
   );
 }

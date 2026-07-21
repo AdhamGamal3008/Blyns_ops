@@ -1,15 +1,30 @@
 // Chart of accounts (§1). This is the Finance ledger — CRM's customers are a
 // different thing entirely and live under CRM → Accounts.
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  type BadgeTone,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  Select,
+} from "../../shared/ui";
 import type { Account } from "./types";
 
 const TYPES = ["asset", "liability", "equity", "income", "expense"];
-const TONE: Record<string, string> = {
-  asset: "ok", liability: "warn", equity: "neutral",
-  income: "ok", expense: "danger",
+const TONE: Record<string, BadgeTone> = {
+  asset: "success", liability: "warning", equity: "neutral",
+  income: "info", expense: "danger",
 };
 
 export function ChartSection(props: { canWrite: boolean }) {
@@ -36,49 +51,75 @@ export function ChartSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!accounts) return <Spinner />;
+  const columns: DataTableColumn<Account>[] = [
+    { key: "code", header: "Code", sortable: true },
+    { key: "name", header: "Name", sortable: true, accessor: (a) => <b>{a.name}</b> },
+    {
+      key: "type",
+      header: "Type",
+      sortable: true,
+      accessor: (a) => <Badge tone={TONE[a.type] ?? "neutral"}>{a.type}</Badge>,
+      sortValue: (a) => a.type,
+    },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      accessor: (a) => (a.is_active ? "active" : "inactive"),
+      sortValue: (a) => String(a.is_active),
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (a: Account) => (
+            <Button variant="ghost" size="compact" onClick={() => remove(a)}>Delete</Button>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Chart of accounts (${accounts.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setCreating(true)}>New account</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Code</th><th>Name</th><th>Type</th><th>Status</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((a) => (
-              <tr key={a.id}>
-                <td className="muted">{a.code}</td>
-                <td><b>{a.name}</b></td>
-                <td><Badge tone={TONE[a.type] ?? "neutral"}>{a.type}</Badge></td>
-                <td className="muted">{a.is_active ? "active" : "inactive"}</td>
-                {props.canWrite && (
-                  <td style={{ textAlign: "right" }}>
-                    <Button variant="ghost" onClick={() => remove(a)}>Delete</Button>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      {creating && (
-        <AccountModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    <section>
+      <CardHeader
+        title="Chart of accounts"
+        description="The Finance ledger. CRM's customer accounts are a different thing entirely."
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setCreating(true)}>
+              <Plus size={15} aria-hidden="true" />
+              New account
+            </Button>
+          )
+        }
+      />
+
+      {error != null && accounts != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-    </>
+
+      <DataState
+        loading={!accounts && !error}
+        error={accounts ? null : error}
+        onRetry={load}
+        isEmpty={accounts?.length === 0}
+        emptyTitle="No accounts yet"
+      >
+        <DataTable
+          data={accounts ?? []}
+          columns={columns}
+          getRowId={(a) => a.id}
+          pageSize={15}
+          searchPlaceholder="Search accounts…"
+        />
+      </DataState>
+
+      <AccountModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+    </section>
   );
 }
 
-function AccountModal(props: { onDone: (ok: boolean) => void }) {
+function AccountModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState("asset");
@@ -101,31 +142,30 @@ function AccountModal(props: { onDone: (ok: boolean) => void }) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(false)}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>New account</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Code">
-            <input value={code} onChange={(e) => setCode(e.target.value)} required
-              placeholder="1200" />
-          </Field>
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
-          <Field label="Type">
-            <select value={type} onChange={(e) => setType(e.target.value)}>
-              {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={() => props.onDone(false)}>Cancel</Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Create account"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="New account"
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the account"
+      busy={busy}
+      submitLabel="Create account"
+    >
+      <Field label="Code" required>
+        <Input value={code} onChange={(e) => setCode(e.target.value)} required
+          placeholder="1200" />
+      </Field>
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} required />
+      </Field>
+      <Field label="Type">
+        <Select
+          value={type}
+          onValueChange={setType}
+          options={TYPES.map((t) => ({ value: t, label: t }))}
+        />
+      </Field>
+    </FormModal>
   );
 }

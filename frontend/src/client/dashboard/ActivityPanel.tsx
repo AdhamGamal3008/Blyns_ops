@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { api } from "../../shared/api";
-import { timeAgo } from "../../shared/legacy-ui";
+import { timeAgo } from "../../shared/format";
 import type { ActivityEntry, ClientMe } from "../../shared/types";
 import { Button, Card, CardHeader, EmptyState, Select } from "../../shared/ui";
 import styles from "./ActivityPanel.module.css";

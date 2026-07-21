@@ -1,0 +1,52 @@
+/* Money still owed reads as ochre; a settled balance is quiet ink. Oxblood is
+   reserved for brand chrome, so it never marks a routine unpaid balance. */
+.owing {
+  color: var(--warning);
+}
+.settled {
+  color: var(--text-muted);
+}
+
+.totals {
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+.totals b {
+  color: var(--text);
+}
+
+/* Statement layout: label column + figures column. */
+.statement {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+}
+.statement th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.statement td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.statement .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.statement tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.totalRow td {
+  border-top: 2px solid var(--border-strong);
+  font-weight: 700;
+  color: var(--text);
+}

@@ -1,7 +1,11 @@
+// Platform operator sign-in — a separate realm from the client workspace
+// (docs/AUTH_RBAC.md §4): different pool, different token audience.
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { adminLogin } from "../shared/auth";
-import { Button, Card, ErrorNote, Field } from "../shared/legacy-ui";
+import { LoginLayout } from "../shared/login/LoginLayout";
+import { Button, Field, Input, Stack } from "../shared/ui";
 
 export function AdminLogin() {
   const navigate = useNavigate();
@@ -25,30 +29,27 @@ export function AdminLogin() {
   }
 
   return (
-    <div className="login-wrap">
-      <div className="login-box">
-        <Card>
-          <h1>Blyns ERP — Admin</h1>
-          <p className="sub">Platform operator sign-in (separate realm).</p>
-          <ErrorNote error={error} />
-          <form onSubmit={submit}>
-            <Field label="Email">
-              <input type="email" value={email} autoFocus required
-                onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-            <Field label="Password">
-              <input type="password" value={password} required
-                onChange={(e) => setPassword(e.target.value)} />
-            </Field>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-          <p className="sub" style={{ marginTop: 16 }}>
-            Company employee? <a href="/login">Workspace sign-in</a>
-          </p>
-        </Card>
-      </div>
-    </div>
+    <LoginLayout
+      realm="Platform operator"
+      lede="Sign in to the control plane."
+      error={error}
+      footer={<>Company employee? <a href="/login">Workspace sign-in</a></>}
+    >
+      <form onSubmit={submit}>
+        <Stack gap={4}>
+          <Field label="Email">
+            <Input type="email" value={email} autoFocus required
+              onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          <Field label="Password">
+            <Input type="password" value={password} required
+              onChange={(e) => setPassword(e.target.value)} />
+          </Field>
+          <Button type="submit" fullWidth disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+          </Button>
+        </Stack>
+      </form>
+    </LoginLayout>
   );
 }

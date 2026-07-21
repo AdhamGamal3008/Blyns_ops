@@ -56,6 +56,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   return (
     <button
       ref={ref}
+      // A bare <button> inside a form implicitly submits it. Default to
+      // "button" so submitting is something a caller opts into.
+      type="button"
       className={classes}
       disabled={disabled || loading}
       data-loading={loading || undefined}

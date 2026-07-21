@@ -1,0 +1,4 @@
+/* The title takes the slack in the inline add-event row. */
+.grow {
+  flex: 1 1 220px;
+}

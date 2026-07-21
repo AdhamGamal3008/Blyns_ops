@@ -3,7 +3,23 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  Input,
+  Row,
+  Select,
+  Stack,
+} from "../../shared/ui";
+import styles from "./EventsSection.module.css";
 
 interface CompanyEvent {
   id: string;
@@ -14,12 +30,19 @@ interface CompanyEvent {
   visibility: string;
 }
 
+const VISIBILITIES = [
+  { value: "company", label: "Whole company" },
+  { value: "role", label: "My role" },
+  { value: "owner", label: "Only me" },
+];
+
 export function EventsSection(props: { canWrite: boolean }) {
   const [events, setEvents] = useState<CompanyEvent[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [title, setTitle] = useState("");
   const [start, setStart] = useState("");
   const [visibility, setVisibility] = useState("company");
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     api<CompanyEvent[]>("/settings/calendar-events")
@@ -31,6 +54,7 @@ export function EventsSection(props: { canWrite: boolean }) {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setBusy(true);
     try {
       await api("/settings/calendar-events", {
         method: "POST",
@@ -41,6 +65,8 @@ export function EventsSection(props: { canWrite: boolean }) {
       load();
     } catch (err) {
       setError(err);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -54,53 +80,79 @@ export function EventsSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!events) return <Spinner />;
+  const columns: DataTableColumn<CompanyEvent>[] = [
+    { key: "title", header: "Title", sortable: true, accessor: (e) => <b>{e.title}</b> },
+    {
+      key: "start",
+      header: "Date",
+      sortable: true,
+      accessor: (e) => new Date(e.start).toLocaleDateString(),
+      sortValue: (e) => e.start,
+    },
+    {
+      key: "visibility",
+      header: "Visibility",
+      sortable: true,
+      accessor: (e) => <Badge tone="neutral">{e.visibility}</Badge>,
+      sortValue: (e) => e.visibility,
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (e: CompanyEvent) => (
+            <Button variant="ghost" size="compact" onClick={() => remove(e.id)}>Delete</Button>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <Card title="Company calendar events">
-      <ErrorNote error={error} />
-      {props.canWrite && (
-        <form onSubmit={add}
-          style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 16 }}>
-          <Field label="Title">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} required />
-          </Field>
-          <Field label="Date">
-            <input type="date" value={start}
-              onChange={(e) => setStart(e.target.value)} required />
-          </Field>
-          <Field label="Visibility">
-            <select value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-              <option value="company">company</option>
-              <option value="role">my role</option>
-              <option value="owner">only me</option>
-            </select>
-          </Field>
-          <div className="field"><Button type="submit">Add event</Button></div>
-        </form>
+    <Stack gap={4}>
+      <CardHeader
+        title="Company calendar events"
+        description="These appear on everyone's dashboard calendar, subject to visibility."
+      />
+
+      {error != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-      <table className="table">
-        <thead>
-          <tr><th>Title</th><th>Date</th><th>Visibility</th>{props.canWrite && <th></th>}</tr>
-        </thead>
-        <tbody>
-          {events.map((e) => (
-            <tr key={e.id}>
-              <td><b>{e.title}</b></td>
-              <td className="muted">{new Date(e.start).toLocaleDateString()}</td>
-              <td><Badge>{e.visibility}</Badge></td>
-              {props.canWrite && (
-                <td style={{ textAlign: "right" }}>
-                  <Button variant="ghost" onClick={() => remove(e.id)}>Delete</Button>
-                </td>
-              )}
-            </tr>
-          ))}
-          {events.length === 0 && (
-            <tr><td colSpan={4} className="muted">No standalone events yet.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </Card>
+
+      {props.canWrite && (
+        <Card>
+          {/* Adding an event is a two-field job — inline beats a dialog. */}
+          <form onSubmit={add}>
+            <Row gap={3}>
+              <Field label="Title" className={styles.grow}>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
+              </Field>
+              <Field label="Date">
+                <Input type="date" value={start}
+                  onChange={(e) => setStart(e.target.value)} required />
+              </Field>
+              <Field label="Visibility">
+                <Select value={visibility} onValueChange={setVisibility} options={VISIBILITIES} />
+              </Field>
+              <Button type="submit" disabled={busy}>{busy ? "Adding…" : "Add event"}</Button>
+            </Row>
+          </form>
+        </Card>
+      )}
+
+      <DataState
+        loading={!events && !error}
+        error={events ? null : error}
+        onRetry={load}
+        isEmpty={events?.length === 0}
+        emptyTitle="No standalone events yet"
+      >
+        <DataTable
+          data={events ?? []}
+          columns={columns}
+          getRowId={(e) => e.id}
+          searchPlaceholder="Search events…"
+        />
+      </DataState>
+    </Stack>
   );
 }

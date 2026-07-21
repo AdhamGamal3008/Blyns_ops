@@ -1,8 +1,25 @@
 // Employees (§1.2): invite within seat limit, edit role, block/unlock/reset.
 
+import { UserPlus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
+import {
+  Badge,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  DataTable,
+  type DataTableColumn,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  NativeSelect,
+  Row,
+  Select,
+} from "../../shared/ui";
+import styles from "./RolesSection.module.css";
 
 interface Employee {
   id: string;
@@ -50,103 +67,138 @@ export function EmployeesSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!employees) return <Spinner />;
+  const columns: DataTableColumn<Employee>[] = [
+    { key: "name", header: "Name", sortable: true, accessor: (e) => <b>{e.name}</b> },
+    { key: "email", header: "Email", sortable: true },
+    {
+      key: "role",
+      header: "Role",
+      sortable: true,
+      sortValue: (e) => roleName(e.role_id),
+      accessor: (e) =>
+        props.canWrite ? (
+          <NativeSelect
+            selectSize="compact"
+            aria-label={`Role for ${e.name}`}
+            value={e.role_id}
+            onChange={(ev) =>
+              act(`/settings/employees/${e.id}`, { role_id: ev.target.value }, "PATCH")}
+            options={roles.map((r) => ({ value: r.id, label: r.name }))}
+          />
+        ) : (
+          roleName(e.role_id)
+        ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      accessor: (e) => (
+        <Row gap={2} className={styles.noWrap}>
+          {e.is_blocked ? (
+            <Badge tone="danger">blocked</Badge>
+          ) : e.locked_until && new Date(e.locked_until) > new Date() ? (
+            <Badge tone="warning">locked</Badge>
+          ) : (
+            <Badge tone="success">active</Badge>
+          )}
+          {e.must_reset_password && <Badge tone="neutral">reset pending</Badge>}
+        </Row>
+      ),
+    },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          accessor: (e: Employee) => (
+            <Row gap={2} className={styles.noWrap}>
+              <Button variant="ghost" size="compact" title="Issue a new temp password"
+                onClick={() => act(`/settings/employees/${e.id}/reset-password`)}>
+                Reset PW
+              </Button>
+              <Button variant="ghost" size="compact" title="Clear failed-login lockout"
+                onClick={() => act(`/settings/employees/${e.id}/unlock`)}>
+                Unlock
+              </Button>
+              {e.is_blocked ? (
+                <Button variant="ghost" size="compact" onClick={() =>
+                  act(`/settings/employees/${e.id}/block`, { blocked: false }, "PATCH")}>
+                  Unblock
+                </Button>
+              ) : (
+                <Button variant="danger" size="compact" onClick={() =>
+                  act(`/settings/employees/${e.id}/block`, { blocked: true }, "PATCH")}>
+                  Block
+                </Button>
+              )}
+            </Row>
+          ),
+        }]
+      : []),
+  ];
 
   return (
-    <>
-      <Card
-        title={`Employees (${employees.length})`}
-        actions={props.canWrite && (
-          <Button onClick={() => setShowInvite(true)}>Invite employee</Button>
-        )}
-      >
-        <ErrorNote error={error} />
-        {tempPw && (
-          <div style={{ marginBottom: 12 }}>
-            <p className="muted">
-              One-time temp password for <b>{tempPw.email}</b> (reset forced on
-              first login):
-            </p>
-            <div className="temp-pw">{tempPw.pw}</div>
-          </div>
-        )}
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Email</th><th>Role</th><th>Status</th>
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((e) => (
-              <tr key={e.id}>
-                <td><b>{e.name}</b></td>
-                <td className="muted">{e.email}</td>
-                <td>
-                  {props.canWrite ? (
-                    <select value={e.role_id} style={{ width: 140 }}
-                      onChange={(ev) =>
-                        act(`/settings/employees/${e.id}`,
-                            { role_id: ev.target.value }, "PATCH")}>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                  ) : roleName(e.role_id)}
-                </td>
-                <td>
-                  {e.is_blocked ? <Badge tone="danger">blocked</Badge>
-                    : e.locked_until && new Date(e.locked_until) > new Date()
-                      ? <Badge tone="warn">locked</Badge>
-                      : <Badge tone="ok">active</Badge>}
-                  {e.must_reset_password && <> <Badge>reset pending</Badge></>}
-                </td>
-                {props.canWrite && (
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <Button variant="ghost" title="Reset password"
-                      onClick={() => act(`/settings/employees/${e.id}/reset-password`)}>
-                      Reset PW
-                    </Button>{" "}
-                    <Button variant="ghost" title="Clear failed-login lockout"
-                      onClick={() => act(`/settings/employees/${e.id}/unlock`)}>
-                      Unlock
-                    </Button>{" "}
-                    {e.is_blocked ? (
-                      <Button variant="ghost" onClick={() =>
-                        act(`/settings/employees/${e.id}/block`,
-                            { blocked: false }, "PATCH")}>
-                        Unblock
-                      </Button>
-                    ) : (
-                      <Button variant="danger" onClick={() =>
-                        act(`/settings/employees/${e.id}/block`,
-                            { blocked: true }, "PATCH")}>
-                        Block
-                      </Button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      {showInvite && (
-        <InviteModal roles={roles}
-          onDone={(pw, email) => {
-            setShowInvite(false);
-            if (pw) {
-              setError(null);
-              setTempPw({ email, pw });
-            }
-            load();
-          }} />
+    <section>
+      <CardHeader
+        title="Employees"
+        description={employees ? `${employees.length} using a seat` : "Who can sign in"}
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setShowInvite(true)}>
+              <UserPlus size={15} aria-hidden="true" />
+              Invite employee
+            </Button>
+          )
+        }
+      />
+
+      {error != null && employees != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
       )}
-    </>
+
+      {tempPw && (
+        <Banner
+          tone="warning"
+          title={`One-time temp password for ${tempPw.email}`}
+          onDismiss={() => setTempPw(null)}
+        >
+          <code className={styles.tempPw}>{tempPw.pw}</code>
+          <span> — shown once; a reset is forced on first login.</span>
+        </Banner>
+      )}
+
+      <DataState
+        loading={!employees && !error}
+        error={employees ? null : error}
+        onRetry={load}
+        isEmpty={employees?.length === 0}
+        emptyTitle="No employees yet"
+      >
+        <DataTable
+          data={employees ?? []}
+          columns={columns}
+          getRowId={(e) => e.id}
+          searchPlaceholder="Search employees…"
+        />
+      </DataState>
+
+      <InviteModal
+        open={showInvite}
+        roles={roles}
+        onDone={(pw, email) => {
+          setShowInvite(false);
+          if (pw) {
+            setError(null);
+            setTempPw({ email, pw });
+          }
+          load();
+        }}
+      />
+    </section>
   );
 }
 
 function InviteModal(props: {
+  open: boolean;
   roles: Role[];
   onDone: (tempPw: string | null, email: string) => void;
 }) {
@@ -173,37 +225,32 @@ function InviteModal(props: {
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => props.onDone(null, "")}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>Invite employee</h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)}
-              autoFocus required />
-          </Field>
-          <Field label="Email">
-            <input type="email" value={email} required
-              onChange={(e) => setEmail(e.target.value)} />
-          </Field>
-          <Field label="Role">
-            <select value={roleId || props.roles[0]?.id}
-              onChange={(e) => setRoleId(e.target.value)}>
-              {props.roles.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-          </Field>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <Button variant="ghost" onClick={() => props.onDone(null, "")}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Creating…" : "Create (uses a seat)"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(null, "")}
+      title="Invite employee"
+      description="Creates the account and issues a one-time password. This uses a seat."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not create the employee"
+      busy={busy}
+      submitLabel="Create (uses a seat)"
+      busyLabel="Creating…"
+    >
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
+      </Field>
+      <Field label="Email" required>
+        <Input type="email" value={email} required
+          onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      <Field label="Role">
+        <Select
+          value={roleId || props.roles[0]?.id}
+          onValueChange={setRoleId}
+          options={props.roles.map((r) => ({ value: r.id, label: r.name }))}
+        />
+      </Field>
+    </FormModal>
   );
 }
