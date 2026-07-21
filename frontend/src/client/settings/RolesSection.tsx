@@ -1,15 +1,24 @@
 // Client roles RBAC editor (§1.3): every resource gets a 4-way selector
 // (None / View / Read / Write) — the role editor contract.
 
+import { Plus, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
-import { Badge, Button, Card, ErrorNote, Field, Spinner } from "../../shared/legacy-ui";
-
-const CLIENT_RESOURCES = [
-  "dashboard", "calendar", "activity",
-  "projects", "crm", "inventory", "finance", "settings",
-];
-const LEVELS = ["None", "View", "Read", "Write"];
+import {
+  Badge,
+  Banner,
+  Button,
+  CardHeader,
+  DataState,
+  errorText,
+  Field,
+  FormModal,
+  Input,
+  Row,
+  Stack,
+} from "../../shared/ui";
+import { CLIENT_RESOURCES, LevelChip, RoleMatrix } from "./RoleMatrix";
+import styles from "./RolesSection.module.css";
 
 interface Role {
   id: string;
@@ -40,59 +49,88 @@ export function RolesSection(props: { canWrite: boolean }) {
     }
   }
 
-  if (!roles) return <Spinner />;
-
   return (
-    <>
-      <Card
+    <section>
+      <CardHeader
         title="Client roles"
-        actions={props.canWrite && (
-          <Button onClick={() => setEditing("new")}>New role</Button>
-        )}
+        description="Who can reach which module, and how far in."
+        actions={
+          props.canWrite && (
+            <Button size="compact" onClick={() => setEditing("new")}>
+              <Plus size={15} aria-hidden="true" />
+              New role
+            </Button>
+          )
+        }
+      />
+
+      {error != null && roles != null && (
+        <Banner tone="danger" title="That action failed">{errorText(error)}</Banner>
+      )}
+
+      <DataState
+        loading={!roles && !error}
+        error={roles ? null : error}
+        onRetry={load}
+        isEmpty={roles?.length === 0}
+        emptyTitle="No roles yet"
       >
-        <ErrorNote error={error} />
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Role</th>
-              {CLIENT_RESOURCES.map((r) => <th key={r}>{r}</th>)}
-              {props.canWrite && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {roles.map((role) => (
-              <tr key={role.id}>
-                <td>
-                  <b>{role.name}</b>{" "}
-                  {role.is_system && <Badge>seeded</Badge>}
-                </td>
+        {/* Roles × resources: one glance shows how the grants differ. */}
+        <div className={styles.scroll}>
+          <table className={styles.overview}>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.roleHead}>Role</th>
                 {CLIENT_RESOURCES.map((r) => (
-                  <td key={r} className="muted">
-                    {LEVELS[role.permissions[r] ?? 0]}
-                  </td>
+                  <th key={r} scope="col" className={styles.resHead}>{r}</th>
                 ))}
                 {props.canWrite && (
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <Button variant="ghost" onClick={() => setEditing(role)}>
-                      Edit
-                    </Button>{" "}
-                    <Button variant="ghost" onClick={() => remove(role)}>
-                      Delete
-                    </Button>
-                  </td>
+                  <th scope="col" className={styles.actionHead}>
+                    <span className={styles.srOnly}>Actions</span>
+                  </th>
                 )}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+            </thead>
+            <tbody>
+              {(roles ?? []).map((role) => (
+                <tr key={role.id}>
+                  <th scope="row" className={styles.roleCell}>
+                    <Row gap={2} className={styles.noWrap}>
+                      <span className={styles.roleName}>{role.name}</span>
+                      {role.is_system && <Badge tone="neutral">seeded</Badge>}
+                    </Row>
+                  </th>
+                  {CLIENT_RESOURCES.map((r) => (
+                    <td key={r} className={styles.levelCell}>
+                      <LevelChip level={role.permissions[r] ?? 0} />
+                    </td>
+                  ))}
+                  {props.canWrite && (
+                    <td className={styles.actionCell}>
+                      <Row gap={2} className={styles.noWrap}>
+                        <Button variant="ghost" size="compact" onClick={() => setEditing(role)}>
+                          Edit
+                        </Button>
+                        <Button variant="ghost" size="compact" onClick={() => remove(role)}>
+                          Delete
+                        </Button>
+                      </Row>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </DataState>
+
       {editing && (
         <RoleEditor
           role={editing === "new" ? null : editing}
           onDone={() => { setEditing(null); load(); }}
         />
       )}
-    </>
+    </section>
   );
 }
 
@@ -127,45 +165,33 @@ export function RoleEditor(props: { role: Role | null; onDone: () => void }) {
     }
   }
 
+  const granted = CLIENT_RESOURCES.filter((r) => (perms[r] ?? 0) > 0).length;
+
   return (
-    <div className="modal-backdrop" onClick={props.onDone}>
-      <div className="modal card" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 16 }}>
-          {props.role ? `Edit role: ${props.role.name}` : "New role"}
-        </h3>
-        <ErrorNote error={error} />
-        <form onSubmit={submit}>
-          <Field label="Role name">
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </Field>
-          <table className="table">
-            <thead>
-              <tr><th>Resource</th>{LEVELS.map((l) => <th key={l}>{l}</th>)}</tr>
-            </thead>
-            <tbody>
-              {CLIENT_RESOURCES.map((res) => (
-                <tr key={res}>
-                  <td><b>{res}</b></td>
-                  {LEVELS.map((_, level) => (
-                    <td key={level}>
-                      <input type="radio" style={{ width: "auto" }}
-                        name={`perm-${res}`}
-                        checked={perms[res] === level}
-                        onChange={() => setPerms({ ...perms, [res]: level })} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
-            <Button variant="ghost" onClick={props.onDone}>Cancel</Button>
-            <Button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save role"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone()}
+      size="lg"
+      title={props.role ? `Edit role: ${props.role.name}` : "New role"}
+      description={
+        <span className={styles.grantCount}>
+          <ShieldCheck size={14} aria-hidden="true" />
+          {granted} of {CLIENT_RESOURCES.length} resources granted
+        </span>
+      }
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not save the role"
+      busy={busy}
+      submitLabel="Save role"
+    >
+      <Stack gap={5}>
+        <Field label="Role name" required>
+          <Input value={name} onChange={(e) => setName(e.target.value)} required
+            placeholder="e.g. Estimator" />
+        </Field>
+        <RoleMatrix value={perms} onChange={setPerms} />
+      </Stack>
+    </FormModal>
   );
 }
