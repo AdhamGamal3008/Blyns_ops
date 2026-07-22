@@ -101,7 +101,8 @@ export function RolesSection(props: { canWrite: boolean }) {
                     </Row>
                   </th>
                   {CLIENT_RESOURCES.map((r) => (
-                    <td key={r} className={styles.levelCell}>
+                    // data-label carries the column name into the mobile card layout
+                    <td key={r} className={styles.levelCell} data-label={r}>
                       <LevelChip level={role.permissions[r] ?? 0} />
                     </td>
                   ))}

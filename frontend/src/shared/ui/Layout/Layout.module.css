@@ -1,7 +1,14 @@
+/* Grid and flex items default to min-width:auto, so a wide child (a tab strip,
+   a table, a long unbroken string) sets the track's floor and pushes the whole
+   page past the viewport. Every track here opts out of that. */
 .stack {
   display: flex;
   flex-direction: column;
   gap: var(--stack-gap, var(--sp-5));
+  min-width: 0;
+}
+.stack > * {
+  min-width: 0;
 }
 
 /* Responsive card/KPI grid: as many columns as fit at --grid-min. */
@@ -9,6 +16,10 @@
   display: grid;
   gap: var(--grid-gap, var(--sp-4));
   grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 220px), 100%), 1fr));
+  min-width: 0;
+}
+.grid > * {
+  min-width: 0;
 }
 
 /* Main column + a narrower rail; stacks below the shell's content breakpoint. */
@@ -16,7 +27,11 @@
   display: grid;
   gap: var(--sp-5);
   align-items: start;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+.split > * {
+  min-width: 0;
 }
 
 @media (min-width: 1024px) {
@@ -34,4 +49,5 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--row-gap, var(--sp-3));
+  min-width: 0;
 }

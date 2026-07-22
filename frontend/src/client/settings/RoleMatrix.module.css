@@ -6,6 +6,11 @@
   font-size: var(--step--1);
 }
 
+.scroller {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .caption {
   caption-side: top;
   text-align: left;
@@ -62,6 +67,18 @@
   padding: var(--sp-2) var(--sp-2);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  /* the grid scrolls sideways in a bottom sheet; without this you lose track of
+     which resource a row of swatches belongs to */
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-raised);
+}
+.resourceHead {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface-raised);
 }
 
 .cell {

@@ -166,3 +166,13 @@
     display: none;
   }
 }
+
+/* Shell chrome is reached by thumb on a phone, so the icon buttons meet the
+   44px minimum there. */
+@media (pointer: coarse), (max-width: 767px) {
+  .hamburger,
+  .paletteBtn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

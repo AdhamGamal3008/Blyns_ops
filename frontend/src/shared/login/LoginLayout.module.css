@@ -62,6 +62,10 @@
   color: color-mix(in srgb, var(--text-on-inverse) 72%, transparent);
 }
 .switch a {
+  display: inline-block;
+  /* the only way to reach the other realm — give it a comfortable target rather
+     than the 20px a bare inline link would be */
+  padding: var(--sp-3) var(--sp-2);
   color: var(--gold-400);
   font-weight: 600;
 }

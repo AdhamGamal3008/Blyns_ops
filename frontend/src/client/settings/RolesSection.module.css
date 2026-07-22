@@ -95,3 +95,65 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* Below the shell's phone breakpoint the roles x resources matrix is nine
+   columns in ~340px — technically scrollable, practically unreadable. Each role
+   becomes a card instead, and the resource names come from data-label so the
+   header row is not needed. */
+@media (max-width: 767px) {
+  .scroll {
+    border: none;
+    background: none;
+    overflow: visible;
+  }
+  .overview thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .overview,
+  .overview tbody,
+  .overview tr,
+  .overview th,
+  .overview td {
+    display: block;
+  }
+  .overview tr {
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: var(--surface-raised);
+    padding: var(--sp-3);
+    margin-bottom: var(--sp-3);
+  }
+  .overview th.roleCell {
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 var(--sp-2);
+    margin-bottom: var(--sp-2);
+  }
+  .overview td.levelCell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    text-align: left;
+    padding: var(--sp-1) 0;
+    border-bottom: none;
+  }
+  /* the column this cell belonged to, restored as an inline label */
+  .overview td.levelCell::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: capitalize;
+  }
+  .overview td.actionCell {
+    padding: var(--sp-2) 0 0;
+    border-top: 1px solid var(--border);
+    border-bottom: none;
+    margin-top: var(--sp-2);
+    text-align: left;
+  }
+}

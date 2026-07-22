@@ -13,7 +13,7 @@ export interface SheetProps {
   description?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  side?: "left" | "right";
+  side?: "left" | "right" | "bottom";
 }
 
 export function Sheet({
@@ -26,7 +26,9 @@ export function Sheet({
   side = "right",
 }: SheetProps) {
   const reduce = useReducedMotion();
-  const offscreen = side === "right" ? "100%" : "-100%";
+  const vertical = side === "bottom";
+  const offscreen = vertical ? "100%" : side === "right" ? "100%" : "-100%";
+  const axis = vertical ? "y" : "x";
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <AnimatePresence>
@@ -44,9 +46,9 @@ export function Sheet({
             <RadixDialog.Content asChild forceMount>
               <motion.div
                 className={cn(styles.panel, styles[side])}
-                initial={reduce ? { opacity: 0 } : { x: offscreen }}
-                animate={reduce ? { opacity: 1 } : { x: 0 }}
-                exit={reduce ? { opacity: 0 } : { x: offscreen }}
+                initial={reduce ? { opacity: 0 } : { [axis]: offscreen }}
+                animate={reduce ? { opacity: 1 } : { [axis]: 0 }}
+                exit={reduce ? { opacity: 0 } : { [axis]: offscreen }}
                 transition={contentTransition(reduce)}
               >
                 <div className={styles.header}>

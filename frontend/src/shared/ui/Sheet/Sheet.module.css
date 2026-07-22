@@ -7,9 +7,6 @@
 
 .panel {
   position: fixed;
-  top: 0;
-  bottom: 0;
-  width: min(420px, 100%);
   display: flex;
   flex-direction: column;
   padding: var(--sp-5);
@@ -17,14 +14,47 @@
   box-shadow: var(--shadow-lg);
   font-family: var(--font-ui);
   color: var(--text);
-  overflow-y: auto;
+  overflow: hidden;
   z-index: 66;
+}
+.right,
+.left {
+  top: 0;
+  bottom: 0;
+  width: min(420px, 100%);
 }
 .right {
   right: 0;
 }
 .left {
   left: 0;
+}
+
+/* Bottom sheet: the phone form factor. Capped below full height so the sheet
+   reads as a layer over the page rather than a new screen, and padded for the
+   home indicator. */
+.bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-height: min(88dvh, 100%);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding-bottom: max(var(--sp-5), env(safe-area-inset-bottom));
+}
+/* the grab handle, so it reads as draggable-dismissable even though the scrim
+   and the close button are the actual affordances */
+.bottom::before {
+  content: "";
+  position: sticky;
+  top: 0;
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  flex-shrink: 0;
+  margin-bottom: var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
 }
 
 .header {
@@ -71,12 +101,17 @@
 
 .body {
   flex: 1;
+  min-height: 0;
   margin-top: var(--sp-4);
+  /* the form scrolls; the header and the actions do not go with it */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-2);
+  flex-shrink: 0;
   margin-top: var(--sp-4);
   padding-top: var(--sp-4);
   border-top: 1px solid var(--border);

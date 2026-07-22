@@ -59,61 +59,63 @@ export function RoleMatrix({
   }
 
   return (
-    <table ref={gridRef} className={styles.grid} onKeyDown={onKeyDown}>
-      <caption className={styles.caption}>
-        Pick one access level per resource. A resource left at None never appears
-        in that role's navigation.
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col" className={styles.resourceHead}>Resource</th>
-          {LEVELS.map((label, level) => (
-            <th key={label} scope="col" className={styles.levelHead}>
-              <span className={styles.levelLabel}>{label}</span>
-              {!disabled && (
-                <button
-                  type="button"
-                  className={styles.setAll}
-                  onClick={() => setAll(level)}
-                  title={`Set every resource to ${label}`}
-                >
-                  set all
-                </button>
-              )}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {resources.map((res) => {
-          const current = value[res] ?? 0;
-          return (
-            <tr key={res}>
-              <th scope="row" className={styles.resourceCell}>{res}</th>
-              {LEVELS.map((label, level) => (
-                <td key={label} className={styles.cell}>
-                  <label className={styles.swatchLabel}>
-                    <input
-                      type="radio"
-                      className={styles.input}
-                      name={`perm-${res}`}
-                      value={level}
-                      data-resource={res}
-                      data-level={level}
-                      disabled={disabled}
-                      checked={current === level}
-                      onChange={() => onChange({ ...value, [res]: level })}
-                      aria-label={`${res}: ${label}`}
-                    />
-                    <span className={`${styles.swatch} ${LEVEL_CLASS[level]}`} aria-hidden="true" />
-                  </label>
-                </td>
-              ))}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className={styles.scroller}>
+      <table ref={gridRef} className={styles.grid} onKeyDown={onKeyDown}>
+        <caption className={styles.caption}>
+          Pick one access level per resource. A resource left at None never appears
+          in that role's navigation.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" className={styles.resourceHead}>Resource</th>
+            {LEVELS.map((label, level) => (
+              <th key={label} scope="col" className={styles.levelHead}>
+                <span className={styles.levelLabel}>{label}</span>
+                {!disabled && (
+                  <button
+                    type="button"
+                    className={styles.setAll}
+                    onClick={() => setAll(level)}
+                    title={`Set every resource to ${label}`}
+                  >
+                    set all
+                  </button>
+                )}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {resources.map((res) => {
+            const current = value[res] ?? 0;
+            return (
+              <tr key={res}>
+                <th scope="row" className={styles.resourceCell}>{res}</th>
+                {LEVELS.map((label, level) => (
+                  <td key={label} className={styles.cell}>
+                    <label className={styles.swatchLabel}>
+                      <input
+                        type="radio"
+                        className={styles.input}
+                        name={`perm-${res}`}
+                        value={level}
+                        data-resource={res}
+                        data-level={level}
+                        disabled={disabled}
+                        checked={current === level}
+                        onChange={() => onChange({ ...value, [res]: level })}
+                        aria-label={`${res}: ${label}`}
+                      />
+                      <span className={`${styles.swatch} ${LEVEL_CLASS[level]}`} aria-hidden="true" />
+                    </label>
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

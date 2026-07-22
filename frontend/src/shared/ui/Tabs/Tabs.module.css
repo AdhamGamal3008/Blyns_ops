@@ -1,11 +1,37 @@
+/* A tab strip scrolls rather than widening the page. Six tabs (Settings) come to
+   582px, which pushed the whole document past the viewport at phone *and* tablet
+   widths before this. The fade on the trailing edge is the affordance that there
+   is more to the right. */
 .list {
   display: flex;
   gap: var(--sp-1);
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  /* the strip may sit inside a grid/flex track; do not let it set the floor */
+  min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+@supports (mask-image: linear-gradient(black, black)) {
+  .list {
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  }
+  /* once scrolled to the end there is nothing more to hint at */
+  .list[data-at-end="true"] {
+    mask-image: none;
+  }
 }
 
 .trigger {
   position: relative;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  white-space: nowrap;
   padding: var(--sp-3);
   font-family: var(--font-ui);
   font-size: var(--step-0);

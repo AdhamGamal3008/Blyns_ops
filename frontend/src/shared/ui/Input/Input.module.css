@@ -19,6 +19,9 @@
 .input {
   flex: 1;
   min-width: 0;
+  /* fill the wrapper so the whole control is the tap target, not just the band
+     of text in the middle of it */
+  align-self: stretch;
   border: none;
   background: transparent;
   outline: none;
@@ -66,4 +69,19 @@
 .icon svg {
   width: 18px;
   height: 18px;
+}
+
+/* Where a finger is the pointer — a touch device, or any viewport narrow enough
+   to be one — the compact size is a tap target, not a density choice: it grows
+   to the 44px minimum and its text to 16px, below which iOS zooms the viewport
+   on focus. The width arm matters because the acceptance criterion is written in
+   viewport terms ("operable on a 375px viewport"), and because a desktop browser
+   reports pointer:fine no matter how narrow the window is. */
+@media (pointer: coarse), (max-width: 767px) {
+  .compact {
+    min-height: 44px;
+  }
+  .compact .input {
+    font-size: var(--step-0);
+  }
 }
