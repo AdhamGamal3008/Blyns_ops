@@ -1,0 +1,5 @@
+/* The animated wrapper must not introduce a stacking/scroll context of its own,
+   or sticky table headers inside a screen stop sticking. */
+.root {
+  min-width: 0;
+}

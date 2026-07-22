@@ -9,7 +9,8 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ChevronDown, ChevronsUpDown, ChevronUp, Search } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { staggerStyles, useFirstPaint } from "../../motion";
 import { cn } from "../_internal/cn";
 import { Checkbox } from "../Checkbox/Checkbox";
 import { Input } from "../Input/Input";
@@ -59,6 +60,8 @@ export function DataTable<T>({
   onRowClick,
   emptyText = "No results.",
 }: DataTableProps<T>) {
+  // entrance plays once per mount; sorting/paging must not replay it
+  const firstPaint = useFirstPaint();
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [rowSelection, setRowSelection] = useState({});
@@ -203,13 +206,16 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
+              rows.map((row, i) => (
                 <tr
                   key={row.id}
                   className={cn(
                     row.getIsSelected() && styles.selectedRow,
                     onRowClick && styles.clickableRow,
+                    firstPaint && staggerStyles.stagger,
                   )}
+                  // only the first few rows carry a delay; the rest land together
+                  style={firstPaint ? ({ "--i": Math.min(i, 7) } as CSSProperties) : undefined}
                   tabIndex={onRowClick ? 0 : undefined}
                   onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                   onKeyDown={

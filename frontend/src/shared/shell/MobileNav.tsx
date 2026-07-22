@@ -1,5 +1,6 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { contentTransition, overlayTransition, useReducedMotion } from "../motion";
 import { LogOut, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "../ui/_internal/cn";
@@ -40,7 +41,7 @@ export function MobileNav({
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: reduce ? 0 : 0.16 }}
+                  transition={overlayTransition(reduce)}
                 />
               </RadixDialog.Overlay>
               <RadixDialog.Content asChild forceMount>
@@ -49,7 +50,7 @@ export function MobileNav({
                   initial={reduce ? { opacity: 0 } : { x: "-100%" }}
                   animate={reduce ? { opacity: 1 } : { x: 0 }}
                   exit={reduce ? { opacity: 0 } : { x: "-100%" }}
-                  transition={{ duration: reduce ? 0 : 0.26, ease: [0.2, 0, 0, 1] }}
+                  transition={contentTransition(reduce)}
                 >
                   <div className={styles.drawerHead}>
                     <div className={styles.brand}>

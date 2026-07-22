@@ -1,8 +1,8 @@
 import { Building2, LayoutDashboard, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { adminLogout, adminMe } from "../shared/auth";
-import { AppShell, type CommandItem, type ShellNavItem } from "../shared/shell";
+import { AppShell, type CommandItem, RouteTransition, type ShellNavItem } from "../shared/shell";
 import type { AdminMe } from "../shared/types";
 import { Spinner } from "../shared/ui/Spinner/Spinner";
 
@@ -76,7 +76,7 @@ export function AdminShell() {
       breadcrumbs={[{ label: title }]}
       commands={commands}
     >
-      <Outlet context={me} />
+      <RouteTransition context={me} />
     </AppShell>
   );
 }

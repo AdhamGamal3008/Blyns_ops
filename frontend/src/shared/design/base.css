@@ -1,0 +1,59 @@
+/* The base layer: the handful of element defaults the app relies on, expressed
+   in tokens. Replaces the element rules that used to live in the pre-refactor
+   styles.css — which also redefined --surface/--border/--text/--danger with its
+   own palette and, because it loaded last, silently overrode the token layer. */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* honoured by in-page anchors; the reduced-motion block below resets it */
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+}
+
+a {
+  color: var(--oxblood);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+a:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* Form controls inherit the UI face; the kit's Input/Select style the rest. */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+img,
+svg {
+  max-width: 100%;
+}

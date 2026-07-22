@@ -1,5 +1,6 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { contentTransition, overlayTransition, useReducedMotion } from "../motion";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { cn } from "../ui/_internal/cn";
@@ -85,7 +86,7 @@ export function CommandPalette({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: reduce ? 0 : 0.16 }}
+                transition={overlayTransition(reduce)}
               />
             </RadixDialog.Overlay>
             <div className={styles.positioner}>
@@ -102,7 +103,7 @@ export function CommandPalette({
                   initial={reduce ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
                   animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
-                  transition={{ duration: reduce ? 0 : 0.18, ease: [0.2, 0, 0, 1] }}
+                  transition={contentTransition(reduce)}
                 >
                   <RadixDialog.Title className={styles.srOnly}>Command palette</RadixDialog.Title>
                   <div className={styles.searchRow}>

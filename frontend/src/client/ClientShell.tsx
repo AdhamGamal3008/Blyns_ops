@@ -1,6 +1,6 @@
 // Tenant shell: sidebar filtered by role map + enabled modules — a module at
 // NONE never appears in navigation (docs/AUTH_RBAC.md acceptance). Chrome is the
-// design-system AppShell; screen content still flows through <Outlet>.
+// design-system AppShell; screen content flows through RouteTransition.
 
 import {
   Contact,
@@ -12,9 +12,9 @@ import {
   Settings,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { clientLogout, clientMe } from "../shared/auth";
-import { AppShell, type CommandItem, type ShellNavItem } from "../shared/shell";
+import { AppShell, type CommandItem, RouteTransition, type ShellNavItem } from "../shared/shell";
 import type { ClientMe } from "../shared/types";
 import { Spinner } from "../shared/ui/Spinner/Spinner";
 
@@ -103,7 +103,7 @@ export function ClientShell() {
       commands={commands}
       mobileTabs={nav.slice(0, 5)}
     >
-      <Outlet context={me} />
+      <RouteTransition context={me} />
     </AppShell>
   );
 }

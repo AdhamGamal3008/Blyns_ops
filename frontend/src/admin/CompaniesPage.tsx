@@ -365,7 +365,9 @@ function OnboardWizard(props: { onClose: () => void }) {
 
       {step === 2 && (
         <Field label="Enabled modules" hint="A disabled module never appears in that tenant's navigation.">
-          <Grid min={150} gap={2}>
+          {/* the dialog already animates in; a second entrance on the
+              checkboxes inside it would be motion on top of motion */}
+          <Grid min={150} gap={2} stagger={false}>
             {ALL_MODULES.map((m) => (
               <Checkbox
                 key={m}

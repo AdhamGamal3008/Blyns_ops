@@ -9,6 +9,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+// Recharts draws its series on a JS timer, so the CSS reduced-motion kill
+// switch in tokens.css cannot reach it and its 1500ms default sits well outside
+// the --dur-page budget. Both are set explicitly here instead.
+import { DUR, useReducedMotion } from "../../motion";
 import styles from "./Chart.module.css";
 
 // Oxblood leads; champagne gold is the highlight; info/success round out the set.
@@ -61,6 +65,7 @@ function ChartTooltip({ active, label, payload, formatValue }: TooltipInnerProps
 }
 
 export function TrendChart({ data, xKey, series, height = 240, formatValue }: ChartProps) {
+  const reduced = useReducedMotion();
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -88,6 +93,9 @@ export function TrendChart({ data, xKey, series, height = 240, formatValue }: Ch
             stroke={s.color ?? SERIES_COLORS[i % SERIES_COLORS.length]}
             strokeWidth={2}
             fill={`url(#chart-grad-${s.key})`}
+            isAnimationActive={!reduced}
+            animationDuration={DUR.slow}
+            animationEasing="ease-out"
           />
         ))}
       </AreaChart>
@@ -96,6 +104,7 @@ export function TrendChart({ data, xKey, series, height = 240, formatValue }: Ch
 }
 
 export function BarChart({ data, xKey, series, height = 240, formatValue }: ChartProps) {
+  const reduced = useReducedMotion();
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ReBarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -114,6 +123,9 @@ export function BarChart({ data, xKey, series, height = 240, formatValue }: Char
             fill={s.color ?? SERIES_COLORS[i % SERIES_COLORS.length]}
             radius={[4, 4, 0, 0]}
             maxBarSize={48}
+            isAnimationActive={!reduced}
+            animationDuration={DUR.slow}
+            animationEasing="ease-out"
           />
         ))}
       </ReBarChart>

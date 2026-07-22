@@ -38,16 +38,27 @@ button.hit:focus-visible {
   transition:
     background-color var(--dur-base) var(--ease-out),
     border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-slow) var(--ease-out),
     color var(--dur-base) var(--ease-out);
 }
 .connector {
+  position: relative;
   background: var(--border);
   border-radius: var(--r-pill);
-  transition: background-color var(--dur-slow) var(--ease-out);
+  overflow: hidden;
 }
-/* the completed spine reads as quiet ink, keeping gold + oxblood rare */
-.connectorReached {
+/* The completed spine reads as quiet ink, keeping gold + oxblood rare. It is
+   painted by an overlay rather than a background swap so that when a stage is
+   approved, the ink *fills* toward the next gate instead of snapping. The
+   growth is a transition on a state change, so it fires only on an actual
+   advance — never on first paint, where the spine is already where it belongs. */
+.connector::after {
+  content: "";
+  position: absolute;
+  inset: 0;
   background: var(--n-700);
+  border-radius: inherit;
+  transition: transform var(--dur-slow) var(--ease-out);
 }
 
 .name {
@@ -82,12 +93,14 @@ button.hit:focus-visible {
   color: var(--text);
 }
 
-/* champagne marks the live gate */
+/* Champagne marks the live gate. Static: the ring blooms in only when a stage
+   becomes the gate (the .dot transition above carries it) and then holds, so
+   nothing on the pipeline loops for attention. */
 .gate .dot {
   border-color: var(--gold-500);
   background: var(--gold-50);
   color: var(--gold-700);
-  animation: gatePulse 2.6s var(--ease-inout) infinite;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold-500) 20%, transparent);
 }
 .gate .name {
   color: var(--text);
@@ -140,16 +153,6 @@ button.hit:focus-visible {
   outline-offset: 3px;
 }
 
-@keyframes gatePulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold-500) 22%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold-500) 10%, transparent);
-  }
-}
-
 /* --- horizontal rail --- */
 .horizontal {
   display: flex;
@@ -175,6 +178,13 @@ button.hit:focus-visible {
 }
 .horizontal .stage:last-child .connector {
   display: none;
+}
+.horizontal .connector::after {
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+.horizontal .connectorReached::after {
+  transform: scaleX(1);
 }
 .horizontal .body {
   display: flex;
@@ -207,6 +217,13 @@ button.hit:focus-visible {
 }
 .vertical .stage:last-child .connector {
   display: none;
+}
+.vertical .connector::after {
+  transform-origin: center top;
+  transform: scaleY(0);
+}
+.vertical .connectorReached::after {
+  transform: scaleY(1);
 }
 .vertical .body {
   display: flex;
@@ -242,6 +259,13 @@ button.hit:focus-visible {
   .auto .stage:last-child .connector {
     display: none;
   }
+  .auto .connector::after {
+    transform-origin: left center;
+    transform: scaleX(0);
+  }
+  .auto .connectorReached::after {
+    transform: scaleX(1);
+  }
   .auto .body {
     display: flex;
     flex-direction: column;
@@ -274,6 +298,13 @@ button.hit:focus-visible {
   }
   .auto .stage:last-child .connector {
     display: none;
+  }
+  .auto .connector::after {
+    transform-origin: center top;
+    transform: scaleY(0);
+  }
+  .auto .connectorReached::after {
+    transform: scaleY(1);
   }
   .auto .body {
     display: flex;

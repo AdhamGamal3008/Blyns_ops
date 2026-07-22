@@ -2,6 +2,7 @@
 // tokens + a class instead of a bespoke style object per screen.
 
 import type { CSSProperties, ReactNode } from "react";
+import { staggerStyles, useFirstPaint } from "../../motion";
 import { cn } from "../_internal/cn";
 import styles from "./Layout.module.css";
 
@@ -31,15 +32,20 @@ export interface GridProps {
   /** Minimum column width before the grid drops a column. */
   min?: number;
   gap?: SpaceToken;
+  /** First-paint entrance for the tiles. Off for grids of bare form fields. */
+  stagger?: boolean;
   children: ReactNode;
   className?: string;
 }
 
 /** Auto-fitting card grid — KPI rows, tile groups, form card sets. */
-export function Grid({ min = 220, gap = 4, children, className }: GridProps) {
+export function Grid({ min = 220, gap = 4, stagger = true, children, className }: GridProps) {
+  // tiles land in sequence on first paint, then the grid is inert
+  const firstPaint = useFirstPaint();
+  const animate = stagger && firstPaint;
   return (
     <div
-      className={cn(styles.grid, className)}
+      className={cn(styles.grid, animate && staggerStyles.staggerChildren, className)}
       style={{ "--grid-min": `${min}px`, "--grid-gap": space(gap) } as CSSProperties}
     >
       {children}
