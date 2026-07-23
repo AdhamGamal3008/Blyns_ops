@@ -22,6 +22,7 @@ from typing import Protocol
 
 import jwt
 from pymongo import ReturnDocument
+from pymongo.errors import OperationFailure
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -75,14 +76,55 @@ class MongoFixedWindowStore:
         return int(doc["count"])
 
 
+_DUPLICATE_KEY = 11000  # MongoDB E11000
+
+
+async def _merge_duplicate_docs(coll, key_fields, sum_fields) -> None:
+    """Collapse rows that violate a soon-to-be-created unique index.
+
+    Upserts that race BEFORE the unique index exists can each insert a row for
+    the same key tuple (the classic Mongo upsert race). Once duplicates exist
+    the unique index can never build. Merge every duplicate group into a single
+    document — summing the counters so no accounting is lost — leaving exactly
+    one doc per key tuple. Idempotent: safe to run concurrently from every
+    worker (a group already collapsed by another worker simply won't match).
+    """
+    group: dict = {
+        "_id": {f: f"${f}" for f in key_fields},
+        "ids": {"$push": "$_id"},
+        "n": {"$sum": 1},
+    }
+    for f in sum_fields:
+        group[f] = {"$sum": f"${f}"}
+    pipeline = [{"$group": group}, {"$match": {"n": {"$gt": 1}}}]
+    async for grp in coll.aggregate(pipeline):
+        ids = grp["ids"]
+        await coll.update_one(
+            {"_id": ids[0]}, {"$set": {f: grp[f] for f in sum_fields}}
+        )
+        await coll.delete_many({"_id": {"$in": ids[1:]}})
+
+
+async def _create_unique_index(coll, keys, *, key_fields, sum_fields) -> None:
+    """Create a unique index, self-healing a collection already poisoned by
+    pre-index duplicate rows: merge the duplicates, then build the index."""
+    try:
+        await coll.create_index(keys, unique=True)
+    except OperationFailure as exc:
+        if exc.code != _DUPLICATE_KEY:
+            raise
+        await _merge_duplicate_docs(coll, key_fields, sum_fields)
+        await coll.create_index(keys, unique=True)
+
+
 async def ensure_enforcement_indexes(control_db) -> None:
-    await control_db[_ENFORCEMENT_COLL].create_index(
-        [("key", 1), ("window", 1)], unique=True
+    coll = control_db[_ENFORCEMENT_COLL]
+    await _create_unique_index(
+        coll, [("key", 1), ("window", 1)],
+        key_fields=("key", "window"), sum_fields=("count",),
     )
     # windows are created once then only $inc'd, so TTL from creation is safe
-    await control_db[_ENFORCEMENT_COLL].create_index(
-        "created_at", expireAfterSeconds=BUCKET_TTL_SEC
-    )
+    await coll.create_index("created_at", expireAfterSeconds=BUCKET_TTL_SEC)
 
 
 def _tenant_from_auth_header(request: Request) -> str | None:
@@ -123,12 +165,13 @@ async def _record(request: Request, rate_limited: bool) -> None:
 
 
 async def ensure_bucket_indexes(control_db) -> None:
-    await control_db.rate_limit_buckets.create_index(
-        [("scope", 1), ("key", 1), ("minute", 1)], unique=True
+    coll = control_db.rate_limit_buckets
+    await _create_unique_index(
+        coll, [("scope", 1), ("key", 1), ("minute", 1)],
+        key_fields=("scope", "key", "minute"),
+        sum_fields=("requests", "rate_limited"),
     )
-    await control_db.rate_limit_buckets.create_index(
-        "minute", expireAfterSeconds=BUCKET_TTL_SEC
-    )
+    await coll.create_index("minute", expireAfterSeconds=BUCKET_TTL_SEC)
 
 
 class RateLimitMiddleware:
