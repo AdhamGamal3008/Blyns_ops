@@ -5,15 +5,25 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 ProjectStatus = Literal["active", "on_hold", "completed", "archived", "cancelled"]
 DeliverableKind = Literal["shop_drawing", "bom", "scan", "photo", "report", "certificate"]
+# How a document's file is held: an uploaded file in GridFS, or an external URL.
+DeliverableSource = Literal["upload", "url"]
 ReportType = Literal[
     "missing_information", "issue", "change", "ncr", "capa", "rfi", "qa", "na"
 ]
 ReportStatus = Literal["open", "in_progress", "resolved", "closed"]
 CostType = Literal["labor", "material", "subcontractor", "machine"]
+
+
+def _validate_source(source_type: str, file_id: str | None, file_ref: str | None) -> None:
+    if source_type == "upload":
+        if not file_id:
+            raise ValueError("file_id is required when source_type is 'upload'")
+    elif not (file_ref and file_ref.strip()):
+        raise ValueError("file_ref (a URL) is required when source_type is 'url'")
 
 
 class Milestone(BaseModel):
@@ -118,17 +128,31 @@ class BomLine(BaseModel):
 class DeliverableCreate(BaseModel):
     kind: DeliverableKind
     title: str = Field(min_length=1)
-    stage_key: str | None = None
-    file_ref: str = Field(min_length=1)
+    stage_key: str | None = None  # None → a general project document, no stage
+    source_type: DeliverableSource = "url"
+    file_id: str | None = None  # GridFS id when source_type == "upload"
+    file_ref: str | None = None  # external URL when source_type == "url"
     note: str | None = None
     classification: Literal["auto", "manual"] = "manual"
     ocr_text: str | None = None
     lines: list[BomLine] = Field(default_factory=list)  # meaningful for kind="bom"
 
+    @model_validator(mode="after")
+    def _require_source(self) -> DeliverableCreate:
+        _validate_source(self.source_type, self.file_id, self.file_ref)
+        return self
+
 
 class RevisionCreate(BaseModel):
-    file_ref: str = Field(min_length=1)
+    source_type: DeliverableSource = "url"
+    file_id: str | None = None
+    file_ref: str | None = None
     note: str | None = None
+
+    @model_validator(mode="after")
+    def _require_source(self) -> RevisionCreate:
+        _validate_source(self.source_type, self.file_id, self.file_ref)
+        return self
 
 
 class ReportCreate(BaseModel):

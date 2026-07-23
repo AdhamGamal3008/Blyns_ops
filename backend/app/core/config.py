@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     rate_limit_window_sec: int = 60
     rate_limit_max_requests: int = 120
 
+    # Project document uploads (docs/modules/PROJECT_MANAGEMENT.md §3.7): files
+    # are stored self-hosted in the tenant DB via GridFS; this caps a single upload.
+    max_upload_mb: int = 25
+
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 

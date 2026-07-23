@@ -57,3 +57,36 @@
 .grow {
   flex: 1 1 160px;
 }
+
+.refLink {
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--brand-600);
+  text-decoration: none;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+}
+.refLink:hover {
+  text-decoration: underline;
+}
+
+.fileInput {
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text);
+}
+.fileInput::file-selector-button {
+  margin-right: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.fileInput::file-selector-button:hover {
+  border-color: var(--n-400);
+}

@@ -72,6 +72,7 @@ export interface StageInstance {
   id: string;
   status: StageStatus;
   documents_supplied?: string[];
+  document_refs?: DocumentRef[];
   waiting_on?: string[];
   blocked_by?: string[];
   task_results?: { task: string; status: string }[];
@@ -130,15 +131,44 @@ export interface GateRule {
 export type DeliverableKind =
   | "shop_drawing" | "bom" | "scan" | "photo" | "report" | "certificate";
 
+export type DeliverableSource = "upload" | "url";
+
+export interface DeliverableVersion {
+  v: number;
+  source_type: DeliverableSource;
+  file_ref: string | null;          // the URL (source=url) or the filename (source=upload)
+  file_id?: string | null;          // GridFS id when source=upload
+  filename?: string | null;
+  content_type?: string | null;
+  size?: number | null;
+  author_id: string;
+  author_name?: string | null;      // resolved server-side
+  at: string;
+  note: string;
+}
+
 export interface Deliverable {
   id: string;
-  stage_key: string;
+  stage_key: string | null;         // null = a general project document
   kind: DeliverableKind;
   title: string;
   current_version: number;
-  versions: { v: number; file_ref: string; author_id: string; at: string; note: string }[];
+  source_type: DeliverableSource;   // of the latest version
+  uploaded_by?: string | null;      // name of the latest version's author
+  uploaded_at?: string | null;
+  versions: DeliverableVersion[];
   lines?: { product_id: string; qty: number }[];
   immutable_audit: { action: string; by: string; at: string }[];
+}
+
+/** A stage file-submission that referenced a project document as its evidence. */
+export interface DocumentRef {
+  gate_key: string;
+  deliverable_id: string;
+  title: string;
+  version: number;
+  by: string;
+  at: string;
 }
 
 export type ReportType =

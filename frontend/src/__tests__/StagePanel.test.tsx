@@ -137,4 +137,40 @@ describe("StagePanel", () => {
     await waitFor(() =>
       expect(postCall(mock, "/stages/14/documents/acclimation_complete")).toBeTruthy());
   });
+
+  it("surfaces the document a satisfied gate referenced", async () => {
+    const detail = {
+      data: {
+        definition: {
+          order: 1, key: "lead_conversion", name: "Lead Conversion",
+          entry_gates: [{ key: "contract_signed", type: "document", blocking: true }],
+          automated_tasks: [], quality_gates: [],
+          approver_role: "project_director", co_approver_roles: [],
+        },
+        instance: {
+          id: "si1", status: "in_progress", documents_supplied: ["contract_signed"],
+          document_refs: [{
+            gate_key: "contract_signed", deliverable_id: "d1",
+            title: "Contract PDF", version: 2, by: "u1", at: "2026-07-23T10:00:00Z",
+          }],
+          waiting_on: [], blocked_by: [], task_results: [],
+          recovery_loops: 0, blocking_reason: null,
+        },
+        evaluation: { waiting_on: [], blocked_by: [], gate_failures: [], severe: false, ready: true },
+        approval: null, gate_results: [],
+      },
+    };
+    const mock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/config/gates")) return okJson({ data: [] });
+      if (u.includes("/deliverables")) return okJson({ data: [] });
+      if (u.includes("/stages/1")) return okJson(detail);
+      return okJson({ data: {} });
+    });
+    vi.stubGlobal("fetch", mock);
+
+    render(<StagePanel projectId="p1" order={1} canWrite canApprove onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Contract signed")).toBeInTheDocument());
+    expect(screen.getByText("↳ Contract PDF (v2)")).toBeInTheDocument();
+  });
 });

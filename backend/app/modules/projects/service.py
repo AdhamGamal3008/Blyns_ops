@@ -13,8 +13,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
+from bson.errors import InvalidId
 
+from app.core import storage
 from app.core.audit import write_activity
+from app.core.config import settings
 from app.core.errors import (
     PERMISSION_DENIED,
     TENANT_NOT_FOUND,
@@ -320,7 +323,9 @@ async def supply_document(
     principal: ClientPrincipal, project_id: str, order: int,
     gate_key: str, payload: DocumentSupply,
 ) -> dict:
-    """§4: waiting → in_progress once the missing document is supplied."""
+    """§4: waiting → in_progress once the missing document is supplied. The
+    submission may optionally reference a project document (deliverable) as its
+    evidence — recorded on the stage with who attached it and when."""
     project = await _project(principal, project_id)
     definition = await _definition(principal, order)
     db = principal.tenant_db
@@ -334,11 +339,32 @@ async def supply_document(
             VALIDATION_ERROR,
             f"Stage {order} has no entry gate '{gate_key}'.", 422,
         )
+
+    fields: dict[str, Any] = {}
+    if payload.deliverable_id:
+        deliverable = await db[repo.DELIVERABLES].find_one({
+            "_id": _oid(payload.deliverable_id, "Deliverable"),
+            "project_id": project["_id"], "is_deleted": {"$ne": True},
+        })
+        if deliverable is None:
+            raise DomainError(TENANT_NOT_FOUND, "Referenced document not found.", 404)
+        # one reference per gate: drop any prior one, then record this submission.
+        refs = [r for r in (instance.get("document_refs") or [])
+                if r.get("gate_key") != gate_key]
+        refs.append({
+            "gate_key": gate_key,
+            "deliverable_id": str(deliverable["_id"]),
+            "title": deliverable["title"],
+            "version": deliverable.get("current_version", 1),
+            "by": str(principal.user["_id"]),
+            "at": _now(),
+        })
+        fields["document_refs"] = refs
+
     supplied = set(instance.get("documents_supplied") or [])
     supplied.add(gate_key)
-    await repo.set_stage_fields(db, instance["_id"], {
-        "documents_supplied": sorted(supplied),
-    })
+    fields["documents_supplied"] = sorted(supplied)
+    await repo.set_stage_fields(db, instance["_id"], fields)
     instance = await repo.stage_instance(db, project["_id"], order)
     assert instance is not None
     result = await engines.run_decision_engine(db, project, definition, instance)
@@ -839,7 +865,8 @@ async def _build_handover(principal: ClientPrincipal, project: dict) -> dict:
             "kind": kind,
             "title": title,
             "current_version": 1,
-            "versions": [{"v": 1, "file_ref": f"generated:{project['code']}:{title}",
+            "versions": [{"v": 1, "source_type": "url",
+                          "file_ref": f"generated:{project['code']}:{title}",
                           "author_id": actor, "at": _now(), "note": "handover pack"}],
             "classification": "auto",
             "ocr_text": None,
@@ -876,6 +903,131 @@ async def _build_handover(principal: ClientPrincipal, project: dict) -> dict:
 
 # --- deliverables (§3.7) -----------------------------------------------------
 
+async def _user_names(db, ids: set[str]) -> dict[str, str | None]:
+    """Resolve tenant-user ids → display names for document authorship (§3.7)."""
+    oids: list[ObjectId] = []
+    for i in ids:
+        if not i:
+            continue
+        try:
+            oids.append(ObjectId(i))
+        except (InvalidId, TypeError):
+            pass
+    if not oids:
+        return {}
+    names: dict[str, str | None] = {}
+    async for u in db.users.find({"_id": {"$in": oids}}, {"name": 1}):
+        names[str(u["_id"])] = u.get("name")
+    return names
+
+
+async def _decorate_deliverables(db, docs: list[dict]) -> list[dict]:
+    """Add who/when/how a reader wants: an uploader name on each version, plus
+    the latest version's uploader, timestamp, and source at the top level.
+    Legacy rows without `source_type` read as a URL reference."""
+    ids: set[str] = set()
+    for d in docs:
+        for v in d.get("versions") or []:
+            if v.get("author_id"):
+                ids.add(v["author_id"])
+        if d.get("created_by"):
+            ids.add(d["created_by"])
+    names = await _user_names(db, ids)
+    for d in docs:
+        versions = d.get("versions") or []
+        for v in versions:
+            v.setdefault("source_type", "url")
+            v["author_name"] = names.get(v.get("author_id"))
+        latest = versions[-1] if versions else {}
+        d["source_type"] = latest.get("source_type", "url")
+        d["uploaded_by"] = names.get(latest.get("author_id"))
+        d["uploaded_at"] = latest.get("at")
+    return docs
+
+
+async def _resolve_doc_stage(
+    principal: ClientPrincipal, stage_key: str | None
+) -> str | None:
+    """A document may belong to a stage or be a general project doc (None). A
+    provided stage must be a real stage key."""
+    if not stage_key:
+        return None
+    if await repo.stage_def_by_key(principal.tenant_db, stage_key) is None:
+        raise DomainError(VALIDATION_ERROR, f"Unknown stage '{stage_key}'.", 422)
+    return stage_key
+
+
+async def _make_version(db, *, v: int, payload, author: str, note: str) -> dict:
+    """Build one document version from an upload (GridFS) or a URL reference."""
+    version: dict[str, Any] = {
+        "v": v, "source_type": payload.source_type, "author_id": author,
+        "at": _now(), "note": note,
+    }
+    if payload.source_type == "upload":
+        meta = await storage.file_metadata(db, payload.file_id)
+        if meta is None:
+            raise DomainError(
+                TENANT_NOT_FOUND, "Uploaded file not found — upload it first.", 404
+            )
+        version.update({
+            "file_id": meta.file_id, "filename": meta.filename,
+            "content_type": meta.content_type, "size": meta.size,
+            "file_ref": meta.filename,
+        })
+    else:
+        version.update({
+            "file_id": None, "filename": None, "content_type": None,
+            "size": None, "file_ref": payload.file_ref,
+        })
+    return version
+
+
+async def store_deliverable_file(
+    principal: ClientPrincipal, project_id: str, upload
+) -> dict:
+    """Persist an uploaded file in the tenant GridFS and return its handle; the
+    caller then creates/revises a document referencing the returned file_id."""
+    await _project(principal, project_id)
+    stored = await storage.save_upload(
+        principal.tenant_db, upload,
+        uploaded_by=str(principal.user["_id"]),
+        max_bytes=settings.max_upload_mb * 1024 * 1024,
+    )
+    return {
+        "file_id": stored.file_id, "filename": stored.filename,
+        "content_type": stored.content_type, "size": stored.size,
+    }
+
+
+async def open_deliverable_file(
+    principal: ClientPrincipal, project_id: str, deliverable_id: str,
+    version: int | None,
+):
+    """Open the GridFS stream for a document version's uploaded file (download).
+    URL-reference versions have no file to stream."""
+    project = await _project(principal, project_id)
+    db = principal.tenant_db
+    deliverable = await db[repo.DELIVERABLES].find_one({
+        "_id": _oid(deliverable_id, "Deliverable"),
+        "project_id": project["_id"], "is_deleted": {"$ne": True},
+    })
+    if deliverable is None:
+        raise DomainError(TENANT_NOT_FOUND, "Document not found.", 404)
+    versions = deliverable.get("versions") or []
+    if version is None:
+        ver = versions[-1] if versions else None
+    else:
+        ver = next((v for v in versions if int(v.get("v", 0)) == version), None)
+    if ver is None:
+        raise DomainError(TENANT_NOT_FOUND, f"Version {version} not found.", 404)
+    if ver.get("source_type") != "upload" or not ver.get("file_id"):
+        raise DomainError(
+            VALIDATION_ERROR,
+            "This version is a URL reference, not an uploaded file.", 422,
+        )
+    return await storage.open_download(db, ver["file_id"])
+
+
 async def list_deliverables(
     principal: ClientPrincipal, project_id: str, kind: str | None,
     skip: int, limit: int,
@@ -884,24 +1036,29 @@ async def list_deliverables(
     query: dict[str, Any] = {"project_id": project["_id"]}
     if kind:
         query["kind"] = kind
-    return await repo.list_docs(
+    docs, total = await repo.list_docs(
         principal.tenant_db, repo.DELIVERABLES, query, skip, limit
     )
+    return await _decorate_deliverables(principal.tenant_db, docs), total
 
 
 async def create_deliverable(
     principal: ClientPrincipal, project_id: str, payload: DeliverableCreate
 ) -> dict:
     project = await _project(principal, project_id)
+    db = principal.tenant_db
     actor = str(principal.user["_id"])
-    doc = await repo.insert(principal.tenant_db, repo.DELIVERABLES, {
+    stage_key = await _resolve_doc_stage(principal, payload.stage_key)
+    version = await _make_version(
+        db, v=1, payload=payload, author=actor, note=payload.note or "initial"
+    )
+    doc = await repo.insert(db, repo.DELIVERABLES, {
         "project_id": project["_id"],
-        "stage_key": payload.stage_key or project["current_stage_key"],
+        "stage_key": stage_key,
         "kind": payload.kind,
         "title": payload.title,
         "current_version": 1,
-        "versions": [{"v": 1, "file_ref": payload.file_ref, "author_id": actor,
-                      "at": _now(), "note": payload.note or "initial"}],
+        "versions": [version],
         "classification": payload.classification,
         "ocr_text": payload.ocr_text,
         "lines": [line.model_dump() for line in payload.lines],
@@ -911,7 +1068,7 @@ async def create_deliverable(
     await _log(principal, "deliverable.created",
                {"type": "deliverable", "id": str(doc["_id"]), "label": doc["title"]},
                {"project": project["code"], "kind": payload.kind})
-    return doc
+    return (await _decorate_deliverables(db, [doc]))[0]
 
 
 async def add_revision(
@@ -934,13 +1091,15 @@ async def add_revision(
 
     actor = str(principal.user["_id"])
     next_v = int(deliverable["current_version"]) + 1
+    version = await _make_version(
+        db, v=next_v, payload=payload, author=actor,
+        note=payload.note or f"revision {next_v}",
+    )
     await db[repo.DELIVERABLES].update_one(
         {"_id": oid},
         {
             "$push": {
-                "versions": {"v": next_v, "file_ref": payload.file_ref,
-                             "author_id": actor, "at": _now(),
-                             "note": payload.note or f"revision {next_v}"},
+                "versions": version,
                 "immutable_audit": {"action": "revised", "by": actor, "at": _now()},
             },
             "$set": {"current_version": next_v, "updated_at": _now()},
@@ -952,7 +1111,7 @@ async def add_revision(
                {"type": "deliverable", "id": deliverable_id,
                 "label": updated["title"]},
                {"project": project["code"], "version": next_v})
-    return updated
+    return (await _decorate_deliverables(db, [updated]))[0]
 
 
 # --- reports (§3.8) ----------------------------------------------------------

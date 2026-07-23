@@ -153,7 +153,7 @@ export function ProjectDetail() {
       <Tabs defaultValue="stage">
         <TabsList>
           <TabsTrigger value="stage">Stage {activeOrder}</TabsTrigger>
-          <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
+          <TabsTrigger value="deliverables">Documents</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="costs">Job costs</TabsTrigger>
         </TabsList>
@@ -169,7 +169,12 @@ export function ProjectDetail() {
           />
         </TabsContent>
         <TabsContent value="deliverables">
-          <DeliverablesSection projectId={id} canWrite={canWrite} onChanged={reload} />
+          <DeliverablesSection
+            projectId={id}
+            canWrite={canWrite}
+            currentStageKey={project.current_stage_key}
+            onChanged={reload}
+          />
         </TabsContent>
         <TabsContent value="reports">
           <ReportsSection projectId={id} canWrite={canWrite} onChanged={reload} />

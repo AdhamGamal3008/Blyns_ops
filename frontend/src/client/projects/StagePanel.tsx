@@ -24,9 +24,11 @@ import {
 } from "../../shared/ui";
 import {
   STAGE_TONE, humanize,
-  type EntryGate, type GateRule, type StageDetail, type ValidationCheck,
+  type Deliverable, type EntryGate, type GateRule, type StageDetail, type ValidationCheck,
 } from "./types";
 import styles from "./StagePanel.module.css";
+
+const NO_REF = "__noref"; // "attach no document" option in the reference picker
 
 export function StagePanel(props: {
   projectId: string;
@@ -44,6 +46,8 @@ export function StagePanel(props: {
   const [validation, setValidation] = useState<ValidationCheck[] | null>(null);
   const [logging, setLogging] = useState<GateRule | null>(null);
   const [rejecting, setRejecting] = useState(false);
+  const [docs, setDocs] = useState<Deliverable[]>([]);
+  const [refFor, setRefFor] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     setError(null);
@@ -62,6 +66,12 @@ export function StagePanel(props: {
       .then((r) => setGateRules(Object.fromEntries(r.data.map((g) => [g.key, g]))))
       .catch(() => setGateRules({}));
   }, []);
+  // project documents, for optionally referencing one as a gate's evidence
+  useEffect(() => {
+    api<Deliverable[]>(`/projects/${projectId}/deliverables?page_size=100`)
+      .then((r) => setDocs(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setDocs([]));
+  }, [projectId]);
 
   const refresh = () => { load(); props.onChanged(); };
 
@@ -144,6 +154,22 @@ export function StagePanel(props: {
       (w) => !w.startsWith("doc:") && !w.startsWith("phase:")),
     ...evaluation.blocked_by,
   ];
+  // Documents worth attaching to this stage's gates: this stage's own documents
+  // plus any general (unassigned) ones. Referencing one is optional.
+  const referenceable = docs
+    .filter((d) => !d.stage_key || d.stage_key === definition.key)
+    .map((d) => ({ value: d.id, label: `${d.title} · ${humanize(d.kind)}` }));
+  const refByGate = new Map(
+    (instance.document_refs ?? []).map((r) => [r.gate_key, r]),
+  );
+  const supplyDoc = (gate: EntryGate) => {
+    const chosen = refFor[gate.key];
+    const body = chosen && chosen !== NO_REF ? { deliverable_id: chosen } : {};
+    return act(() => api(
+      `/projects/${projectId}/stages/${order}/documents/${gate.key}`,
+      { method: "POST", body },
+    ));
+  };
 
   return (
     <Card>
@@ -172,27 +198,41 @@ export function StagePanel(props: {
           <Banner tone="warning" title="Blocked">{instance.blocking_reason}</Banner>
         )}
 
-        {/* entry requirements: §6 document check + foundational-phase gates */}
+        {/* entry requirements: §6 document check + foundational-phase gates.
+            A document gate may optionally reference a project document. */}
         {supplyGates.length > 0 && (
           <Section title="Entry requirements">
-            {supplyGates.map((g) => (
-              <ItemRow
-                key={g.key}
-                label={humanize(g.key)}
-                hint={g.type === "dependency" ? `phase · ${humanize(g.depends_on)}` : undefined}
-              >
-                {supplied.has(g.key)
-                  ? <Badge tone="success">supplied</Badge>
-                  : canWrite
-                    ? (
+            {supplyGates.map((g) => {
+              const ref = refByGate.get(g.key);
+              const hint = g.type === "dependency"
+                ? `phase · ${humanize(g.depends_on)}`
+                : ref ? `↳ ${ref.title} (v${ref.version})` : undefined;
+              return (
+                <ItemRow key={g.key} label={humanize(g.key)} hint={hint}>
+                  {supplied.has(g.key) ? (
+                    <Badge tone="success">supplied</Badge>
+                  ) : canWrite ? (
+                    <Row gap={1}>
+                      {g.type === "document" && referenceable.length > 0 && (
+                        <Select
+                          selectSize="compact"
+                          value={refFor[g.key] ?? NO_REF}
+                          onValueChange={(v) => setRefFor({ ...refFor, [g.key]: v })}
+                          options={[
+                            { value: NO_REF, label: "— attach a document —" },
+                            ...referenceable,
+                          ]}
+                        />
+                      )}
                       <Button variant="ghost" size="compact" disabled={busy}
-                        onClick={() => act(() => api(
-                          `/projects/${projectId}/stages/${order}/documents/${g.key}`,
-                          { method: "POST", body: {} }))}>Mark supplied</Button>
-                    )
-                    : <Badge tone="warning">missing</Badge>}
-              </ItemRow>
-            ))}
+                        onClick={() => supplyDoc(g)}>Mark supplied</Button>
+                    </Row>
+                  ) : (
+                    <Badge tone="warning">missing</Badge>
+                  )}
+                </ItemRow>
+              );
+            })}
           </Section>
         )}
 

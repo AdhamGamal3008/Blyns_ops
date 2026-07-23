@@ -7,8 +7,10 @@ required position depends on which stage is being decided.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import StreamingResponse
 
+from app.core import storage
 from app.core.errors import PERMISSION_DENIED, DomainError
 from app.modules.projects import service
 from app.modules.projects.models import (
@@ -230,6 +232,33 @@ async def list_deliverables(
         principal, project_id, kind, page.skip, page.page_size
     )
     return envelope(to_api(docs), page_meta(page.page, page.page_size, total))
+
+
+@router.post("/{project_id}/deliverables/files", status_code=201)
+async def upload_deliverable_file(
+    project_id: str,
+    file: UploadFile = File(...),
+    principal: ClientPrincipal = Depends(_write),
+):
+    """Store an uploaded file in the tenant GridFS (§3.7); returns a handle to
+    reference when creating a document or revision."""
+    return envelope(await service.store_deliverable_file(principal, project_id, file))
+
+
+@router.get("/{project_id}/deliverables/{did}/download")
+async def download_deliverable(
+    project_id: str, did: str, version: int | None = None,
+    principal: ClientPrincipal = Depends(_read),
+):
+    """Stream an uploaded document version as an attachment (never inline)."""
+    grid_out, filename, content_type = await service.open_deliverable_file(
+        principal, project_id, did, version
+    )
+    return StreamingResponse(
+        storage.read_chunks(grid_out),
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/{project_id}/deliverables", status_code=201)
