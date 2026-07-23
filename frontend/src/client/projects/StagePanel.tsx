@@ -24,7 +24,7 @@ import {
 } from "../../shared/ui";
 import {
   STAGE_TONE, humanize,
-  type GateRule, type StageDetail, type ValidationCheck,
+  type EntryGate, type GateRule, type StageDetail, type ValidationCheck,
 } from "./types";
 import styles from "./StagePanel.module.css";
 
@@ -116,9 +116,34 @@ export function StagePanel(props: {
 
   const { definition, instance, evaluation, approval } = detail;
   const supplied = new Set(instance.documents_supplied ?? []);
-  const docGates = definition.entry_gates.filter((g) => g.type === "document");
   const status = instance.status;
   const checks = validation ?? approval?.auto_validation?.checks;
+
+  // Requirements the user clears by "supplying" the gate key (§6 document
+  // check). Two kinds share the one supply endpoint: `document` entry gates,
+  // and `dependency` gates whose `depends_on` is a foundational PHASE rather
+  // than a prior stage (e.g. Stage 14's acclimation_complete →
+  // core_material_acclimation). The engine surfaces the latter as `phase:<key>`
+  // in waiting_on; a stage→stage dependency instead lands in blocked_by and
+  // clears only when that stage is approved, so it must NOT get a manual button.
+  const waitingPhases = new Set(
+    evaluation.waiting_on
+      .filter((w) => w.startsWith("phase:"))
+      .map((w) => w.slice("phase:".length)),
+  );
+  const isPhaseGate = (g: EntryGate) =>
+    g.type === "dependency" && !!g.depends_on &&
+    (waitingPhases.has(g.depends_on) || supplied.has(g.key));
+  const supplyGates = definition.entry_gates.filter(
+    (g) => g.type === "document" || isPhaseGate(g),
+  );
+  // Blockers the user cannot act on here — unapproved prior stages. The
+  // suppliable doc/phase gates above own their own controls, so drop them.
+  const residualBlockers = [
+    ...evaluation.waiting_on.filter(
+      (w) => !w.startsWith("doc:") && !w.startsWith("phase:")),
+    ...evaluation.blocked_by,
+  ];
 
   return (
     <Card>
@@ -147,11 +172,15 @@ export function StagePanel(props: {
           <Banner tone="warning" title="Blocked">{instance.blocking_reason}</Banner>
         )}
 
-        {/* entry documents (§6 document check) */}
-        {docGates.length > 0 && (
-          <Section title="Entry documents">
-            {docGates.map((g) => (
-              <ItemRow key={g.key} label={humanize(g.key)}>
+        {/* entry requirements: §6 document check + foundational-phase gates */}
+        {supplyGates.length > 0 && (
+          <Section title="Entry requirements">
+            {supplyGates.map((g) => (
+              <ItemRow
+                key={g.key}
+                label={humanize(g.key)}
+                hint={g.type === "dependency" ? `phase · ${humanize(g.depends_on)}` : undefined}
+              >
                 {supplied.has(g.key)
                   ? <Badge tone="success">supplied</Badge>
                   : canWrite
@@ -208,11 +237,11 @@ export function StagePanel(props: {
           </Section>
         )}
 
-        {/* blockers surfaced by the decision engine */}
-        {(evaluation.waiting_on.length > 0 || evaluation.blocked_by.length > 0) && (
+        {/* blockers the user can't clear here — unapproved prior stages */}
+        {residualBlockers.length > 0 && (
           <Section title="Blockers">
             <ul className={styles.blockers}>
-              {[...evaluation.waiting_on, ...evaluation.blocked_by].map((b) => (
+              {residualBlockers.map((b) => (
                 <li key={b}>{b}</li>
               ))}
             </ul>

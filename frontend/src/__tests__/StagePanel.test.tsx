@@ -88,4 +88,53 @@ describe("StagePanel", () => {
     expect(screen.queryByText("Approve")).not.toBeInTheDocument();
     expect(screen.queryByText("Submit for approval")).not.toBeInTheDocument();
   });
+
+  it("offers a supply control for a foundational-phase gate (regression: Stage 14)", async () => {
+    // A `dependency` entry gate whose `depends_on` is a PHASE (not a prior
+    // stage) is cleared by supplying its key as a document; the engine surfaces
+    // it as `phase:<key>` in waiting_on. Before the fix the UI rendered no
+    // control for it, so the stage was stuck in `waiting` forever.
+    const detail = {
+      data: {
+        definition: {
+          order: 14, key: "installation", name: "Installation",
+          entry_gates: [
+            { key: "site_readiness_cleared", type: "dependency", blocking: true, depends_on: "site_readiness" },
+            { key: "acclimation_complete", type: "dependency", blocking: true, depends_on: "core_material_acclimation" },
+          ],
+          automated_tasks: [], quality_gates: [],
+          approver_role: "site_supervisor", co_approver_roles: [],
+        },
+        instance: {
+          id: "si14", status: "waiting", documents_supplied: [],
+          waiting_on: [], blocked_by: [], task_results: [],
+          recovery_loops: 0, blocking_reason: null,
+        },
+        evaluation: {
+          waiting_on: ["phase:core_material_acclimation"], blocked_by: [],
+          gate_failures: [], severe: false, ready: false,
+        },
+        approval: null, gate_results: [],
+      },
+    };
+    const mock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/config/gates")) return okJson({ data: [] });
+      if (u.includes("/stages/14")) return okJson(detail);
+      return okJson({ data: {} });
+    });
+    vi.stubGlobal("fetch", mock);
+
+    render(<StagePanel projectId="p1" order={14} canWrite canApprove onChanged={() => {}} />);
+
+    // the phase gate is offered under Entry requirements with a supply control…
+    await waitFor(() => expect(screen.getByText("Acclimation complete")).toBeInTheDocument());
+    expect(screen.getByText(/phase · Core material acclimation/)).toBeInTheDocument();
+    // …while the stage→stage dependency gets NO manual button (it clears on approval)
+    expect(screen.queryByText("Site readiness cleared")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Mark supplied"));
+    await waitFor(() =>
+      expect(postCall(mock, "/stages/14/documents/acclimation_complete")).toBeTruthy());
+  });
 });
