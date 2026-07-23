@@ -76,7 +76,8 @@ export function RoleMatrix({
                     type="button"
                     className={styles.setAll}
                     onClick={() => setAll(level)}
-                    title={`Set every resource to ${label}`}
+                    // "set all" alone doesn't say which level, so name it fully
+                    aria-label={`Set every resource to ${label}`}
                   >
                     set all
                   </button>

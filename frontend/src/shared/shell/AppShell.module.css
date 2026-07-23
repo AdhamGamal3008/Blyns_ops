@@ -6,6 +6,29 @@
   font-family: var(--font-ui);
 }
 
+/* Off-screen until focused, then it pins to the top-left as a real button. */
+.skipLink {
+  position: fixed;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 100;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface-inverse);
+  color: var(--text-on-inverse);
+  border-radius: var(--r-md);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(calc(-100% - var(--sp-4)));
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.skipLink:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .sidebar {
   display: flex;
   position: sticky;

@@ -9,7 +9,15 @@ import type { CalendarEvent } from "../../shared/types";
 import { Button, Card, CardHeader } from "../../shared/ui";
 import styles from "./CalendarView.module.css";
 
-const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DOW = [
+  { label: "Mon", full: "Monday" },
+  { label: "Tue", full: "Tuesday" },
+  { label: "Wed", full: "Wednesday" },
+  { label: "Thu", full: "Thursday" },
+  { label: "Fri", full: "Friday" },
+  { label: "Sat", full: "Saturday" },
+  { label: "Sun", full: "Sunday" },
+];
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -36,6 +44,11 @@ export function CalendarView() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
 
   const days = useMemo(() => monthGrid(anchor), [anchor]);
+  // 42 days → six rows of seven, so the table has real weeks
+  const weeks = useMemo(
+    () => Array.from({ length: 6 }, (_, w) => days.slice(w * 7, w * 7 + 7)),
+    [days],
+  );
 
   useEffect(() => {
     const from = ymd(days[0]);
@@ -82,36 +95,62 @@ export function CalendarView() {
         }
       />
 
-      <div className={styles.grid}>
-        {DOW.map((d) => (
-          <div key={d} className={styles.dow}>{d}</div>
-        ))}
-        {days.map((d) => {
-          const key = ymd(d);
-          const dayEvents = byDay.get(key) ?? [];
-          const dim = d.getMonth() !== anchor.getMonth();
-          return (
-            <div
-              key={key}
-              className={[
-                styles.cell,
-                dim ? styles.dim : "",
-                key === today ? styles.today : "",
-              ].filter(Boolean).join(" ")}
-            >
-              <span className={styles.dayNum}>{d.getDate()}</span>
-              {dayEvents.slice(0, 3).map((e) => (
-                <span key={e.id} className={styles.chip} style={accent(e.color_key)} title={e.title}>
-                  {e.title}
-                </span>
-              ))}
-              {dayEvents.length > 3 && (
-                <span className={styles.more}>+{dayEvents.length - 3} more</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* A real table: the month is tabular, display-only data, so a screen
+          reader navigates it natively — no ARIA grid contract to honour. */}
+      <table className={styles.grid}>
+        <caption className={styles.srOnly}>{monthLabel}</caption>
+        <thead>
+          <tr>
+            {DOW.map((d) => (
+              <th key={d.label} scope="col" className={styles.dow}>
+                <abbr title={d.full}>{d.label}</abbr>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((week) => (
+            <tr key={ymd(week[0])}>
+              {week.map((d) => {
+                const key = ymd(d);
+                const dayEvents = byDay.get(key) ?? [];
+                const dim = d.getMonth() !== anchor.getMonth();
+                const isToday = key === today;
+                return (
+                  <td
+                    key={key}
+                    className={[
+                      styles.cell,
+                      dim ? styles.dim : "",
+                      isToday ? styles.today : "",
+                    ].filter(Boolean).join(" ")}
+                    aria-current={isToday ? "date" : undefined}
+                  >
+                    {/* the visible number lacks month/year context on its own;
+                        the full date is what a screen reader should hear */}
+                    <span className={styles.srOnly}>
+                      {d.toLocaleDateString(undefined, {
+                        weekday: "long", month: "long", day: "numeric",
+                      })}
+                      {dayEvents.length > 0 &&
+                        `, ${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}`}
+                    </span>
+                    <span className={styles.dayNum} aria-hidden="true">{d.getDate()}</span>
+                    {dayEvents.slice(0, 3).map((e) => (
+                      <span key={e.id} className={styles.chip} style={accent(e.color_key)} title={e.title}>
+                        {e.title}
+                      </span>
+                    ))}
+                    {dayEvents.length > 3 && (
+                      <span className={styles.more}>+{dayEvents.length - 3} more</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {modulesInView.length > 0 && (
         <div className={styles.legend}>

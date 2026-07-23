@@ -60,6 +60,11 @@
 .content {
   padding-top: var(--sp-4);
 }
+/* Radix makes the panel focusable (tabindex 0) so you can Tab to scrollable
+   content, so it needs a visible focus indicator like any other focus target —
+   a quiet inset ring rather than the full edge ring a control gets. */
 .content:focus-visible {
-  outline: none;
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: -2px;
+  border-radius: var(--r-sm);
 }

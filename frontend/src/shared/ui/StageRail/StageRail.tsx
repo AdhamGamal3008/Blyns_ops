@@ -69,8 +69,10 @@ export function StageRail({
 
   useEffect(() => {
     const node = currentRef.current;
-    if (!node) return;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // scrollIntoView is absent under jsdom and some SSR shims; it is a nicety
+    // (centre the live gate), never load-bearing, so skip it when missing
+    if (!node || typeof node.scrollIntoView !== "function") return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     node.scrollIntoView({
       behavior: reduce ? "auto" : "smooth",
       inline: "center",
@@ -79,7 +81,7 @@ export function StageRail({
   }, [currentOrder]);
 
   return (
-    <ol className={cn(styles.rail, styles[orientation], className)}>
+    <ol className={cn(styles.rail, styles[orientation], className)} aria-label="Project stages">
       {stages.map((stage) => {
         const visual = visualFor(stage.status, stage.order, currentOrder);
         const isCurrent = stage.order === currentOrder;
@@ -131,7 +133,12 @@ export function StageRail({
                 type="button"
                 className={styles.hit}
                 onClick={() => onSelect?.(stage)}
-                aria-label={`Stage ${stage.order}: ${stage.name} — ${STATUS_LABEL[stage.status]}`}
+                // an aria-label overrides the inner text, so the blocking reason
+                // (visible in the body) has to be folded in or it goes unheard
+                aria-label={
+                  `Stage ${stage.order}: ${stage.name} — ${STATUS_LABEL[stage.status]}` +
+                  (stage.blockingReason ? `. ${stage.blockingReason}` : "")
+                }
               >
                 {content}
               </button>

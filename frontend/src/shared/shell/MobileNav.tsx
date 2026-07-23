@@ -69,7 +69,8 @@ export function MobileNav({
                     </RadixDialog.Close>
                   </div>
 
-                  <nav className={styles.drawerNav}>
+                  <nav className={styles.drawerNav} aria-label="Primary">
+
                     {nav.map((item) => (
                       <NavLink
                         key={item.key}

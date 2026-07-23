@@ -75,7 +75,7 @@ export function Sidebar({
         )}
       </div>
 
-      <nav className={styles.nav}>
+      <nav className={styles.nav} aria-label="Primary">
         {nav.map((item) => (
           <SidebarLink key={item.key} item={item} collapsed={collapsed} onNavigate={onNavigate} />
         ))}

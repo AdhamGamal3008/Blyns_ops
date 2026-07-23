@@ -13,14 +13,28 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Styled as a table now (see CalendarView.tsx) — fixed layout gives the seven
+   equal columns the CSS grid used to. */
 .grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   overflow: hidden;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .dow {
@@ -33,15 +47,33 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--n-600, var(--text-muted));
+  border-bottom: 1px solid var(--border);
+}
+.dow abbr {
+  text-decoration: none;
 }
 
 .cell {
   background: var(--surface-raised);
-  min-height: 5.5rem;
+  height: 5.5rem;
+  vertical-align: top;
   padding: var(--sp-2);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.cell > * {
+  display: block;
+}
+/* the visible day number and chips stack; gap comes from margins below */
+.cell .chip + .chip,
+.cell .dayNum + .chip {
+  margin-top: 2px;
+}
+.grid td:last-child.cell {
+  border-right: none;
+}
+.grid tbody tr:last-child .cell {
+  border-bottom: none;
 }
 .dim {
   background: var(--surface-sunken);

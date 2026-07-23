@@ -66,6 +66,12 @@
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
 }
+/* the search input auto-focuses when the popover opens and has no outline of
+   its own; show focus on the row so the indicator is not lost */
+.searchRow:focus-within {
+  border-bottom-color: var(--gold-600);
+  box-shadow: inset 0 -1px 0 var(--gold-600);
+}
 .searchIcon {
   color: var(--text-muted);
   flex-shrink: 0;

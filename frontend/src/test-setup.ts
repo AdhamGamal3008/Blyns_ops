@@ -1,4 +1,12 @@
 import "@testing-library/jest-dom";
+import { expect } from "vitest";
+import * as axeMatchers from "vitest-axe/matchers";
+
+// `toHaveNoViolations` for the a11y tests. axe runs in jsdom, which has no
+// layout engine, so it checks structure and ARIA — names, roles, relationships,
+// duplicate ids — not colour contrast. Contrast is covered separately and
+// exactly by contrast.test.ts against the tokens.
+expect.extend(axeMatchers);
 
 // jsdom ships no matchMedia. Components read it to decide whether to animate,
 // so provide a real-shaped stub that reports "no preference"; a test that cares

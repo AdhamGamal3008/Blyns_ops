@@ -1,7 +1,9 @@
 // ThemeProvider — stamps the active theme onto <html> as `data-theme` and
-// exposes it via context. Light is the only implemented theme in Phase 1; the
-// dark palette arrives in Phase 8, at which point its token overrides slot into
+// exposes it via context. Light is the only implemented theme; the plumbing for
+// a dark palette is complete and unused — its token overrides would slot into
 // tokens.css under `:root[data-theme="dark"]` with no change to this provider.
+// Dark mode was deferred out of Phase 8 (owner's call) as a later, separate
+// piece of work; this file is ready for it.
 
 import {
   createContext,

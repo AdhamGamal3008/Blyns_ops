@@ -69,6 +69,12 @@ export function AppShell({
 
   return (
     <div className={styles.root}>
+      {/* first in the tab order: a keyboard user skips the whole sidebar to the
+          page content, which otherwise takes a dozen tabs to get past */}
+      <a href="#main-content" className={styles.skipLink}>
+        Skip to content
+      </a>
+
       <div className={styles.sidebar}>
         <Sidebar
           brand={brand}
@@ -87,7 +93,16 @@ export function AppShell({
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenDrawer={() => setDrawerOpen(true)}
         />
-        <main className={cn(styles.content, mobileTabs && styles.hasTabs)}>{children}</main>
+        <main
+          id="main-content"
+          // tabindex -1 so the skip link can move focus here without making the
+          // region itself a tab stop
+          tabIndex={-1}
+          aria-label={title}
+          className={cn(styles.content, mobileTabs && styles.hasTabs)}
+        >
+          {children}
+        </main>
       </div>
 
       <MobileNav
