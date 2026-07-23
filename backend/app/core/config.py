@@ -7,9 +7,16 @@ behavior differences described in docs/ENVIRONMENTS.md.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchor the .env to the backend root (this file is backend/app/core/config.py)
+# so config loads no matter which directory the process is launched from. In
+# production the file is absent and pydantic-settings ignores it — config comes
+# from injected env vars (docs/ENVIRONMENTS.md §4).
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -44,7 +51,7 @@ class Settings(BaseSettings):
     # writing dbStats/activity snapshots. 0 disables (tests).
     metrics_interval_sec: int = 300
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ERP_")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_prefix="ERP_")
 
     @property
     def docs_enabled(self) -> bool:
