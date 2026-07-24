@@ -150,6 +150,7 @@ export interface DeliverableVersion {
 export interface Deliverable {
   id: string;
   stage_key: string | null;         // null = a general project document
+  gate_key?: string | null;         // set when attached at a stage's document gate
   kind: DeliverableKind;
   title: string;
   current_version: number;
@@ -161,12 +162,15 @@ export interface Deliverable {
   immutable_audit: { action: string; by: string; at: string }[];
 }
 
-/** A stage file-submission that referenced a project document as its evidence. */
+/** The evidence attached to a stage's document gate. `source_type`/`file_ref`
+ *  are denormalized so an approver can open it straight from the stage. */
 export interface DocumentRef {
   gate_key: string;
   deliverable_id: string;
   title: string;
   version: number;
+  source_type: DeliverableSource;
+  file_ref: string | null;
   by: string;
   at: string;
 }

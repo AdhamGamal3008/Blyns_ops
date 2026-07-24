@@ -4,7 +4,7 @@
 
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../../shared/api";
+import { api, apiDownload, apiUpload } from "../../shared/api";
 import {
   Badge,
   Banner,
@@ -16,6 +16,7 @@ import {
   EmptyState,
   errorText,
   Field,
+  FormModal,
   Input,
   Modal,
   Row,
@@ -24,11 +25,12 @@ import {
 } from "../../shared/ui";
 import {
   STAGE_TONE, humanize,
-  type Deliverable, type EntryGate, type GateRule, type StageDetail, type ValidationCheck,
+  type DeliverableSource, type DocumentRef, type EntryGate, type GateRule,
+  type StageDetail, type ValidationCheck,
 } from "./types";
 import styles from "./StagePanel.module.css";
 
-const NO_REF = "__noref"; // "attach no document" option in the reference picker
+const isHttp = (s?: string | null) => !!s && /^https?:\/\//i.test(s);
 
 export function StagePanel(props: {
   projectId: string;
@@ -46,8 +48,7 @@ export function StagePanel(props: {
   const [validation, setValidation] = useState<ValidationCheck[] | null>(null);
   const [logging, setLogging] = useState<GateRule | null>(null);
   const [rejecting, setRejecting] = useState(false);
-  const [docs, setDocs] = useState<Deliverable[]>([]);
-  const [refFor, setRefFor] = useState<Record<string, string>>({});
+  const [attaching, setAttaching] = useState<EntryGate | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -66,13 +67,6 @@ export function StagePanel(props: {
       .then((r) => setGateRules(Object.fromEntries(r.data.map((g) => [g.key, g]))))
       .catch(() => setGateRules({}));
   }, []);
-  // project documents, for optionally referencing one as a gate's evidence
-  useEffect(() => {
-    api<Deliverable[]>(`/projects/${projectId}/deliverables?page_size=100`)
-      .then((r) => setDocs(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setDocs([]));
-  }, [projectId]);
-
   const refresh = () => { load(); props.onChanged(); };
 
   async function act(run: () => Promise<unknown>, keepValidation = false) {
@@ -154,22 +148,14 @@ export function StagePanel(props: {
       (w) => !w.startsWith("doc:") && !w.startsWith("phase:")),
     ...evaluation.blocked_by,
   ];
-  // Documents worth attaching to this stage's gates: this stage's own documents
-  // plus any general (unassigned) ones. Referencing one is optional.
-  const referenceable = docs
-    .filter((d) => !d.stage_key || d.stage_key === definition.key)
-    .map((d) => ({ value: d.id, label: `${d.title} · ${humanize(d.kind)}` }));
   const refByGate = new Map(
     (instance.document_refs ?? []).map((r) => [r.gate_key, r]),
   );
-  const supplyDoc = (gate: EntryGate) => {
-    const chosen = refFor[gate.key];
-    const body = chosen && chosen !== NO_REF ? { deliverable_id: chosen } : {};
-    return act(() => api(
+  const markSupplied = (gate: EntryGate) =>
+    act(() => api(
       `/projects/${projectId}/stages/${order}/documents/${gate.key}`,
-      { method: "POST", body },
+      { method: "POST", body: {} },
     ));
-  };
 
   return (
     <Card>
@@ -204,31 +190,30 @@ export function StagePanel(props: {
           <Section title="Entry requirements">
             {supplyGates.map((g) => {
               const ref = refByGate.get(g.key);
-              const hint = g.type === "dependency"
-                ? `phase · ${humanize(g.depends_on)}`
-                : ref ? `↳ ${ref.title} (v${ref.version})` : undefined;
               return (
-                <ItemRow key={g.key} label={humanize(g.key)} hint={hint}>
+                <ItemRow
+                  key={g.key}
+                  label={humanize(g.key)}
+                  hint={g.type === "dependency"
+                    ? `phase · ${humanize(g.depends_on)}` : undefined}
+                >
+                  {/* the attached evidence — openable by anyone who can see the
+                      stage, so an approver can review before signing off */}
+                  {ref && (
+                    <Evidence projectId={projectId} reference={ref} onError={setError} />
+                  )}
                   {supplied.has(g.key) ? (
                     <Badge tone="success">supplied</Badge>
-                  ) : canWrite ? (
-                    <Row gap={1}>
-                      {g.type === "document" && referenceable.length > 0 && (
-                        <Select
-                          selectSize="compact"
-                          value={refFor[g.key] ?? NO_REF}
-                          onValueChange={(v) => setRefFor({ ...refFor, [g.key]: v })}
-                          options={[
-                            { value: NO_REF, label: "— attach a document —" },
-                            ...referenceable,
-                          ]}
-                        />
-                      )}
-                      <Button variant="ghost" size="compact" disabled={busy}
-                        onClick={() => supplyDoc(g)}>Mark supplied</Button>
-                    </Row>
-                  ) : (
+                  ) : !canWrite ? (
                     <Badge tone="warning">missing</Badge>
+                  ) : g.type === "document" ? (
+                    // a document gate is satisfied only by attaching evidence
+                    <Button variant="ghost" size="compact" disabled={busy}
+                      onClick={() => setAttaching(g)}>Attach</Button>
+                  ) : (
+                    // a phase gate carries no file — mark it directly
+                    <Button variant="ghost" size="compact" disabled={busy}
+                      onClick={() => markSupplied(g)}>Mark supplied</Button>
                   )}
                 </ItemRow>
               );
@@ -324,6 +309,10 @@ export function StagePanel(props: {
         <GateResultModal projectId={projectId} order={order} rule={logging}
           onDone={(ok) => { setLogging(null); if (ok) refresh(); }} />
       )}
+      {attaching && (
+        <AttachModal projectId={projectId} order={order} gate={attaching}
+          onDone={(ok) => { setAttaching(null); if (ok) refresh(); }} />
+      )}
       <RejectModal open={rejecting} projectId={projectId} order={order}
         onDone={(ok) => { setRejecting(false); if (ok) refresh(); }} />
     </Card>
@@ -348,6 +337,117 @@ function ItemRow(props: { label: string; hint?: string; children: React.ReactNod
       </span>
       <span className={styles.itemActions}>{props.children}</span>
     </div>
+  );
+}
+
+/** The evidence attached to a document gate, as an openable link. Rendered for
+ *  every viewer — an approver must be able to review it before signing off. */
+function Evidence(props: {
+  projectId: string; reference: DocumentRef; onError: (e: unknown) => void;
+}) {
+  const { reference: ref } = props;
+  if (ref.source_type === "upload") {
+    return (
+      <Button
+        variant="ghost"
+        size="compact"
+        onClick={async () => {
+          try {
+            await apiDownload(
+              `/projects/${props.projectId}/deliverables/${ref.deliverable_id}/download`,
+              ref.file_ref ?? ref.title,
+            );
+          } catch (e) {
+            props.onError(e);
+          }
+        }}
+      >
+        {ref.title}
+      </Button>
+    );
+  }
+  if (isHttp(ref.file_ref)) {
+    return (
+      <a className={styles.refLink} href={ref.file_ref!} target="_blank" rel="noreferrer">
+        {ref.title}
+      </a>
+    );
+  }
+  return <span className={styles.note}>{ref.title}</span>;
+}
+
+/** Attach what a document gate requires — a file or a URL. The gate already
+ *  says what the document is and which stage it belongs to, so this asks for
+ *  neither a kind nor a stage. */
+function AttachModal(props: {
+  projectId: string; order: number; gate: EntryGate; onDone: (ok: boolean) => void;
+}) {
+  const [source, setSource] = useState<DeliverableSource>("upload");
+  const [file, setFile] = useState<File | null>(null);
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      let body: Record<string, unknown>;
+      if (source === "upload") {
+        if (!file) throw new Error("Choose a file to attach.");
+        const up = await apiUpload<{ file_id: string }>(
+          `/projects/${props.projectId}/deliverables/files`, file);
+        body = { source_type: "upload", file_id: up.data.file_id };
+      } else {
+        if (!url.trim()) throw new Error("Enter a URL to reference.");
+        body = { source_type: "url", file_ref: url.trim() };
+      }
+      await api(
+        `/projects/${props.projectId}/stages/${props.order}/documents/${props.gate.key}/attach`,
+        { method: "POST", body },
+      );
+      props.onDone(true);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Attach ${humanize(props.gate.key)}`}
+      description="Upload the file or link to it — the stage already defines what this document is."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not attach the document"
+      busy={busy}
+      submitLabel="Attach"
+    >
+      <Field label="Source">
+        <Select
+          value={source}
+          onValueChange={(v) => setSource(v as DeliverableSource)}
+          options={[
+            { value: "upload", label: "Upload a file" },
+            { value: "url", label: "Reference a URL" },
+          ]}
+        />
+      </Field>
+      {source === "upload" ? (
+        <Field label="File" required>
+          <input className={styles.fileInput} type="file"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </Field>
+      ) : (
+        <Field label="URL" required>
+          <Input value={url} onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…" />
+        </Field>
+      )}
+    </FormModal>
   );
 }
 

@@ -33,6 +33,27 @@ PROJECT_STATUSES = ["active", "on_hold", "completed", "archived", "cancelled"]
 # §3.7 deliverable kinds.
 DELIVERABLE_KINDS = ["shop_drawing", "bom", "scan", "photo", "report", "certificate"]
 
+# §4: a stage's document gate IS the document's identity — the gate already says
+# what is required, so evidence attached at a gate never asks for a kind. This
+# maps each seeded document gate to the kind it stores as; anything unmapped
+# stores as a generic `report`. `bom_present` must stay `bom` — Stage 8 finds the
+# BOM by kind to reserve stock through Inventory.
+GATE_DOCUMENT_KINDS = {
+    "quotation_approved": "certificate",
+    "contract_signed": "certificate",
+    "client_info_present": "report",
+    "scope_present": "report",
+    "initial_drawings_present": "shop_drawing",
+    "architectural_drawings": "shop_drawing",
+    "design_package": "shop_drawing",
+    "material_specs": "report",
+    "client_requirements": "report",
+    "shop_drawings_present": "shop_drawing",
+    "raw_site_data_present": "scan",
+    "bom_present": "bom",
+}
+DEFAULT_GATE_DOCUMENT_KIND = "report"
+
 # §3.9 job-cost types.
 COST_TYPES = ["labor", "material", "subcontractor", "machine"]
 

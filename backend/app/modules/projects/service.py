@@ -30,6 +30,7 @@ from app.modules.projects.models import (
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
+    GateDocumentAttach,
     GateResultCreate,
     JobCostCreate,
     ProjectCreate,
@@ -40,8 +41,10 @@ from app.modules.projects.models import (
     StageConfigPatch,
 )
 from app.modules.projects.permissions import (
+    DEFAULT_GATE_DOCUMENT_KIND,
     DEFAULT_REJECT_REPORT,
     FIRST_STAGE_ORDER,
+    GATE_DOCUMENT_KINDS,
     LAST_STAGE_ORDER,
     OPEN_REPORT_STATUSES,
 )
@@ -333,11 +336,22 @@ async def supply_document(
     if instance is None:
         raise DomainError(TENANT_NOT_FOUND, f"Stage {order} not reached.", 404)
 
-    known = {g["key"] for g in (definition.get("entry_gates") or [])}
-    if gate_key not in known:
+    gate = next(
+        (g for g in (definition.get("entry_gates") or []) if g.get("key") == gate_key),
+        None,
+    )
+    if gate is None:
         raise DomainError(
             VALIDATION_ERROR,
             f"Stage {order} has no entry gate '{gate_key}'.", 422,
+        )
+    # A document gate is only satisfied by evidence — a file or a URL. Phase
+    # gates (a dependency on a foundational phase, e.g. acclimation_complete)
+    # have no document to show, so those are still marked directly.
+    if gate.get("type") == "document" and not payload.deliverable_id:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"'{gate_key}' requires a document — attach a file or a URL.", 422,
         )
 
     fields: dict[str, Any] = {}
@@ -349,6 +363,9 @@ async def supply_document(
         if deliverable is None:
             raise DomainError(TENANT_NOT_FOUND, "Referenced document not found.", 404)
         # one reference per gate: drop any prior one, then record this submission.
+        # source_type/file_ref are denormalized so an approver can open the
+        # evidence straight from the stage, without listing project documents.
+        latest = (deliverable.get("versions") or [{}])[-1]
         refs = [r for r in (instance.get("document_refs") or [])
                 if r.get("gate_key") != gate_key]
         refs.append({
@@ -356,6 +373,8 @@ async def supply_document(
             "deliverable_id": str(deliverable["_id"]),
             "title": deliverable["title"],
             "version": deliverable.get("current_version", 1),
+            "source_type": latest.get("source_type", "url"),
+            "file_ref": latest.get("file_ref"),
             "by": str(principal.user["_id"]),
             "at": _now(),
         })
@@ -771,14 +790,18 @@ async def _reserve_stock(principal: ClientPrincipal, project: dict) -> list[dict
     from app.modules.inventory.models import MovementCreate
 
     db = principal.tenant_db
-    bom = await db[repo.DELIVERABLES].find_one({
-        "project_id": project["_id"], "kind": "bom", "is_deleted": {"$ne": True},
-    })
+    # The reservable BOM is the one carrying product lines. A BOM *document*
+    # attached at the `bom_present` gate is just a file (kind `bom`, no lines),
+    # so it must never shadow the real one — match on a non-empty `lines` and
+    # take the newest.
+    bom = await db[repo.DELIVERABLES].find_one(
+        {"project_id": project["_id"], "kind": "bom", "is_deleted": {"$ne": True},
+         "lines.0": {"$exists": True}},
+        sort=[("created_at", -1)],
+    )
     if bom is None:
         return []
-    lines = (bom.get("lines") or [])
-    if not lines:
-        return []
+    lines = bom["lines"]
 
     from app.modules.inventory import repository as inv_repo
 
@@ -1069,6 +1092,76 @@ async def create_deliverable(
                {"type": "deliverable", "id": str(doc["_id"]), "label": doc["title"]},
                {"project": project["code"], "kind": payload.kind})
     return (await _decorate_deliverables(db, [doc]))[0]
+
+
+def _gate_label(gate_key: str) -> str:
+    """`contract_signed` → `Contract signed` — a document gate's own label is a
+    good default title for the evidence attached to it."""
+    words = gate_key.replace("_", " ").strip()
+    return words[:1].upper() + words[1:] if words else gate_key
+
+
+async def attach_gate_document(
+    principal: ClientPrincipal, project_id: str, order: int, gate_key: str,
+    payload: GateDocumentAttach,
+) -> dict:
+    """§4 — attach the evidence a document gate requires (an uploaded file or a
+    URL) and satisfy the gate in one step.
+
+    The gate defines both the document's kind and its stage, so neither is asked
+    for: the kind is derived from the gate and the stage is the gate's own.
+    """
+    project = await _project(principal, project_id)
+    definition = await _definition(principal, order)
+    db = principal.tenant_db
+
+    gate = next(
+        (g for g in (definition.get("entry_gates") or []) if g.get("key") == gate_key),
+        None,
+    )
+    if gate is None:
+        raise DomainError(
+            VALIDATION_ERROR, f"Stage {order} has no entry gate '{gate_key}'.", 422
+        )
+    if gate.get("type") != "document":
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"Gate '{gate_key}' does not take a document — it is a "
+            f"{gate.get('type')} gate.",
+            422,
+        )
+
+    actor = str(principal.user["_id"])
+    version = await _make_version(
+        db, v=1, payload=payload, author=actor,
+        note=payload.note or f"attached at {gate_key}",
+    )
+    doc = await repo.insert(db, repo.DELIVERABLES, {
+        "project_id": project["_id"],
+        "stage_key": definition["key"],
+        "gate_key": gate_key,  # what this document satisfies
+        "kind": GATE_DOCUMENT_KINDS.get(gate_key, DEFAULT_GATE_DOCUMENT_KIND),
+        "title": payload.title or _gate_label(gate_key),
+        "current_version": 1,
+        "versions": [version],
+        "classification": "manual",
+        "ocr_text": None,
+        "lines": [],
+        "immutable_audit": [{"action": "created", "by": actor, "at": _now()}],
+        "created_by": actor,
+    })
+    await _log(principal, "deliverable.created",
+               {"type": "deliverable", "id": str(doc["_id"]), "label": doc["title"]},
+               {"project": project["code"], "gate": gate_key, "stage": definition["key"]})
+
+    instance = await supply_document(
+        principal, project_id, order, gate_key,
+        DocumentSupply(deliverable_id=str(doc["_id"])),
+    )
+    return {
+        "instance": instance,
+        "document": (await _decorate_deliverables(db, [doc]))[0],
+    }
 
 
 async def add_revision(

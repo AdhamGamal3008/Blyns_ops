@@ -33,14 +33,28 @@ async def _stage(client_client, pid: str, order: int) -> dict:
 
 
 async def _supply(client_client, pid: str, order: int, *gate_keys: str) -> dict:
-    last = {}
+    """Satisfy document gates by attaching a URL reference — a document gate
+    cannot be marked supplied without evidence (§4)."""
+    last: dict = {}
     for key in gate_keys:
         res = await client_client.post(
-            f"{BASE}/{pid}/stages/{order}/documents/{key}", json={}
+            f"{BASE}/{pid}/stages/{order}/documents/{key}/attach",
+            json={"source_type": "url",
+                  "file_ref": f"https://docs.example.com/{key}.pdf"},
         )
-        assert res.status_code == 200, res.text
-        last = res.json()["data"]
+        assert res.status_code == 201, res.text
+        last = res.json()["data"]["instance"]
     return last
+
+
+async def _supply_phase(client_client, pid: str, order: int, gate_key: str) -> dict:
+    """Mark a foundational-phase gate (a dependency, not a document) satisfied —
+    these carry no file, so they are marked directly."""
+    res = await client_client.post(
+        f"{BASE}/{pid}/stages/{order}/documents/{gate_key}", json={}
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["data"]
 
 
 async def _submit(client_client, pid: str, order: int):
@@ -669,7 +683,7 @@ async def test_full_walk_to_client_handover(client_client):
         await _advance(client_client, pid, order, stages, gates)
 
     # stage 14: installation cannot pass while timber MC is out of range (§15 #4)
-    await _supply(client_client, pid, 14, "acclimation_complete")
+    await _supply_phase(client_client, pid, 14, "acclimation_complete")
     res = await _gate_result(client_client, pid, 14, "timber_moisture_content",
                              readings=[{"location": "panel-A", "value": 10.5}])
     assert res.json()["data"]["result"]["passed"] is False

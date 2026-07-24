@@ -138,7 +138,42 @@ describe("StagePanel", () => {
       expect(postCall(mock, "/stages/14/documents/acclimation_complete")).toBeTruthy());
   });
 
-  it("surfaces the document a satisfied gate referenced", async () => {
+  it("requires evidence on a document gate — no bare mark-supplied", async () => {
+    const detail = {
+      data: {
+        definition: {
+          order: 1, key: "lead_conversion", name: "Lead Conversion",
+          entry_gates: [{ key: "contract_signed", type: "document", blocking: true }],
+          automated_tasks: [], quality_gates: [],
+          approver_role: "project_director", co_approver_roles: [],
+        },
+        instance: {
+          id: "si1", status: "waiting", documents_supplied: [], document_refs: [],
+          waiting_on: [], blocked_by: [], task_results: [],
+          recovery_loops: 0, blocking_reason: null,
+        },
+        evaluation: {
+          waiting_on: ["doc:contract_signed"], blocked_by: [],
+          gate_failures: [], severe: false, ready: false,
+        },
+        approval: null, gate_results: [],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/config/gates")) return okJson({ data: [] });
+      if (u.includes("/stages/1")) return okJson(detail);
+      return okJson({ data: {} });
+    }));
+
+    render(<StagePanel projectId="p1" order={1} canWrite canApprove onChanged={() => {}} />);
+    await waitFor(() => expect(screen.getByText("Contract signed")).toBeInTheDocument());
+    // the only way to satisfy it is to attach a file or a URL
+    expect(screen.getByText("Attach")).toBeInTheDocument();
+    expect(screen.queryByText("Mark supplied")).not.toBeInTheDocument();
+  });
+
+  it("lets a non-writing approver open the evidence attached to a gate", async () => {
     const detail = {
       data: {
         definition: {
@@ -151,7 +186,9 @@ describe("StagePanel", () => {
           id: "si1", status: "in_progress", documents_supplied: ["contract_signed"],
           document_refs: [{
             gate_key: "contract_signed", deliverable_id: "d1",
-            title: "Contract PDF", version: 2, by: "u1", at: "2026-07-23T10:00:00Z",
+            title: "Contract PDF", version: 2, source_type: "url",
+            file_ref: "https://x.example.com/contract.pdf",
+            by: "u1", at: "2026-07-23T10:00:00Z",
           }],
           waiting_on: [], blocked_by: [], task_results: [],
           recovery_loops: 0, blocking_reason: null,
@@ -169,8 +206,11 @@ describe("StagePanel", () => {
     });
     vi.stubGlobal("fetch", mock);
 
-    render(<StagePanel projectId="p1" order={1} canWrite canApprove onChanged={() => {}} />);
+    // an approver with no write access still sees — and can open — the evidence
+    render(<StagePanel projectId="p1" order={1} canWrite={false} canApprove
+      onChanged={() => {}} />);
     await waitFor(() => expect(screen.getByText("Contract signed")).toBeInTheDocument());
-    expect(screen.getByText("↳ Contract PDF (v2)")).toBeInTheDocument();
+    expect(screen.getByText("Contract PDF")).toHaveAttribute(
+      "href", "https://x.example.com/contract.pdf");
   });
 });

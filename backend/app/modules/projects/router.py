@@ -18,6 +18,7 @@ from app.modules.projects.models import (
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
+    GateDocumentAttach,
     GateResultCreate,
     JobCostCreate,
     ProjectCreate,
@@ -60,6 +61,26 @@ async def _approve_access(
     raise DomainError(
         PERMISSION_DENIED,
         "Requires WRITE on 'projects', or scoped client-portal access.",
+        http_status=403,
+    )
+
+
+async def _document_access(
+    principal: ClientPrincipal = Depends(current_client_user),
+) -> ClientPrincipal:
+    """Guard for opening a document's file. Same two ways in as approve/reject:
+    `projects` READ, or scoped client-portal access. An approver must be able to
+    view the evidence attached to the stage they are signing off — a client
+    contact holds VIEW, which is below READ, so plain `_read` would lock them out.
+    """
+    level = principal.level_for("projects")
+    if level >= Level.READ:
+        return principal
+    if level >= Level.VIEW and principal.role.get("is_client_portal"):
+        return principal
+    raise DomainError(
+        PERMISSION_DENIED,
+        "Requires READ on 'projects', or scoped client-portal access.",
         http_status=403,
     )
 
@@ -201,6 +222,19 @@ async def supply_document(
     ))
 
 
+@router.post("/{project_id}/stages/{order}/documents/{gate_key}/attach", status_code=201)
+async def attach_gate_document(
+    project_id: str, order: int, gate_key: str, body: GateDocumentAttach,
+    principal: ClientPrincipal = Depends(_write),
+):
+    """Attach the evidence a document gate requires — an uploaded file or a URL —
+    and satisfy the gate in one step (§4). The gate defines the kind and stage,
+    so neither is part of the payload."""
+    return envelope(to_api(
+        await service.attach_gate_document(principal, project_id, order, gate_key, body)
+    ))
+
+
 @router.post("/{project_id}/stages/{order}/gates/{gate_key}/result")
 async def record_gate_result(
     project_id: str, order: int, gate_key: str, body: GateResultCreate,
@@ -248,7 +282,7 @@ async def upload_deliverable_file(
 @router.get("/{project_id}/deliverables/{did}/download")
 async def download_deliverable(
     project_id: str, did: str, version: int | None = None,
-    principal: ClientPrincipal = Depends(_read),
+    principal: ClientPrincipal = Depends(_document_access),
 ):
     """Stream an uploaded document version as an attachment (never inline)."""
     grid_out, filename, content_type = await service.open_deliverable_file(

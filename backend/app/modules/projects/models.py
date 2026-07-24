@@ -91,6 +91,26 @@ class DocumentSupply(BaseModel):
     note: str | None = None
 
 
+class GateDocumentAttach(BaseModel):
+    """Attach the evidence a `document` entry gate requires (§4) — an uploaded
+    file or a URL — and satisfy the gate in one step.
+
+    There is deliberately no `kind` and no `stage_key`: the gate itself says what
+    is required and which stage it belongs to, so asking would be redundant.
+    """
+
+    source_type: DeliverableSource = "url"
+    file_id: str | None = None
+    file_ref: str | None = None
+    title: str | None = None  # defaults to the gate's own label
+    note: str | None = None
+
+    @model_validator(mode="after")
+    def _require_source(self) -> GateDocumentAttach:
+        _validate_source(self.source_type, self.file_id, self.file_ref)
+        return self
+
+
 class GateResultCreate(BaseModel):
     """§3.5 — a physical measurement or inspection result.
 
