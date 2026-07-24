@@ -57,7 +57,8 @@
   font-family: var(--font-ui);
   color: var(--text);
   overflow: hidden;
-  z-index: 60;
+  /* Above the Dialog/Sheet layer (66) so the menu is usable inside a modal. */
+  z-index: 70;
   transform-origin: var(--radix-select-content-transform-origin);
   animation: pop var(--dur-fast) var(--ease-out);
 }

@@ -7,7 +7,8 @@
   box-shadow: var(--shadow-lg);
   font-family: var(--font-ui);
   color: var(--text);
-  z-index: 60;
+  /* Above the Dialog/Sheet layer (66) so the menu is usable inside a modal. */
+  z-index: 70;
   transform-origin: var(--radix-dropdown-menu-content-transform-origin);
   animation: pop var(--dur-fast) var(--ease-out);
 }
