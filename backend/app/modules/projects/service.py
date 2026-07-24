@@ -944,6 +944,13 @@ async def _user_names(db, ids: set[str]) -> dict[str, str | None]:
     return names
 
 
+def _author_name(names: dict[str, str | None], author_id: str | None) -> str | None:
+    """Display name for a version's author, or None when there is no author to
+    look up — an empty `versions` list and legacy rows written before authorship
+    was recorded both reach here without an `author_id`."""
+    return names.get(author_id) if author_id else None
+
+
 async def _decorate_deliverables(db, docs: list[dict]) -> list[dict]:
     """Add who/when/how a reader wants: an uploader name on each version, plus
     the latest version's uploader, timestamp, and source at the top level.
@@ -960,10 +967,10 @@ async def _decorate_deliverables(db, docs: list[dict]) -> list[dict]:
         versions = d.get("versions") or []
         for v in versions:
             v.setdefault("source_type", "url")
-            v["author_name"] = names.get(v.get("author_id"))
+            v["author_name"] = _author_name(names, v.get("author_id"))
         latest = versions[-1] if versions else {}
         d["source_type"] = latest.get("source_type", "url")
-        d["uploaded_by"] = names.get(latest.get("author_id"))
+        d["uploaded_by"] = _author_name(names, latest.get("author_id"))
         d["uploaded_at"] = latest.get("at")
     return docs
 
