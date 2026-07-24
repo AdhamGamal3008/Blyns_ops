@@ -17,6 +17,7 @@ import {
   Input,
   NativeSelect,
 } from "../../shared/ui";
+import { DataTransfer } from "./DataTransfer";
 import styles from "./PipelineBoard.module.css";
 
 interface StageBucket {
@@ -89,12 +90,15 @@ export function PipelineBoard(props: { canWrite: boolean }) {
         title="Pipeline"
         description={pipeline ? `${money(pipeline.open_value)} open` : "Deal flow by stage"}
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New deal
-            </Button>
-          )
+          <>
+            <DataTransfer entity="deals" canWrite={props.canWrite} onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New deal
+              </Button>
+            )}
+          </>
         }
       />
 

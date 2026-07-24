@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # are stored self-hosted in the tenant DB via GridFS; this caps a single upload.
     max_upload_mb: int = 25
 
+    # CSV import (docs/modules/CRM.md §7). A separate, much smaller cap than
+    # `max_upload_mb`: an import is parsed into memory row by row, so the row
+    # count is the real limit and the byte cap is the cheap first guard.
+    max_import_mb: int = 5
+    max_import_rows: int = 5000
+
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 

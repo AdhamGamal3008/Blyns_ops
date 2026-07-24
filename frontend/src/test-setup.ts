@@ -8,6 +8,17 @@ import * as axeMatchers from "vitest-axe/matchers";
 // exactly by contrast.test.ts against the tokens.
 expect.extend(axeMatchers);
 
+// jsdom ships no ResizeObserver either. Radix measures its indicator through
+// `react-use-size` (Checkbox, Switch), which constructs one on mount and throws
+// without it. Nothing in jsdom lays out, so a no-op observer is the honest stub.
+if (typeof globalThis.ResizeObserver !== "function") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // jsdom ships no matchMedia. Components read it to decide whether to animate,
 // so provide a real-shaped stub that reports "no preference"; a test that cares
 // about reduced motion overrides `matches` for the query it is exercising.

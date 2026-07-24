@@ -18,6 +18,7 @@ import {
   FormModal,
   Input,
 } from "../../shared/ui";
+import { DataTransfer } from "./DataTransfer";
 
 interface Lead {
   id: string;
@@ -84,12 +85,15 @@ export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
         title="Leads"
         description={leads ? `${leads.length} in the funnel` : "Inbound and sourced leads"}
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New lead
-            </Button>
-          )
+          <>
+            <DataTransfer entity="leads" canWrite={props.canWrite} onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New lead
+              </Button>
+            )}
+          </>
         }
       />
 

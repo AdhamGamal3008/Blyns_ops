@@ -19,6 +19,7 @@ import {
   NativeSelect,
   Select,
 } from "../../shared/ui";
+import { DataTransfer } from "./DataTransfer";
 
 interface Account {
   id: string;
@@ -107,12 +108,15 @@ export function AccountsSection(props: { canWrite: boolean }) {
         title="Accounts"
         description={accounts ? `${accounts.length} on the books` : "Customer and prospect accounts"}
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New account
-            </Button>
-          )
+          <>
+            <DataTransfer entity="accounts" canWrite={props.canWrite} onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New account
+              </Button>
+            )}
+          </>
         }
       />
 

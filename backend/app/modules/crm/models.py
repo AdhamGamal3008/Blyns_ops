@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
+from fastapi import Query
 from pydantic import BaseModel, Field, field_validator
 
 from app.shared.validation import EMAIL_PATTERN
@@ -185,3 +186,29 @@ class ActivityPatch(BaseModel):
     due_at: datetime | None = None
     done: bool | None = None
     owner_id: str | None = None
+
+
+# --- CSV import/export (§7) --------------------------------------------------
+
+class CsvExportQuery(BaseModel):
+    """Query params for `GET /crm/export/{entity}` — a FastAPI dependency, the
+    same shape as PaginationParams. Every value is checked against the entity's
+    spec in csv_service.export_query() before a single byte is streamed."""
+
+    fields: str | None = Query(
+        default=None,
+        description="Comma-separated column keys. Omit for every column.",
+    )
+    owner: str | None = Query(default=None, pattern="^(mine|all)$")
+    status: str | None = Query(
+        default=None,
+        description="Filters the entity's status column — `stage` for deals.",
+    )
+    q: str | None = None
+    account_id: str | None = None
+    date_field: str | None = Query(
+        default=None,
+        description="Which date the range applies to; defaults to created_at.",
+    )
+    date_from: date | None = None
+    date_to: date | None = None
