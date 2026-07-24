@@ -66,7 +66,17 @@ async def kpi_unpaid_invoices_total(db: AsyncIOMotorDatabase) -> float:
 def _event(
     module: str, etype: str, oid: Any, title: str, start: datetime,
     end: datetime | None, all_day: bool, entity_type: str, entity_id: Any,
+    meta: dict | None = None,
 ) -> dict:
+    """One normalized calendar event (CLIENT_DASHBOARD.md §2).
+
+    `meta` carries the handful of source fields the calendar's quick view shows
+    without navigating away — a deal's amount and stage, an invoice's balance,
+    a project's code. Every caller already holds the whole source document, so
+    this costs no extra query; keep it that way. Values are free-form per
+    `type`, and the UI renders only the keys it recognises, so adding one here
+    can never break an older client.
+    """
     return {
         "id": f"{module}:{etype}:{oid}",
         "source_module": module,
@@ -77,6 +87,7 @@ def _event(
         "all_day": all_day,
         "entity_ref": {"module": module, "type": entity_type, "id": str(entity_id)},
         "color_key": module,
+        "meta": meta or {},
     }
 
 
@@ -91,13 +102,21 @@ async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
 
     async for doc in db.projects.find({"is_deleted": {"$ne": True}}):
         pid, name = doc["_id"], doc["name"]
+        # Every project event shares the project's identity and where it has
+        # got to — that is the context a reader wants before deciding to open it.
+        about = {
+            "project": name,
+            "code": doc.get("code"),
+            "status": doc.get("status"),
+            "stage_order": doc.get("current_stage_order"),
+        }
 
         for m in doc.get("milestone_schedule") or []:
             if _in_range(m.get("due_date")):
                 events.append(_event(
                     "projects", "milestone", f"{pid}:{m['key']}",
                     f"{name} — {m['name']}", m["due_date"], None, True,
-                    "project", pid,
+                    "project", pid, {**about, "milestone": m["name"]},
                 ))
 
         sched = doc.get("schedule") or {}
@@ -108,13 +127,14 @@ async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
                     "projects", "stage_due", f"{pid}:{target['stage_key']}",
                     f"{name} — {target['stage_key']} target", target["due_date"],
                     None, True, "project", pid,
+                    {**about, "stage": target["stage_key"]},
                 ))
 
         if _in_range(sched.get("delivery_date")):
             events.append(_event(
                 "projects", "delivery", f"{pid}:delivery",
                 f"{name} — delivery", sched["delivery_date"], None, True,
-                "project", pid,
+                "project", pid, about,
             ))
 
         # acclimation is a window; show it if it overlaps the requested range
@@ -125,7 +145,7 @@ async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
                 events.append(_event(
                     "projects", "acclimation", f"{pid}:acclimation",
                     f"{name} — acclimation", acc_start,
-                    sched.get("acclimation_end"), True, "project", pid,
+                    sched.get("acclimation_end"), True, "project", pid, about,
                 ))
 
         for gate in sched.get("gate_deadlines") or []:
@@ -133,7 +153,7 @@ async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
                 events.append(_event(
                     "projects", "gate_due", f"{pid}:{gate['gate_key']}",
                     f"{name} — {gate['gate_key']} due", gate["due_at"], None,
-                    False, "project", pid,
+                    False, "project", pid, {**about, "gate": gate["gate_key"]},
                 ))
 
     return events
@@ -149,6 +169,12 @@ async def calendar_crm(db, start: datetime, end: datetime) -> list[dict]:
         events.append(_event(
             "crm", "deal_close", doc["_id"], doc["title"],
             doc["expected_close_date"], None, True, "deal", doc["_id"],
+            {
+                "amount": doc.get("amount"),
+                "currency": doc.get("currency"),
+                "stage": doc.get("stage"),
+                "probability_pct": doc.get("probability_pct"),
+            },
         ))
     async for doc in db.crm_activities.find({
         "due_at": {"$gte": start, "$lte": end}, "done": {"$ne": True},
@@ -157,8 +183,28 @@ async def calendar_crm(db, start: datetime, end: datetime) -> list[dict]:
         events.append(_event(
             "crm", "task_due", doc["_id"], doc.get("subject", "CRM activity"),
             doc["due_at"], None, False, "activity", doc["_id"],
+            {
+                "activity_type": doc.get("type"),
+                "notes": doc.get("body"),
+                "about": (doc.get("entity_ref") or {}).get("type"),
+            },
         ))
     return events
+
+
+def _payable_meta(doc: dict, counterparty: str | None) -> dict:
+    """What is actually owed on an invoice or bill — the outstanding balance
+    matters more than the face total once something is part-paid."""
+    total = float(doc.get("total") or 0)
+    paid = float(doc.get("paid_amount") or 0)
+    return {
+        "counterparty": counterparty,
+        "total": total,
+        "paid": paid,
+        "balance": round(total - paid, 2),
+        "currency": doc.get("currency"),
+        "status": doc.get("status"),
+    }
 
 
 async def calendar_finance(db, start: datetime, end: datetime) -> list[dict]:
@@ -171,6 +217,7 @@ async def calendar_finance(db, start: datetime, end: datetime) -> list[dict]:
             "finance", "invoice_due", doc["_id"],
             f"Invoice {doc.get('number', '')} due", doc["due_date"], None, True,
             "invoice", doc["_id"],
+            _payable_meta(doc, (doc.get("customer_ref") or {}).get("name")),
         ))
     async for doc in db.bills.find({
         "due_date": {"$gte": start, "$lte": end},
@@ -180,6 +227,7 @@ async def calendar_finance(db, start: datetime, end: datetime) -> list[dict]:
             "finance", "bill_due", doc["_id"],
             f"Bill {doc.get('number', '')} due", doc["due_date"], None, True,
             "bill", doc["_id"],
+            _payable_meta(doc, (doc.get("vendor_ref") or {}).get("name")),
         ))
     return events
 
@@ -201,6 +249,7 @@ async def calendar_settings(
             "settings", "company_event", doc["_id"], doc["title"],
             doc["start"], doc.get("end"), bool(doc.get("all_day", True)),
             "calendar_event", doc["_id"],
+            {"visibility": visibility},
         ))
     return events
 

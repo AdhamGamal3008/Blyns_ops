@@ -151,6 +151,93 @@ async def test_calendar_merges_read_modules_and_excludes_others(
     assert res.status_code == 422
 
 
+async def test_calendar_events_carry_source_detail_for_the_quick_view(
+    client, client_client, onboarded_company
+):
+    """§2: every event carries a `meta` the calendar can show without
+    navigating away. The keys are per-`type`, and they must come from the
+    documents the aggregation already reads — no second query per event."""
+    tenant_db = get_db_manager().tenant(onboarded_company["company"]["db_name"])
+    now = datetime.now(UTC)
+    soon = now + timedelta(days=4)
+
+    await tenant_db.projects.insert_one({
+        "name": "Tower fit-out", "code": "PRJ-0009", "status": "active",
+        "current_stage_order": 7,
+        "milestone_schedule": [{"key": "kick", "name": "Kickoff", "due_date": soon}],
+    })
+    await tenant_db.deals.insert_one({
+        "title": "Retrofit deal", "stage": "proposal", "amount": 42000.0,
+        "currency": "USD", "probability_pct": 60, "expected_close_date": soon,
+    })
+    await tenant_db.invoices.insert_one({
+        "number": "INV-0042", "status": "partly_paid", "total": 1000.0,
+        "paid_amount": 250.0, "currency": "USD", "due_date": soon,
+        "customer_ref": {"name": "Northwind Traders"},
+    })
+    await tenant_db.calendar_events.insert_one({
+        "title": "Board review", "start": soon, "end": None, "all_day": True,
+        "visibility": "company", "created_by": "someone",
+    })
+
+    frm = now.date().isoformat()
+    to = (now + timedelta(days=20)).date().isoformat()
+    res = await client_client.get(f"/api/v1/calendar?from={frm}&to={to}")
+    assert res.status_code == 200
+    by_type = {e["type"]: e for e in res.json()["data"]}
+
+    # every event has the key, even when a source has little to add
+    assert all("meta" in e for e in res.json()["data"])
+
+    milestone = by_type["milestone"]["meta"]
+    assert milestone["code"] == "PRJ-0009"
+    assert milestone["status"] == "active"
+    assert milestone["stage_order"] == 7
+    assert milestone["milestone"] == "Kickoff"
+
+    deal = by_type["deal_close"]["meta"]
+    assert deal["amount"] == 42000.0
+    assert deal["stage"] == "proposal"
+    assert deal["probability_pct"] == 60
+
+    invoice = by_type["invoice_due"]["meta"]
+    assert invoice["counterparty"] == "Northwind Traders"
+    assert invoice["total"] == 1000.0
+    # what is actually still owed, which is the number that matters when due
+    assert invoice["balance"] == 750.0
+    assert invoice["status"] == "partly_paid"
+
+    assert by_type["company_event"]["meta"]["visibility"] == "company"
+
+
+async def test_calendar_meta_does_not_leak_past_module_permissions(
+    client, client_client, onboarded_company
+):
+    """The quick view must not become a side channel: a user who cannot READ
+    finance sees no invoice event at all, so none of its amounts either."""
+    tenant_db = get_db_manager().tenant(onboarded_company["company"]["db_name"])
+    now = datetime.now(UTC)
+    soon = now + timedelta(days=3)
+    await tenant_db.invoices.insert_one({
+        "number": "INV-0099", "status": "sent", "total": 9999.0,
+        "paid_amount": 0.0, "due_date": soon,
+        "customer_ref": {"name": "Secret Customer"},
+    })
+
+    user = await _make_user(tenant_db, onboarded_company["slug"], "nofin",
+                            {"dashboard": 2, "calendar": 2, "crm": 2})
+    headers = await _login_headers(
+        client, onboarded_company["slug"], user["email"], user["password"]
+    )
+    frm = now.date().isoformat()
+    to = (now + timedelta(days=20)).date().isoformat()
+    res = await client.get(f"/api/v1/calendar?from={frm}&to={to}", headers=headers)
+
+    assert res.status_code == 200
+    assert "Secret Customer" not in res.text
+    assert all(e["source_module"] != "finance" for e in res.json()["data"])
+
+
 async def test_activity_feed_respects_permissions_and_reflects_actions(
     client, client_client, onboarded_company
 ):

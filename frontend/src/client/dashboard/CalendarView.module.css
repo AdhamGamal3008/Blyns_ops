@@ -64,9 +64,13 @@
 .cell > * {
   display: block;
 }
-/* the visible day number and chips stack; gap comes from margins below */
-.cell .chip + .chip,
-.cell .dayNum + .chip {
+/* The chips are their own component now (EventPopover), so their spacing lives
+   on this stack rather than on a sibling selector that could not reach across
+   two CSS modules. */
+.chips {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin-top: 2px;
 }
 .grid td:last-child.cell {
@@ -100,26 +104,8 @@
   font-weight: 700;
 }
 
-.chip {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 1px var(--sp-2);
-  border-radius: var(--r-sm);
-  border-left: 3px solid var(--chip-accent, var(--n-400));
-  background: color-mix(in srgb, var(--chip-accent, var(--n-400)) 12%, var(--surface-raised));
-  font-family: var(--font-ui);
-  font-size: calc(var(--step--1) * 0.86);
-  color: var(--text);
-}
-
-.more {
-  font-family: var(--font-ui);
-  font-size: calc(var(--step--1) * 0.86);
-  color: var(--text-muted);
-  padding-left: var(--sp-1);
-}
+/* .chip / .more now live in EventPopover.module.css, beside the component that
+   renders them. */
 
 .legend {
   display: flex;
@@ -147,14 +133,5 @@
   .cell {
     min-height: 3.6rem;
     padding: var(--sp-1);
-  }
-  /* Below this width a chip's text is unreadable anyway — the dot carries the
-     signal that something is scheduled, and the day opens the detail. */
-  .chip {
-    text-indent: -9999px;
-    height: 6px;
-    padding: 0;
-    border-left: none;
-    background: var(--chip-accent, var(--n-400));
   }
 }

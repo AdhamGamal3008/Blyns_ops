@@ -42,6 +42,7 @@ export {
 export { Meter, type MeterProps } from "./Meter/Meter";
 export { NativeSelect, type NativeSelectProps } from "./NativeSelect/NativeSelect";
 export { Pagination, type PaginationProps } from "./Pagination/Pagination";
+export { Popover, type PopoverProps } from "./Popover/Popover";
 export { Radio, RadioGroup, type RadioGroupProps, type RadioProps } from "./Radio/Radio";
 export { Select, type SelectOption, type SelectProps } from "./Select/Select";
 export { Sheet, type SheetProps } from "./Sheet/Sheet";

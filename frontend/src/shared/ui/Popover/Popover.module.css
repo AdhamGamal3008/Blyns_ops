@@ -1,0 +1,49 @@
+.content {
+  width: max-content;
+  max-width: min(320px, calc(100vw - var(--sp-6)));
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  line-height: var(--leading-normal);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  /* Above modals, matching Select/Combobox/DropdownMenu — a popover opened
+     from inside a dialog must not render behind it. Toast (80) stays on top. */
+  z-index: 70;
+  transform-origin: var(--radix-popover-content-transform-origin);
+  animation: popIn var(--dur-fast) var(--ease-out);
+}
+
+.lg {
+  max-width: min(380px, calc(100vw - var(--sp-6)));
+}
+
+.arrow {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.content:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content {
+    animation: none;
+  }
+}

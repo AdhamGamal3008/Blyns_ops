@@ -8,6 +8,7 @@ import { api } from "../../shared/api";
 import type { CalendarEvent } from "../../shared/types";
 import { Button, Card, CardHeader } from "../../shared/ui";
 import styles from "./CalendarView.module.css";
+import { DayOverflow, EventChip } from "./EventPopover";
 
 const DOW = [
   { label: "Mon", full: "Monday" },
@@ -32,6 +33,19 @@ function monthGrid(anchor: Date): Date[] {
     d.setDate(start.getDate() + i);
     return d;
   });
+}
+
+/** Which cell an event belongs in.
+ *
+ * The two kinds of event need opposite handling. An all-day item is a calendar
+ * *date*, stored at UTC midnight, so it must be read back in UTC — take its
+ * local date and every viewer west of Greenwich sees it a day early. A timed
+ * item is a *moment*, so it belongs on whichever day it falls on where the
+ * viewer is sitting. Reading both as UTC (as this did) put a late-evening
+ * deadline in tomorrow's cell for anyone behind UTC.
+ */
+function dayKey(e: CalendarEvent): string {
+  return e.all_day ? e.start.slice(0, 10) : ymd(new Date(e.start));
 }
 
 /** A module's colour-key resolves to a design-system accent, never a raw hex. */
@@ -61,8 +75,7 @@ export function CalendarView() {
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>();
     for (const e of events) {
-      const key = e.start.slice(0, 10);
-      map.set(key, [...(map.get(key) ?? []), e]);
+      map.set(dayKey(e), [...(map.get(dayKey(e)) ?? []), e]);
     }
     return map;
   }, [events]);
@@ -136,13 +149,19 @@ export function CalendarView() {
                         `, ${dayEvents.length} event${dayEvents.length === 1 ? "" : "s"}`}
                     </span>
                     <span className={styles.dayNum} aria-hidden="true">{d.getDate()}</span>
-                    {dayEvents.slice(0, 3).map((e) => (
-                      <span key={e.id} className={styles.chip} style={accent(e.color_key)} title={e.title}>
-                        {e.title}
-                      </span>
-                    ))}
-                    {dayEvents.length > 3 && (
-                      <span className={styles.more}>+{dayEvents.length - 3} more</span>
+                    {dayEvents.length > 0 && (
+                      <div className={styles.chips}>
+                        {dayEvents.slice(0, 3).map((e) => (
+                          <EventChip key={e.id} event={e} />
+                        ))}
+                        {dayEvents.length > 3 && (
+                          <DayOverflow
+                            date={d}
+                            events={dayEvents}
+                            hidden={dayEvents.length - 3}
+                          />
+                        )}
+                      </div>
                     )}
                   </td>
                 );

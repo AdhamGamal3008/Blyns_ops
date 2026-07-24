@@ -63,6 +63,9 @@ export interface CalendarEvent {
   all_day: boolean;
   entity_ref: { module: string; type: string; id: string };
   color_key: string;
+  /** Source detail for the quick view — keys vary by `type`, and the UI renders
+   *  only the ones it recognises, so the server may add more freely. */
+  meta?: Record<string, unknown>;
 }
 
 export interface ActivityEntry {
