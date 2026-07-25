@@ -1,7 +1,7 @@
 // On-hand by product × warehouse (§3 /stock-levels). Stock is never edited
 // here — every change is posted as a movement and the cache follows the ledger.
 
-import { ArrowLeftRight, Plus } from "lucide-react";
+import { ArrowLeftRight, Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
 import {
@@ -29,6 +29,8 @@ export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
   const [error, setError] = useState<unknown>(null);
   const [moving, setMoving] = useState(Boolean(props.openMove));
   const [transferring, setTransferring] = useState(false);
+  // The stock row being corrected in place, or null when the dialog is closed.
+  const [adjusting, setAdjusting] = useState<StockLevel | null>(null);
 
   const load = useCallback(() => {
     api<StockLevel[]>("/inventory/stock-levels?page_size=100")
@@ -83,6 +85,21 @@ export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
             : <Badge tone="success">ok</Badge>;
       },
     },
+    ...(props.canWrite
+      ? [{
+          key: "actions",
+          header: "",
+          // Stock is never edited in place — "Adjust" sets a new count by
+          // posting an adjustment for the difference, so the ledger stays the
+          // source of truth and the change is audited.
+          accessor: (l: StockLevel) => (
+            <Button variant="ghost" size="compact" onClick={() => setAdjusting(l)}>
+              <Pencil size={14} aria-hidden="true" />
+              Adjust
+            </Button>
+          ),
+        }]
+      : []),
   ];
 
   return (
@@ -140,7 +157,96 @@ export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
         <TransferModal products={products} warehouses={warehouses}
           onDone={(ok) => { setTransferring(false); if (ok) load(); }} />
       )}
+      {adjusting && (
+        <AdjustModal
+          level={adjusting}
+          product={product(adjusting.product_id)!}
+          warehouse={warehouse(adjusting.warehouse_id)}
+          onDone={(ok) => { setAdjusting(null); if (ok) load(); }}
+        />
+      )}
     </section>
+  );
+}
+
+/** Set a stock row to a new on-hand count. Because stock is derived from the
+ *  ledger (§2), this does not write on_hand — it posts an `adjustment` movement
+ *  for the difference, which requires a note and is audited as
+ *  `inventory.adjustment`. The result is the same to the user (the count becomes
+ *  what they typed) while the ledger stays the single source of truth. */
+function AdjustModal(props: {
+  level: StockLevel;
+  product: Product;
+  warehouse?: Warehouse;
+  onDone: (ok: boolean) => void;
+}) {
+  const current = props.level.on_hand;
+  const unit = props.product.unit ?? DEFAULT_UNIT;
+  const [target, setTarget] = useState(String(current));
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  const parsed = Number(target);
+  const delta = Number.isFinite(parsed) ? parsed - current : 0;
+  const unchanged = delta === 0;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api("/inventory/movements", {
+        method: "POST",
+        body: {
+          product_id: props.product.id,
+          warehouse_id: props.level.warehouse_id,
+          type: "adjustment",
+          qty: delta,          // signed: the correction to reach the new count
+          note,
+        },
+      });
+      props.onDone(true);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Adjust ${props.product.name}`}
+      description={
+        `${props.warehouse?.name ?? "This warehouse"} · currently ` +
+        `${current} ${unit}. Posts an adjustment so the ledger stays in step.`
+      }
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not adjust the stock"
+      busy={busy}
+      submitDisabled={unchanged}
+      submitLabel="Adjust stock"
+      busyLabel="Adjusting…"
+    >
+      <Field label={`New on-hand count (${unit})`} required>
+        <Input type="number" step="any" value={target} required
+          onChange={(e) => setTarget(e.target.value)} />
+      </Field>
+      <Field
+        label="Reason"
+        required
+        hint={
+          unchanged
+            ? "Enter a different count to make an adjustment."
+            : `This will ${delta > 0 ? "add" : "remove"} ${Math.abs(delta)} ${unit}.`
+        }
+      >
+        <Input value={note} onChange={(e) => setNote(e.target.value)} required
+          placeholder="why the count changed" />
+      </Field>
+    </FormModal>
   );
 }
 

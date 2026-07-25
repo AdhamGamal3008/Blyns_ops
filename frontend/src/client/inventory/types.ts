@@ -8,7 +8,9 @@ export interface Product {
   id: string;
   sku: string;
   name: string;
+  description?: string | null;
   category?: string | null;
+  barcode?: string | null;
   unit?: string;
   cost_price?: number;
   sale_price?: number;

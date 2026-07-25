@@ -113,11 +113,69 @@ describe("StockSection", () => {
     expect(postCall(mock)).toBeUndefined();
   });
 
-  it("read-only users get no movement controls", async () => {
+  it("adjusts a row to a new count by posting an adjustment for the delta", async () => {
+    const mock = stubFetch();
+    render(<StockSection canWrite={true} />);
+    await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
+
+    // first row is Widget @ Main WH, on_hand 3
+    fireEvent.click(screen.getAllByText("Adjust")[0]);
+    await waitFor(() =>
+      expect(screen.getByText("Adjust stock")).toBeInTheDocument());
+
+    // pre-filled with the current count, so submitting unchanged is blocked
+    expect(screen.getByRole("button", { name: "Adjust stock" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/New on-hand count/), {
+      target: { value: "10" },
+    });
+    const note = [...document.querySelectorAll("input")].find(
+      (i) => i.getAttribute("placeholder") === "why the count changed")!;
+    fireEvent.change(note, { target: { value: "annual stock take" } });
+    fireEvent.click(screen.getByText("Adjust stock"));
+
+    await waitFor(() => {
+      const post = postCall(mock);
+      expect(post).toBeTruthy();
+      expect(String(post![0])).toContain("/inventory/movements");
+      // 10 − 3 = +7, as a signed adjustment on that product/warehouse
+      expect(JSON.parse(String(post![1]!.body))).toEqual({
+        product_id: "p1", warehouse_id: "w1", type: "adjustment",
+        qty: 7, note: "annual stock take",
+      });
+    });
+  });
+
+  it("adjusting down posts a negative adjustment", async () => {
+    const mock = stubFetch();
+    render(<StockSection canWrite={true} />);
+    await waitFor(() => expect(screen.getByText("Gadget")).toBeInTheDocument());
+
+    // second row is Gadget @ Main WH, on_hand 40
+    fireEvent.click(screen.getAllByText("Adjust")[1]);
+    await waitFor(() => expect(screen.getByText("Adjust stock")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/New on-hand count/), {
+      target: { value: "35" },
+    });
+    const note = [...document.querySelectorAll("input")].find(
+      (i) => i.getAttribute("placeholder") === "why the count changed")!;
+    fireEvent.change(note, { target: { value: "breakage" } });
+    fireEvent.click(screen.getByText("Adjust stock"));
+
+    await waitFor(() => {
+      const body = JSON.parse(String(postCall(mock)![1]!.body));
+      expect(body.qty).toBe(-5);      // 35 − 40
+      expect(body.type).toBe("adjustment");
+    });
+  });
+
+  it("read-only users get no movement or adjust controls", async () => {
     stubFetch();
     render(<StockSection canWrite={false} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
     expect(screen.queryByText("New movement")).not.toBeInTheDocument();
     expect(screen.queryByText("Transfer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Adjust")).not.toBeInTheDocument();
   });
 });

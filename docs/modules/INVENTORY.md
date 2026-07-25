@@ -54,6 +54,13 @@ ledger is always auditable.
   edits/deletes of past movements.
 - All movements write `activity_log` (`inventory.receipt`, etc.).
 
+**Manual updates via the UI.** Products are edited in place through
+`PATCH /products/{id}` (audited `inventory.product.updated`). Stock is **not**
+edited in place — the Stock tab's "Adjust" sets a row to a new on-hand *count*
+by posting an `adjustment` for the difference, so the ledger stays the source of
+truth and the correction is audited as `inventory.adjustment`. Both, like every
+write, surface in the dashboard Activity panel.
+
 ---
 
 ## 3. API surface

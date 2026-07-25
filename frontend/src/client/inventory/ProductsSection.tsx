@@ -1,6 +1,8 @@
-// Products (§1). Deleting is refused server-side while stock is on hand.
+// Products (§1). Create, edit, activate/deactivate, delete. Deleting is refused
+// server-side while stock is on hand; every write is audited and surfaces in the
+// dashboard activity feed (create/update/delete → inventory.product.*).
 
-import { Plus } from "lucide-react";
+import { Pencil, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
 import {
@@ -28,6 +30,8 @@ export function ProductsSection(props: { canWrite: boolean }) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
+  // The product being edited, or null when the edit dialog is closed.
+  const [editing, setEditing] = useState<Product | null>(null);
 
   const load = useCallback(() => {
     api<Product[]>("/inventory/products?page_size=100")
@@ -99,6 +103,10 @@ export function ProductsSection(props: { canWrite: boolean }) {
           header: "",
           accessor: (p: Product) => (
             <Row gap={2}>
+              <Button variant="ghost" size="compact" onClick={() => setEditing(p)}>
+                <Pencil size={14} aria-hidden="true" />
+                Edit
+              </Button>
               <Button variant="ghost" size="compact" onClick={() => toggleActive(p)}>
                 {p.is_active ? "Deactivate" : "Activate"}
               </Button>
@@ -147,20 +155,33 @@ export function ProductsSection(props: { canWrite: boolean }) {
         />
       </DataState>
 
-      <ProductModal open={creating} onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+      {creating && (
+        <ProductModal onDone={(ok) => { setCreating(false); if (ok) load(); }} />
+      )}
+      {editing && (
+        <ProductModal product={editing}
+          onDone={(ok) => { setEditing(null); if (ok) load(); }} />
+      )}
     </section>
   );
 }
 
-function ProductModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
-  const [sku, setSku] = useState("");
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [unit, setUnit] = useState("pcs");
-  const [costPrice, setCostPrice] = useState("0");
-  const [salePrice, setSalePrice] = useState("0");
-  const [reorderPoint, setReorderPoint] = useState("0");
-  const [reorderQty, setReorderQty] = useState("0");
+/** Create (no `product`) or edit (with one). The same field set either way, so
+ *  the two never drift; edit pre-fills from the row and PATCHes only the fields,
+ *  which the server audits as `inventory.product.updated`. */
+function ProductModal(props: { product?: Product; onDone: (ok: boolean) => void }) {
+  const p = props.product;
+  const editing = p != null;
+  const [sku, setSku] = useState(p?.sku ?? "");
+  const [name, setName] = useState(p?.name ?? "");
+  const [description, setDescription] = useState(p?.description ?? "");
+  const [category, setCategory] = useState(p?.category ?? "");
+  const [barcode, setBarcode] = useState(p?.barcode ?? "");
+  const [unit, setUnit] = useState(p?.unit ?? "pcs");
+  const [costPrice, setCostPrice] = useState(String(p?.cost_price ?? 0));
+  const [salePrice, setSalePrice] = useState(String(p?.sale_price ?? 0));
+  const [reorderPoint, setReorderPoint] = useState(String(p?.reorder_point ?? 0));
+  const [reorderQty, setReorderQty] = useState(String(p?.reorder_qty ?? 0));
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
@@ -168,15 +189,20 @@ function ProductModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
     e.preventDefault();
     setError(null);
     setBusy(true);
+    const body = {
+      sku, name,
+      description: description || null,
+      category: category || null,
+      barcode: barcode || null,
+      unit,
+      cost_price: Number(costPrice), sale_price: Number(salePrice),
+      reorder_point: Number(reorderPoint), reorder_qty: Number(reorderQty),
+    };
     try {
-      await api("/inventory/products", {
-        method: "POST",
-        body: {
-          sku, name, category: category || null, unit,
-          cost_price: Number(costPrice), sale_price: Number(salePrice),
-          reorder_point: Number(reorderPoint), reorder_qty: Number(reorderQty),
-        },
-      });
+      await api(
+        editing ? `/inventory/products/${p!.id}` : "/inventory/products",
+        { method: editing ? "PATCH" : "POST", body },
+      );
       props.onDone(true);
     } catch (err) {
       setError(err);
@@ -186,15 +212,15 @@ function ProductModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
 
   return (
     <FormModal
-      open={props.open}
+      open
       onOpenChange={(o) => !o && props.onDone(false)}
-      title="New product"
+      title={editing ? `Edit ${p!.name}` : "New product"}
       size="lg"
       onSubmit={submit}
       error={error}
-      errorTitle="Could not create the product"
+      errorTitle={editing ? "Could not save the product" : "Could not create the product"}
       busy={busy}
-      submitLabel="Create product"
+      submitLabel={editing ? "Save changes" : "Create product"}
     >
       <FormGrid>
         <Field label="SKU" required>
@@ -206,6 +232,12 @@ function ProductModal(props: { open: boolean; onDone: (ok: boolean) => void }) {
         </Field>
         <Field label="Category">
           <Input value={category} onChange={(e) => setCategory(e.target.value)} />
+        </Field>
+        <Field label="Barcode">
+          <Input value={barcode} onChange={(e) => setBarcode(e.target.value)} />
+        </Field>
+        <Field label="Description">
+          <Input value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>
         <Field label="Unit">
           <Select

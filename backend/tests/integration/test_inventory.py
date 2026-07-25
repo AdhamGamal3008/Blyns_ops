@@ -345,6 +345,57 @@ async def test_movement_needs_a_live_product_and_warehouse(client_client):
     assert res.status_code == 404
 
 
+# --- manual UI updates surface in the dashboard activity feed (ARCHITECTURE §5) -
+#
+# Editing a product and correcting stock are the two "manual update" surfaces the
+# Inventory UI exposes. Both go through these endpoints, and both must land in the
+# tenant activity_log so the dashboard's Activity panel shows them.
+
+async def _inventory_activity(client_client) -> list[dict]:
+    res = await client_client.get("/api/v1/activity", params={"module": "inventory"})
+    assert res.status_code == 200
+    return res.json()["data"]
+
+
+async def test_editing_a_product_is_recorded_in_the_activity_feed(client_client):
+    product = await _product(client_client, "SKU-EDIT", name="Before")
+
+    res = await client_client.patch(f"/api/v1/inventory/products/{product['id']}",
+                                    json={"name": "After", "reorder_point": 15})
+    assert res.status_code == 200
+    assert res.json()["data"]["name"] == "After"
+
+    entry = next(
+        a for a in await _inventory_activity(client_client)
+        if a["action"] == "inventory.product.updated"
+    )
+    assert entry["entity"]["label"] == "After"
+    assert entry["module"] == "inventory"
+    # the changed fields are named, so the feed says what was edited
+    assert set(entry["details"]["fields"]) >= {"name", "reorder_point"}
+
+
+async def test_adjusting_stock_is_recorded_in_the_activity_feed(client_client):
+    """The UI's stock "Adjust" posts an adjustment for the delta; on-hand follows
+    the ledger and the correction is audited as inventory.adjustment."""
+    product = await _product(client_client, "SKU-ADJ")
+    wh = await _main_wh(client_client)
+    await _move(client_client, product, wh, "receipt", 3)
+
+    # correct 3 → 10: an adjustment of +7 (what the Adjust dialog computes)
+    res = await _move(client_client, product, wh, "adjustment", 7, note="stock take")
+    assert res.status_code == 201
+    assert await _on_hand(client_client, product, wh) == 10
+
+    entry = next(
+        a for a in await _inventory_activity(client_client)
+        if a["action"] == "inventory.adjustment"
+    )
+    assert entry["entity"]["label"] == "Product SKU-ADJ"
+    assert entry["details"]["qty"] == 7
+    assert entry["details"]["on_hand"] == 10
+
+
 # --- RBAC --------------------------------------------------------------------
 
 async def _limited_client(client, client_client, onboarded_company, perms, who):
