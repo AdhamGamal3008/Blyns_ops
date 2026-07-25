@@ -106,9 +106,16 @@ Export is READ; import is WRITE.
 ### 7.1 One column spec, three consumers
 
 Each entity declares its columns once (`modules/crm/csv_schema.py`, built on the
-module-agnostic engine in `shared/csv_io.py`). That one list produces the import
+module-agnostic engine in `shared/`: `csv_io.py` reads and writes CSV,
+`csv_spec.py` describes an entity, `csv_service.py` orchestrates, and
+`csv_router.py` generates the four routes). That one list produces the import
 template, the export column picker, and the import parser — so the template can
 always be filled in and uploaded, and **any export re-imports cleanly**.
+
+The engine is shared, not copied: Inventory runs the same code (see
+`INVENTORY.md` §7), which is also where its extensions live — export-only and
+append-only data sets, and entities whose writes must go through their module's
+service.
 
 A few columns are export-only (`Record ID`, `Created at`, `Updated at`,
 `Closed at`): the database owns them, and letting a file name a record's id

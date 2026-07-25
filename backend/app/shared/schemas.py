@@ -7,7 +7,7 @@ Errors are rendered by app/core/errors.py.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from bson import ObjectId
@@ -49,6 +49,32 @@ class PaginationParams(BaseModel):
     @property
     def skip(self) -> int:
         return (self.page - 1) * self.page_size
+
+
+class CsvExportQuery(BaseModel):
+    """Query params for `GET /{module}/export/{entity}` — a FastAPI dependency,
+    the same shape as PaginationParams. Every value is checked against the
+    entity's spec in shared/csv_service.export_query() before a single byte is
+    streamed, because once the response is streaming an error can no longer be
+    reported."""
+
+    fields: str | None = Query(
+        default=None,
+        description="Comma-separated column keys. Omit for every column.",
+    )
+    owner: str | None = Query(default=None, pattern="^(mine|all)$")
+    status: str | None = Query(
+        default=None,
+        description="Filters the entity's status column — `stage` for deals.",
+    )
+    q: str | None = None
+    account_id: str | None = None
+    date_field: str | None = Query(
+        default=None,
+        description="Which date the range applies to; defaults to created_at.",
+    )
+    date_from: date | None = None
+    date_to: date | None = None
 
 
 class BaseDocFields(BaseModel):

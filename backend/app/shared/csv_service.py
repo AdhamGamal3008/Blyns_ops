@@ -1,10 +1,17 @@
-"""CRM CSV import & export (docs/modules/CRM.md §7).
+"""The shared CSV import & export engine (docs/modules/CRM.md §7,
+docs/modules/INVENTORY.md §7).
 
-Split out of service.py because it is a second write path into the same
-collections and deserves to be read as one piece. It keeps to the rules
-service.py enforces — soft-deleted rows are invisible, a converted lead is
-frozen, a terminal deal cannot be reopened — so a spreadsheet can never be used
-to get around a business rule the API refuses.
+Module-agnostic: it is driven entirely by a registry of `CsvEntity` (see
+`shared/csv_spec.py`), so a module gets the whole surface — template, export,
+two-phase import — by declaring its columns. CRM and Inventory both run this
+code; there is deliberately no second copy.
+
+It keeps to the rules each module's service enforces. Soft-deleted rows are
+invisible, and per-entity `row_guard`s reject what the API would reject, so a
+spreadsheet can never be used to get around a business rule. Where writing a
+record does more than insert its document — Inventory's movements claim stock
+and can be refused for insufficient stock — the entity supplies a `writer` and
+the create goes through the module's own service.
 
 Import is two-phase. `mode=validate` reads and reports without writing;
 `mode=commit` performs the same read and then applies it. The client keeps the
@@ -20,7 +27,9 @@ Three behaviors worth stating plainly, because they are what make a round trip
    falls back to the field's default; on update the stored value stands.
    Clearing a field is done in the UI, where it is unambiguous.
 3. **Matching is on a natural key, never on a row's position or id.** A second
-   import of the same file updates the same records instead of doubling them.
+   import of the same file updates the same records instead of doubling them —
+   except for an `append_only` ledger, where a repeat genuinely means more
+   entries and there is no key to match on.
 """
 
 from __future__ import annotations
@@ -34,16 +43,15 @@ from typing import Any, Literal
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
 from app.core.audit import write_activity
 from app.core.config import settings
 from app.core.errors import TENANT_NOT_FOUND, VALIDATION_ERROR, DomainError
-from app.modules.crm import repository as repo
-from app.modules.crm.csv_schema import ENTITIES, CsvEntity
-from app.modules.crm.models import CsvExportQuery
-from app.modules.crm.permissions import TERMINAL_STAGES
 from app.shared import csv_io
 from app.shared.csv_io import CsvField, CsvFormatError, RowIssue
+from app.shared.csv_spec import CsvEntity, RowRejected
+from app.shared.schemas import CsvExportQuery
 from app.tenant.deps import ClientPrincipal
 
 _LIVE = {"is_deleted": {"$ne": True}}
@@ -51,15 +59,38 @@ _EXPORT_BATCH = 500
 _MAX_REPORTED_ERRORS = 500
 _READ_CHUNK = 256 * 1024
 
+# Projected alongside the natural key so a `row_guard` can inspect the record it
+# is about to update. Cheap, and a superset is harmless — a guard reading a key
+# that is not here simply sees None.
+_GUARD_FIELDS = ("status", "stage", "is_active")
 
-def entity_for(name: str) -> CsvEntity:
-    entity = ENTITIES.get(name)
+
+Registry = dict[str, CsvEntity]
+
+
+def entity_for(registry: Registry, module: str, name: str) -> CsvEntity:
+    entity = registry.get(name)
     if entity is None:
         raise DomainError(
             TENANT_NOT_FOUND,
-            f"“{name}” is not a CRM data set. Choose one of: "
-            + ", ".join(ENTITIES),
+            f"“{name}” is not a {module} data set. Choose one of: "
+            + ", ".join(registry),
             http_status=404,
+        )
+    return entity
+
+
+def entity_for_import(registry: Registry, module: str, name: str) -> CsvEntity:
+    """Same, but refuses an export-only data set — one derived from another
+    source of truth, which hand-written rows must not be able to overwrite."""
+    entity = entity_for(registry, module, name)
+    if not entity.can_import:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"{entity.label} are derived and cannot be imported. "
+            "Export them for reporting, and change the records they are "
+            "computed from instead.",
+            http_status=422,
         )
     return entity
 
@@ -86,6 +117,10 @@ def describe(entity: CsvEntity) -> dict[str, Any]:
     return {
         "entity": entity.name,
         "label": entity.label,
+        # The UI hides Import entirely for a derived data set, and tells an
+        # append-only one that a repeat import adds rather than updates.
+        "importable": entity.can_import,
+        "append_only": entity.append_only,
         "fields": [field_json(f) for f in entity.fields],
         "filters": {
             "status": None if status_field is None else {
@@ -107,12 +142,12 @@ def _fallback(key: str) -> CsvField:
 
 
 def template(entity: CsvEntity, *, sample: bool) -> str:
-    return csv_io.template_text(entity.importable, sample=sample)
+    return csv_io.template_text(entity.importable_fields, sample=sample)
 
 
-def filename_for(entity: CsvEntity, kind: str) -> str:
+def filename_for(module: str, entity: CsvEntity, kind: str) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
-    return f"crm-{entity.name}-{kind}-{stamp}.csv"
+    return f"{module}-{entity.name}-{kind}-{stamp}.csv"
 
 
 # --- export ------------------------------------------------------------------
@@ -159,7 +194,13 @@ def export_query(
                 + ", ".join(entity.status_choices),
                 http_status=422,
             )
-        query[entity.status_field] = params.status
+        status_field = entity.field(entity.status_field)
+        # A flag column ("Active": yes/no) is stored as a boolean, so the string
+        # the picker sends would never match. Read it as its own declared kind.
+        if status_field is not None and status_field.kind == "bool":
+            query[entity.status_field] = csv_io.coerce(status_field, params.status)
+        else:
+            query[entity.status_field] = params.status
 
     if params.q and entity.search_fields:
         query["$or"] = [
@@ -280,13 +321,6 @@ async def export_stream(
 
 # --- import ------------------------------------------------------------------
 
-class _RowError(Exception):
-    def __init__(self, message: str, column: str | None = None, value: str = ""):
-        super().__init__(message)
-        self.column = column
-        self.value = value
-
-
 @dataclass
 class _Index:
     """Everything an import needs to look up, loaded once instead of per row.
@@ -303,6 +337,10 @@ class _Index:
 
 def _fold(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
+
+
+def _key_part(entity: CsvEntity, value: Any) -> str:
+    return _fold(value) if entity.key_fold else str(value)
 
 
 async def _build_index(
@@ -327,8 +365,13 @@ async def _build_index(
             lookup.setdefault(key, str(doc["_id"]) if ref.store_str else doc["_id"])
         index.refs[ref.key] = lookup
 
+    # An append-only ledger has nothing to match against: every row is a new
+    # entry, so the index would be built and never read.
+    if entity.append_only or not entity.natural_key:
+        return index
+
     # Natural-key index for upsert, plus the fields the guards need.
-    projection = {"status": 1, "stage": 1}
+    projection = dict.fromkeys(_GUARD_FIELDS, 1)
     for key_field in entity.natural_key:
         key_ref = entity.ref(key_field)
         projection[key_ref.doc_key if key_ref else key_field] = 1
@@ -352,12 +395,20 @@ def _stored_key(entity: CsvEntity, doc: dict) -> tuple | None:
             raw = doc.get(key)
             if raw in (None, ""):
                 return None  # nothing to match on — always a new record
-            parts.append(_fold(raw))
+            parts.append(_key_part(entity, raw))
     return tuple(parts)
 
 
 def _row_key(entity: CsvEntity, values: dict, resolved: dict) -> tuple | None:
-    """The natural key of a row in the uploaded file."""
+    """The natural key of a row in the uploaded file, or None when there is
+    nothing to match on.
+
+    An append-only entity declares no natural key, and an empty tuple is NOT a
+    usable one: every row would share it, so the second row of a ledger import
+    would look like a repeat of the first and be counted as an update.
+    """
+    if entity.append_only or not entity.natural_key:
+        return None
     parts: list[Any] = []
     for key in entity.natural_key:
         ref = entity.ref(key)
@@ -368,7 +419,7 @@ def _row_key(entity: CsvEntity, values: dict, resolved: dict) -> tuple | None:
             raw = values.get(key)
             if raw in (None, ""):
                 return None
-            parts.append(_fold(raw))
+            parts.append(_key_part(entity, raw))
     return tuple(parts)
 
 
@@ -389,7 +440,7 @@ def _resolve_row_refs(entity: CsvEntity, values: dict, index: _Index) -> dict:
         found = index.refs.get(ref.key, {}).get(key)
         if found is None:
             f = entity.field(ref.key)
-            raise _RowError(
+            raise RowRejected(
                 f"No {ref.label.lower()} matches “{raw}”. "
                 f"Create it first, or correct the spelling.",
                 column=f.header if f else ref.key,
@@ -428,31 +479,6 @@ def _doc_fields(
     return doc
 
 
-def _validate_row(entity: CsvEntity, doc: dict, existing: dict | None) -> None:
-    """The business rules service.py enforces, applied to a spreadsheet row."""
-    if entity.name == "leads" and existing is not None:
-        if existing.get("status") == "converted":
-            raise _RowError(
-                "This lead has already been converted and can no longer be edited."
-            )
-
-    if entity.name == "deals":
-        stage = doc.get("stage") or (existing or {}).get("stage") or "new"
-        if existing is not None and existing.get("stage") in TERMINAL_STAGES:
-            if stage != existing["stage"]:
-                raise _RowError(
-                    f"This deal is already {existing['stage']}; "
-                    "terminal stages cannot be reopened.",
-                    column="Stage",
-                )
-        reason = doc.get("lost_reason") or (existing or {}).get("lost_reason")
-        if stage == "lost" and not (reason or "").strip():
-            raise _RowError(
-                "A deal in the `lost` stage needs a lost reason.",
-                column="Lost reason",
-            )
-
-
 @dataclass
 class _Planned:
     row: int
@@ -484,7 +510,7 @@ async def read_upload(upload: Any, *, max_bytes: int) -> bytes:
 
 async def import_csv(
     principal: ClientPrincipal, entity: CsvEntity, data: bytes,
-    *, filename: str, mode: Literal["validate", "commit"],
+    *, module: str, filename: str, mode: Literal["validate", "commit"],
 ) -> dict[str, Any]:
     db = principal.tenant_db
     actor = str(principal.user["_id"])
@@ -513,8 +539,9 @@ async def import_csv(
             creating = existing is None and not repeat
 
             fields = _doc_fields(entity, prow.values, resolved, creating=creating)
-            _validate_row(entity, fields, existing)
-        except _RowError as exc:
+            if entity.row_guard is not None:
+                entity.row_guard(fields, existing)
+        except RowRejected as exc:
             issues.append(RowIssue(prow.row, exc.column, exc.value, str(exc)))
             continue
 
@@ -535,20 +562,22 @@ async def import_csv(
         ))
 
     if mode == "commit" and plan:
-        created, updated = await _apply(db, entity, plan, actor)
+        created, updated, write_issues = await _apply(principal, entity, plan, actor)
+        issues.extend(write_issues)
         await write_activity(
-            db, actor_id=actor, action="crm.import.completed",
-            entity={"type": "crm_import", "id": entity.name,
+            db, actor_id=actor, action=f"{module}.import.completed",
+            entity={"type": f"{module}_import", "id": entity.name,
                     "label": f"{entity.label} import"},
             details={
                 "entity": entity.name, "file": filename,
                 "created": created, "updated": updated,
-                "failed": len(issues), "rows": parsed.seen_rows,
+                "failed": len({i.row for i in issues}), "rows": parsed.seen_rows,
                 "columns": parsed.present,
             },
-            actor_name=principal.user["name"], module="crm",
+            actor_name=principal.user["name"], module=module,
         )
 
+    issues.sort(key=lambda i: i.row)
     return {
         "entity": entity.name,
         "label": entity.label,
@@ -569,39 +598,92 @@ async def import_csv(
 
 
 async def _apply(
-    db: AsyncIOMotorDatabase, entity: CsvEntity, plan: list[_Planned], actor: str,
-) -> tuple[int, int]:
+    principal: ClientPrincipal, entity: CsvEntity, plan: list[_Planned], actor: str,
+) -> tuple[int, int, list[RowIssue]]:
+    """Write the planned rows.
+
+    A row can still fail here, and not every failure is knowable earlier: an
+    Inventory movement is refused for insufficient stock only at the moment it
+    claims it. Such a row is reported like any other bad row and the rest of the
+    file still lands — the same "import the good, report the bad" contract as
+    the parse stage.
+    """
+    db = principal.tenant_db
     created = updated = 0
     fresh: dict[tuple, ObjectId] = {}
+    issues: list[RowIssue] = []
+    owned = any(ref.doc_key == "owner_id" for ref in entity.refs)
 
     for planned in plan:
         target = planned.existing_id or (
             fresh.get(planned.key) if planned.key is not None else None
         )
-        if target is None:
-            doc = dict(planned.fields)
-            doc["created_by"] = actor
-            doc.setdefault("owner_id", actor)
-            inserted = await repo.insert(db, entity.collection, doc)
-            if planned.key is not None:
-                fresh[planned.key] = inserted["_id"]
-            created += 1
-            continue
+        try:
+            if target is None:
+                doc = dict(planned.fields)
+                doc["created_by"] = actor
+                # Only where the module actually models ownership — adding an
+                # owner_id to a product would invent a field its API never sets.
+                if owned:
+                    doc.setdefault("owner_id", actor)
+                if entity.writer is not None:
+                    # The record has effects beyond its own document, so the
+                    # module's service owns the write.
+                    await entity.writer(principal, doc)
+                else:
+                    inserted = await _insert(db, entity.collection, doc)
+                    if planned.key is not None:
+                        fresh[planned.key] = inserted["_id"]
+                created += 1
+                continue
 
-        fields = dict(planned.fields)
-        # A nested column ($set "address.city") cannot create a path under a
-        # stored null, so merge the sub-document rather than dotting into it.
-        for parent in planned.nested_parents:
-            stored = await db[entity.collection].find_one(
-                {"_id": target}, {parent: 1}
-            )
-            current = (stored or {}).get(parent)
-            fields[parent] = {
-                **(current if isinstance(current, dict) else {}),
-                **fields[parent],
-            }
-        fields["updated_by"] = actor
-        await repo.update(db, entity.collection, target, fields)
-        updated += 1
+            fields = dict(planned.fields)
+            # A nested column ($set "address.city") cannot create a path under a
+            # stored null, so merge the sub-document rather than dotting into it.
+            for parent in planned.nested_parents:
+                stored = await db[entity.collection].find_one(
+                    {"_id": target}, {parent: 1}
+                )
+                current = (stored or {}).get(parent)
+                fields[parent] = {
+                    **(current if isinstance(current, dict) else {}),
+                    **fields[parent],
+                }
+            fields["updated_by"] = actor
+            await _update(db, entity.collection, target, fields)
+            updated += 1
+        except DomainError as exc:
+            issues.append(RowIssue(planned.row, None, "", exc.message))
+        except DuplicateKeyError:
+            # A unique index the natural key does not cover, or two rows racing
+            # for the same one. Report it rather than 500 the whole import.
+            issues.append(RowIssue(
+                planned.row, None, "",
+                "A record with this unique value already exists.",
+            ))
 
-    return created, updated
+    return created, updated, issues
+
+
+# --- generic document writes -------------------------------------------------
+#
+# Deliberately not a module's repository: the engine serves several modules and
+# must not import any one of them. The shape matches what every module's
+# repository writes (BUILD.md §5 base fields), so a CSV-written document is
+# indistinguishable from an API-written one.
+
+async def _insert(db: AsyncIOMotorDatabase, coll: str, doc: dict) -> dict:
+    now = datetime.now(UTC)
+    doc.setdefault("created_at", now)
+    doc.setdefault("updated_at", now)
+    doc.setdefault("is_deleted", False)
+    result = await db[coll].insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return doc
+
+
+async def _update(
+    db: AsyncIOMotorDatabase, coll: str, oid: ObjectId, fields: dict
+) -> None:
+    fields["updated_at"] = datetime.now(UTC)
+    await db[coll].update_one({"_id": oid}, {"$set": fields})

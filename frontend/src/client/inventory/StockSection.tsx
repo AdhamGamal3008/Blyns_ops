@@ -19,6 +19,7 @@ import {
   NativeSelect,
   Row,
 } from "../../shared/ui";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 import { DEFAULT_UNIT, type Product, type StockLevel, type Warehouse } from "./types";
 
 export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
@@ -90,18 +91,24 @@ export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
         title="Stock on hand"
         description="Derived from the movement ledger — never edited directly."
         actions={
-          props.canWrite && (
-            <Row gap={2}>
-              <Button variant="secondary" size="compact" onClick={() => setTransferring(true)}>
-                <ArrowLeftRight size={15} aria-hidden="true" />
-                Transfer
-              </Button>
-              <Button size="compact" onClick={() => setMoving(true)}>
-                <Plus size={15} aria-hidden="true" />
-                New movement
-              </Button>
-            </Row>
-          )
+          <Row gap={2}>
+            {/* Derived from the ledger, so there is nothing to import back. */}
+            <DataTransfer module="inventory" entity="stock-levels" exportOnly
+              canWrite={props.canWrite} onImported={load} />
+            {props.canWrite && (
+              <>
+                <Button variant="secondary" size="compact"
+                  onClick={() => setTransferring(true)}>
+                  <ArrowLeftRight size={15} aria-hidden="true" />
+                  Transfer
+                </Button>
+                <Button size="compact" onClick={() => setMoving(true)}>
+                  <Plus size={15} aria-hidden="true" />
+                  New movement
+                </Button>
+              </>
+            )}
+          </Row>
         }
       />
 

@@ -16,7 +16,7 @@ import {
   Input,
   Select,
 } from "../../shared/ui";
-import { DataTransfer } from "./DataTransfer";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Contact {
   id: string;
@@ -104,7 +104,8 @@ export function ContactsSection(props: { canWrite: boolean }) {
         description={contacts ? `${contacts.length} people` : "People at your accounts"}
         actions={
           <>
-            <DataTransfer entity="contacts" canWrite={props.canWrite} onImported={load} />
+            <DataTransfer module="crm" entity="contacts" canWrite={props.canWrite}
+              onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>
                 <Plus size={15} aria-hidden="true" />

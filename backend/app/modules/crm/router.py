@@ -6,11 +6,10 @@ on every route here with PERMISSION_DENIED (acceptance #4).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Query
 
-from app.core.config import settings
-from app.modules.crm import csv_service, service
+from app.modules.crm import service
+from app.modules.crm.csv_schema import ENTITIES as CSV_ENTITIES
 from app.modules.crm.models import (
     AccountCreate,
     AccountPatch,
@@ -18,7 +17,6 @@ from app.modules.crm.models import (
     ActivityPatch,
     ContactCreate,
     ContactPatch,
-    CsvExportQuery,
     DealCreate,
     DealPatch,
     DealStageChange,
@@ -26,6 +24,7 @@ from app.modules.crm.models import (
     LeadCreate,
     LeadPatch,
 )
+from app.shared.csv_router import csv_routes
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
 from app.tenant.deps import ClientPrincipal, require
@@ -241,73 +240,7 @@ async def delete_activity(activity_id: str, principal: ClientPrincipal = Depends
 
 # --- CSV import & export (§7) ------------------------------------------------
 #
-# `{entity}` is one of accounts | contacts | leads | deals. Reading data out is
-# crm READ; writing a spreadsheet back in is crm WRITE, exactly like the
-# single-record routes above.
+# `{entity}` is one of accounts | contacts | leads | deals. The routes are
+# generated from the shared engine, so CRM and Inventory run the same code.
 
-def _csv_response(body: str, filename: str) -> StreamingResponse:
-    return StreamingResponse(
-        iter([body]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@router.get("/export/{entity}/fields")
-async def export_fields(entity: str, principal: ClientPrincipal = Depends(_read)):
-    """Columns and filters available for this data set — the export dialog and
-    the import guide are both rendered from this, so the UI can never offer a
-    column the server doesn't know."""
-    return envelope(csv_service.describe(csv_service.entity_for(entity)))
-
-
-@router.get("/export/{entity}")
-async def export_entity(
-    entity: str,
-    params: CsvExportQuery = Depends(),
-    principal: ClientPrincipal = Depends(_read),
-):
-    spec = csv_service.entity_for(entity)
-    selected = csv_service.select_fields(spec, params.fields)
-    query = csv_service.export_query(principal, spec, params)
-    return StreamingResponse(
-        csv_service.export_stream(principal, spec, selected, query),
-        media_type="text/csv; charset=utf-8",
-        headers={
-            "Content-Disposition":
-                f'attachment; filename="{csv_service.filename_for(spec, "export")}"',
-        },
-    )
-
-
-@router.get("/import/{entity}/template")
-async def import_template(
-    entity: str, sample: bool = False, principal: ClientPrincipal = Depends(_read),
-):
-    """The blank CSV to fill in: every importable column, in spec order.
-    `?sample=1` adds one example row to delete."""
-    spec = csv_service.entity_for(entity)
-    return _csv_response(
-        csv_service.template(spec, sample=sample),
-        csv_service.filename_for(spec, "template"),
-    )
-
-
-@router.post("/import/{entity}")
-async def import_entity(
-    entity: str,
-    file: UploadFile = File(...),
-    mode: str = Query(default="validate", pattern="^(validate|commit)$"),
-    principal: ClientPrincipal = Depends(_write),
-):
-    """`mode=validate` reports what would happen and writes nothing;
-    `mode=commit` applies it. The client posts the same file twice."""
-    spec = csv_service.entity_for(entity)
-    data = await csv_service.read_upload(
-        file, max_bytes=settings.max_import_mb * 1024 * 1024
-    )
-    return envelope(await csv_service.import_csv(
-        principal, spec, data,
-        filename=(file.filename or "import.csv"),
-        mode="commit" if mode == "commit" else "validate",
-    ))
+csv_routes(router, module="crm", registry=CSV_ENTITIES, read=_read, write=_write)

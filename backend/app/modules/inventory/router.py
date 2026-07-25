@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.modules.inventory import service
+from app.modules.inventory.csv_schema import ENTITIES as CSV_ENTITIES
 from app.modules.inventory.models import (
     MovementCreate,
     ProductCreate,
@@ -18,6 +19,7 @@ from app.modules.inventory.models import (
     WarehouseCreate,
     WarehousePatch,
 )
+from app.shared.csv_router import csv_routes
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
 from app.tenant.deps import ClientPrincipal, require
@@ -152,3 +154,15 @@ async def list_low_stock(principal: ClientPrincipal = Depends(_read)):
 async def reconcile(principal: ClientPrincipal = Depends(_read)):
     """Integrity check: cached on_hand vs. the movement ledger (§2)."""
     return envelope(await service.reconcile(principal))
+
+
+# --- CSV import & export (§7) ------------------------------------------------
+#
+# `{entity}` is one of products | warehouses | movements | stock-levels, served
+# by the same shared engine CRM uses. Two data sets behave differently, and the
+# difference is enforced in csv_schema.py, not here: a movement row is posted
+# through create_movement (so it claims stock and can be refused), and stock
+# levels are export-only because they are derived from the ledger.
+
+csv_routes(router, module="inventory", registry=CSV_ENTITIES,
+           read=_read, write=_write)

@@ -13,83 +13,43 @@ a row error rather than a silently created record (see csv_service.py).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from dataclasses import field as dc_field
-from typing import Any
-
 from app.modules.crm import repository as repo
 from app.modules.crm.permissions import (
     ACCOUNT_STATUSES,
     LEAD_STATUSES,
     STAGES,
+    TERMINAL_STAGES,
 )
 from app.shared.csv_io import CsvField
+from app.shared.csv_spec import CsvEntity, CsvRef, RowRejected
 
 USERS = "users"  # tenant employees, for `owner_email`
 
 
-@dataclass(frozen=True)
-class CsvRef:
-    """A human-readable column standing in for a stored id."""
+# --- row guards: what the API refuses, a spreadsheet must also refuse --------
 
-    key: str
-    """CSV field key, e.g. `account_name`."""
-
-    doc_key: str
-    """Document field it resolves to, e.g. `account_id`."""
-
-    collection: str
-    match_field: str
-    label: str
-
-    fold_case: bool = True
-    """Match ignoring case/outer whitespace (names). Emails are pre-normalized."""
-
-    store_str: bool = False
-    """`owner_id` is stored as a string everywhere else in this module; account
-    and contact references are stored as ObjectIds. Keep both shapes identical
-    to what service.py writes, or the two write paths diverge."""
+def _guard_lead(doc: dict, existing: dict | None) -> None:
+    if existing is not None and existing.get("status") == "converted":
+        raise RowRejected(
+            "This lead has already been converted and can no longer be edited."
+        )
 
 
-@dataclass(frozen=True)
-class CsvEntity:
-    name: str
-    label: str
-    collection: str
-    fields: tuple[CsvField, ...]
-    refs: tuple[CsvRef, ...]
-
-    natural_key: tuple[str, ...]
-    """Field keys that identify an existing record for upsert. A row whose key
-    columns are blank can never match, so it is always created."""
-
-    status_field: str | None = None
-    status_choices: tuple[str, ...] = ()
-    date_fields: tuple[str, ...] = ("created_at", "updated_at")
-    default_sort: tuple[str, int] = ("created_at", -1)
-
-    search_fields: tuple[str, ...] = ()
-    """Document fields the export's `q` filter scans — the same ones the
-    module's list endpoints search, so the two never disagree."""
-
-    create_defaults: dict[str, Any] = dc_field(default_factory=dict)
-    """Applied to rows the import creates, for columns the file left out. These
-    mirror the Pydantic defaults in models.py; a document written by CSV must be
-    shaped exactly like one written by POST."""
-
-    @property
-    def importable(self) -> tuple[CsvField, ...]:
-        return tuple(f for f in self.fields if f.importable)
-
-    @property
-    def exportable(self) -> tuple[CsvField, ...]:
-        return tuple(f for f in self.fields if f.exportable)
-
-    def field(self, key: str) -> CsvField | None:
-        return next((f for f in self.fields if f.key == key), None)
-
-    def ref(self, key: str) -> CsvRef | None:
-        return next((r for r in self.refs if r.key == key), None)
+def _guard_deal(doc: dict, existing: dict | None) -> None:
+    stage = doc.get("stage") or (existing or {}).get("stage") or "new"
+    if existing is not None and existing.get("stage") in TERMINAL_STAGES:
+        if stage != existing["stage"]:
+            raise RowRejected(
+                f"This deal is already {existing['stage']}; "
+                "terminal stages cannot be reopened.",
+                column="Stage",
+            )
+    reason = doc.get("lost_reason") or (existing or {}).get("lost_reason")
+    if stage == "lost" and not (reason or "").strip():
+        raise RowRejected(
+            "A deal in the `lost` stage needs a lost reason.",
+            column="Lost reason",
+        )
 
 
 # --- shared column shapes ----------------------------------------------------
@@ -202,6 +162,7 @@ LEADS = CsvEntity(
     status_field="status",
     status_choices=tuple(LEAD_STATUSES),
     search_fields=("name",),
+    row_guard=_guard_lead,
     create_defaults={
         "status": "new",
         "converted_to": {"account_id": None, "contact_id": None, "deal_id": None},
@@ -241,6 +202,7 @@ DEALS = CsvEntity(
     date_fields=("created_at", "updated_at", "expected_close_date"),
     default_sort=("expected_close_date", 1),
     search_fields=("title",),
+    row_guard=_guard_deal,
     create_defaults={
         "pipeline": "default", "stage": "new", "amount": 0.0,
         "currency": "USD", "probability_pct": 0, "lost_reason": None,

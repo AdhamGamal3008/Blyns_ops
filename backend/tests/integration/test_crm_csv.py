@@ -61,7 +61,7 @@ async def test_template_headers_are_exactly_the_importable_columns(client_client
         assert res.text.startswith(BOM), "Excel needs the BOM to read UTF-8"
 
         rows = _table(res.text)
-        assert rows[0] == [f.header for f in entity.importable]
+        assert rows[0] == [f.header for f in entity.importable_fields]
         assert len(rows) == 1  # headers only unless a sample is asked for
 
         # server-owned columns are exportable but never importable

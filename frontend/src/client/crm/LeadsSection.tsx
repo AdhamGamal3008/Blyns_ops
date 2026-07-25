@@ -18,7 +18,7 @@ import {
   FormModal,
   Input,
 } from "../../shared/ui";
-import { DataTransfer } from "./DataTransfer";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Lead {
   id: string;
@@ -86,7 +86,8 @@ export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
         description={leads ? `${leads.length} in the funnel` : "Inbound and sourced leads"}
         actions={
           <>
-            <DataTransfer entity="leads" canWrite={props.canWrite} onImported={load} />
+            <DataTransfer module="crm" entity="leads" canWrite={props.canWrite}
+              onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>
                 <Plus size={15} aria-hidden="true" />

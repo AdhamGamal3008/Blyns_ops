@@ -1,16 +1,18 @@
-// CSV import & export for a CRM tab (docs/modules/CRM.md §7).
+// CSV import & export for any module's tab (docs/modules/CRM.md §7,
+// docs/modules/INVENTORY.md §7).
 //
-// One bar, four tabs. Both dialogs are rendered from the server's own field
-// list (`/crm/export/{entity}/fields`), so the columns offered here can never
-// drift from the columns the parser accepts.
+// One bar, driven entirely by the server: both dialogs are rendered from
+// `/{module}/export/{entity}/fields`, so the columns offered here can never
+// drift from the columns the parser accepts, and a data set the server marks
+// export-only (Inventory's derived stock levels) simply shows no Import.
 //
 // Import is deliberately two passes over the same file: the first reports what
 // would happen and writes nothing, the second applies it. Nobody imports 400
-// rows into a live CRM without seeing the damage first.
+// rows into live data without seeing the damage first.
 
 import { Download, FileWarning, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { api, apiDownload, apiUpload } from "../../shared/api";
+import { api, apiDownload, apiUpload } from "../api";
 import {
   Badge,
   Banner,
@@ -25,10 +27,12 @@ import {
   Row,
   Spinner,
   Stack,
-} from "../../shared/ui";
+} from "../ui";
 import styles from "./DataTransfer.module.css";
 
-export type CsvEntityName = "accounts" | "contacts" | "leads" | "deals";
+/** Which module owns the routes. Entity names are the server's to define, so
+ *  they stay free-form strings rather than a union the UI has to keep in sync. */
+export type CsvModule = "crm" | "inventory";
 
 interface CsvFieldMeta {
   key: string;
@@ -45,6 +49,10 @@ interface CsvFieldMeta {
 interface CsvMeta {
   entity: string;
   label: string;
+  /** False for a derived data set — export it, never write it back. */
+  importable: boolean;
+  /** True for an immutable ledger: a repeat import adds entries, never updates. */
+  append_only: boolean;
   fields: CsvFieldMeta[];
   filters: {
     status: { label: string; choices: string[] } | null;
@@ -79,35 +87,45 @@ interface ImportReport {
 // The spec is static per tenant, so one fetch per entity per session is plenty.
 const metaCache = new Map<string, CsvMeta>();
 
-function useCsvMeta(entity: CsvEntityName, enabled: boolean) {
-  const [meta, setMeta] = useState<CsvMeta | null>(metaCache.get(entity) ?? null);
+function useCsvMeta(module: CsvModule, entity: string, enabled: boolean) {
+  const cacheKey = `${module}/${entity}`;
+  const [meta, setMeta] = useState<CsvMeta | null>(metaCache.get(cacheKey) ?? null);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!enabled || meta) return;
     let live = true;
-    api<CsvMeta>(`/crm/export/${entity}/fields`)
+    api<CsvMeta>(`/${module}/export/${entity}/fields`)
       .then((r) => {
-        metaCache.set(entity, r.data);
+        metaCache.set(cacheKey, r.data);
         if (live) setMeta(r.data);
       })
       .catch((err) => live && setError(err));
     return () => {
       live = false;
     };
-  }, [entity, enabled, meta]);
+  }, [module, entity, cacheKey, enabled, meta]);
 
   return { meta, error };
 }
 
 export function DataTransfer(props: {
-  entity: CsvEntityName;
+  module: CsvModule;
+  entity: string;
   canWrite: boolean;
   /** Refresh the list once rows have actually landed. */
   onImported: () => void;
+  /** Skip the Import button without asking the server — for a data set the
+   *  caller already knows is derived. The server is still authoritative. */
+  exportOnly?: boolean;
 }) {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Peek at the spec so a derived data set never offers an Import it would
+  // refuse. Only fetched once either dialog has been opened.
+  const { meta } = useCsvMeta(props.module, props.entity, exporting || importing);
+  const canImport =
+    props.canWrite && !props.exportOnly && (meta?.importable ?? true);
 
   return (
     <>
@@ -115,7 +133,7 @@ export function DataTransfer(props: {
         <Download size={15} aria-hidden="true" />
         Export
       </Button>
-      {props.canWrite && (
+      {canImport && (
         <Button variant="ghost" size="compact" onClick={() => setImporting(true)}>
           <Upload size={15} aria-hidden="true" />
           Import
@@ -123,12 +141,14 @@ export function DataTransfer(props: {
       )}
 
       <ExportDialog
+        module={props.module}
         entity={props.entity}
         open={exporting}
         onClose={() => setExporting(false)}
       />
-      {props.canWrite && (
+      {canImport && (
         <ImportDialog
+          module={props.module}
           entity={props.entity}
           open={importing}
           onClose={() => setImporting(false)}
@@ -142,11 +162,12 @@ export function DataTransfer(props: {
 // --- export ------------------------------------------------------------------
 
 function ExportDialog(props: {
-  entity: CsvEntityName;
+  module: CsvModule;
+  entity: string;
   open: boolean;
   onClose: () => void;
 }) {
-  const { meta, error: metaError } = useCsvMeta(props.entity, props.open);
+  const { meta, error: metaError } = useCsvMeta(props.module, props.entity, props.open);
   const [selected, setSelected] = useState<string[] | null>(null);
   const [status, setStatus] = useState("");
   const [owner, setOwner] = useState("all");
@@ -182,8 +203,8 @@ function ExportDialog(props: {
     }
     try {
       await apiDownload(
-        `/crm/export/${props.entity}?${params.toString()}`,
-        `crm-${props.entity}.csv`,
+        `/${props.module}/export/${props.entity}?${params.toString()}`,
+        `${props.module}-${props.entity}.csv`,
       );
       props.onClose();
     } catch (err) {
@@ -329,13 +350,62 @@ function downloadErrors(report: ImportReport) {
   URL.revokeObjectURL(url);
 }
 
+/** The rejected rows, in the preview and again in the result — a row can fail
+ *  at either stage, and both deserve the same treatment. */
+function ErrorTable(props: { report: ImportReport; title: string }) {
+  const { report } = props;
+  return (
+    <>
+      <Row gap={2} className={styles.errorHead}>
+        <FileWarning size={16} aria-hidden="true" />
+        <span>
+          {props.title}
+          {report.errors_truncated && " (first 500 shown)"}
+        </span>
+        <Button
+          type="button" variant="ghost" size="compact"
+          onClick={() => downloadErrors(report)}
+        >
+          Download as CSV
+        </Button>
+      </Row>
+      <div className={styles.errorScroll}>
+        <table className={styles.errorTable}>
+          <caption className={styles.srOnly}>
+            Rows that could not be imported
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Row</th>
+              <th scope="col">Column</th>
+              <th scope="col">Value</th>
+              <th scope="col">Problem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.errors.map((e, i) => (
+              <tr key={`${e.row}-${e.column}-${i}`}>
+                <td>{e.row}</td>
+                <td>{e.column ?? "—"}</td>
+                <td>{e.value || "—"}</td>
+                <td>{e.message}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function ImportDialog(props: {
-  entity: CsvEntityName;
+  module: CsvModule;
+  entity: string;
   open: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
-  const { meta, error: metaError } = useCsvMeta(props.entity, props.open);
+  const { meta, error: metaError } = useCsvMeta(props.module, props.entity, props.open);
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [done, setDone] = useState<ImportReport | null>(null);
@@ -360,7 +430,7 @@ function ImportDialog(props: {
     setBusy(true);
     try {
       const res = await apiUpload<ImportReport>(
-        `/crm/import/${props.entity}?mode=${mode}`, chosen,
+        `/${props.module}/import/${props.entity}?mode=${mode}`, chosen,
       );
       if (mode === "commit") {
         setDone(res.data);
@@ -417,10 +487,22 @@ function ImportDialog(props: {
         )}
 
         {done ? (
-          <Banner tone="success" title="Import complete">
-            {done.created} created, {done.updated} updated
-            {done.failed > 0 ? `, ${done.failed} skipped` : ""}.
-          </Banner>
+          <>
+            <Banner
+              tone={done.failed > 0 ? "warning" : "success"}
+              title={done.failed > 0 ? "Imported with some rows skipped" : "Import complete"}
+            >
+              {done.created} created, {done.updated} updated
+              {done.failed > 0 ? `, ${done.failed} skipped` : ""}.
+            </Banner>
+            {/* Some rows can only fail at the moment they are written — an
+                Inventory movement is refused for insufficient stock when it
+                claims it, which the dry run could not know. Show those here
+                rather than only in the preview. */}
+            {done.errors.length > 0 && (
+              <ErrorTable report={done} title="These rows were skipped" />
+            )}
+          </>
         ) : (
           <>
             <section className={styles.step}>
@@ -434,8 +516,8 @@ function ImportDialog(props: {
                   type="button" variant="secondary" size="compact"
                   onClick={() =>
                     apiDownload(
-                      `/crm/import/${props.entity}/template?sample=${withSample}`,
-                      `crm-${props.entity}-template.csv`,
+                      `/${props.module}/import/${props.entity}/template?sample=${withSample}`,
+                      `${props.module}-${props.entity}-template.csv`,
                     )
                   }
                 >
@@ -503,9 +585,13 @@ function ImportDialog(props: {
                   </Badge>
                 </Row>
                 <p className={styles.stepBody}>
-                  Rows are matched on their key column, so re-importing a file
-                  updates the same records instead of duplicating them. A blank
-                  cell leaves the stored value alone.
+                  {meta?.append_only
+                    ? "These are ledger entries, so importing this file again " +
+                      "records the movements a second time rather than updating " +
+                      "the first. Stock is checked as each row is posted."
+                    : "Rows are matched on their key column, so re-importing a " +
+                      "file updates the same records instead of duplicating " +
+                      "them. A blank cell leaves the stored value alone."}
                 </p>
 
                 {report.ignored_columns.length > 0 && (
@@ -516,46 +602,7 @@ function ImportDialog(props: {
                 )}
 
                 {report.errors.length > 0 && (
-                  <>
-                    <Row gap={2} className={styles.errorHead}>
-                      <FileWarning size={16} aria-hidden="true" />
-                      <span>
-                        These rows will be skipped
-                        {report.errors_truncated && " (first 500 shown)"}
-                      </span>
-                      <Button
-                        type="button" variant="ghost" size="compact"
-                        onClick={() => downloadErrors(report)}
-                      >
-                        Download as CSV
-                      </Button>
-                    </Row>
-                    <div className={styles.errorScroll}>
-                      <table className={styles.errorTable}>
-                        <caption className={styles.srOnly}>
-                          Rows that could not be imported
-                        </caption>
-                        <thead>
-                          <tr>
-                            <th scope="col">Row</th>
-                            <th scope="col">Column</th>
-                            <th scope="col">Value</th>
-                            <th scope="col">Problem</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {report.errors.map((e, i) => (
-                            <tr key={`${e.row}-${e.column}-${i}`}>
-                              <td>{e.row}</td>
-                              <td>{e.column ?? "—"}</td>
-                              <td>{e.value || "—"}</td>
-                              <td>{e.message}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
+                  <ErrorTable report={report} title="These rows will be skipped" />
                 )}
               </section>
             )}

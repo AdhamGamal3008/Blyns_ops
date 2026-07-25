@@ -19,6 +19,7 @@ import {
   Row,
   Select,
 } from "../../shared/ui";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 import { DEFAULT_UNIT, type Product } from "./types";
 
 const UNITS = ["pcs", "kg", "box"];
@@ -114,12 +115,16 @@ export function ProductsSection(props: { canWrite: boolean }) {
         title="Products"
         description={products ? `${products.length} in the catalogue` : "Product catalogue"}
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New product
-            </Button>
-          )
+          <>
+            <DataTransfer module="inventory" entity="products"
+              canWrite={props.canWrite} onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New product
+              </Button>
+            )}
+          </>
         }
       />
 

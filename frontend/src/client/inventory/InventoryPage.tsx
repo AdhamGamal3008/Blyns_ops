@@ -33,7 +33,7 @@ export function InventoryPage() {
           <StockSection canWrite={canWrite} openMove={adjustDeepLink} />
         </TabsContent>
         <TabsContent value="products"><ProductsSection canWrite={canWrite} /></TabsContent>
-        <TabsContent value="movements"><MovementsSection /></TabsContent>
+        <TabsContent value="movements"><MovementsSection canWrite={canWrite} /></TabsContent>
         <TabsContent value="low"><LowStockSection /></TabsContent>
       </Tabs>
     </Stack>

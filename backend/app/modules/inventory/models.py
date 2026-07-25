@@ -8,7 +8,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 Unit = Literal["pcs", "kg", "box"]
+UNITS: tuple[str, ...] = ("pcs", "kg", "box")
 DirectMovementType = Literal["receipt", "issue", "adjustment"]
+# Every type that can appear in the ledger. `transfer` is written only by
+# create_transfer, as a balanced pair — it is filterable and exportable, but
+# never something a single row can post on its own.
+MOVEMENT_TYPES: tuple[str, ...] = ("receipt", "issue", "transfer", "adjustment")
 # INVENTORY.md §1 lists finance|manual|transfer, but PROJECT_MANAGEMENT.md §1
 # has PM reserve/consume stock "via Inventory movements" — so a movement must be
 # able to name `projects` as its origin.

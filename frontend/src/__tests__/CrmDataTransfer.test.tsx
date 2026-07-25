@@ -5,7 +5,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DataTransfer } from "../client/crm/DataTransfer";
+import { DataTransfer } from "../shared/csv/DataTransfer";
 
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -16,6 +16,8 @@ const META = {
   data: {
     entity: "deals",
     label: "Deals",
+    importable: true,
+    append_only: false,
     fields: [
       { key: "title", header: "Title", kind: "str", required: true, choices: [],
         importable: true, exportable: true, example: "Globex rollout", hint: "" },
@@ -102,14 +104,14 @@ describe("CRM DataTransfer", () => {
 
   it("read-only users can export but are not offered import", async () => {
     stubFetch();
-    render(<DataTransfer entity="deals" canWrite={false} onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite={false} onImported={() => {}} />);
     expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
   });
 
   it("builds the column picker from the server's field list", async () => {
     stubFetch();
-    render(<DataTransfer entity="deals" canWrite onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Title" })).toBeInTheDocument());
@@ -122,7 +124,7 @@ describe("CRM DataTransfer", () => {
 
   it("sends only the ticked columns, plus the chosen filters", async () => {
     const mock = stubFetch();
-    render(<DataTransfer entity="deals" canWrite onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Title" })).toBeInTheDocument());
 
@@ -153,7 +155,7 @@ describe("CRM DataTransfer", () => {
 
   it("cannot export with nothing selected", async () => {
     stubFetch();
-    render(<DataTransfer entity="deals" canWrite onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Title" })).toBeInTheDocument());
 
@@ -166,7 +168,7 @@ describe("CRM DataTransfer", () => {
   it("checks an uploaded file before writing anything, then commits on confirm", async () => {
     const mock = stubFetch();
     const onImported = vi.fn();
-    render(<DataTransfer entity="deals" canWrite onImported={onImported} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={onImported} />);
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
 
     await waitFor(() =>
@@ -212,7 +214,7 @@ describe("CRM DataTransfer", () => {
     });
     vi.stubGlobal("fetch", mock);
 
-    render(<DataTransfer entity="deals" canWrite onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
     await waitFor(() =>
       expect(screen.getByText("1. Start from the template")).toBeInTheDocument());
@@ -227,7 +229,7 @@ describe("CRM DataTransfer", () => {
 
   it("offers the template with an example row by default", async () => {
     const mock = stubFetch();
-    render(<DataTransfer entity="deals" canWrite onImported={() => {}} />);
+    render(<DataTransfer module="crm" entity="deals" canWrite onImported={() => {}} />);
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Download template" })).toBeInTheDocument());

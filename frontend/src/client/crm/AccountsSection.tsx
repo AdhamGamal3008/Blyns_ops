@@ -19,7 +19,7 @@ import {
   NativeSelect,
   Select,
 } from "../../shared/ui";
-import { DataTransfer } from "./DataTransfer";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Account {
   id: string;
@@ -109,7 +109,8 @@ export function AccountsSection(props: { canWrite: boolean }) {
         description={accounts ? `${accounts.length} on the books` : "Customer and prospect accounts"}
         actions={
           <>
-            <DataTransfer entity="accounts" canWrite={props.canWrite} onImported={load} />
+            <DataTransfer module="crm" entity="accounts" canWrite={props.canWrite}
+              onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>
                 <Plus size={15} aria-hidden="true" />
