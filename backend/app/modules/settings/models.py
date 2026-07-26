@@ -50,11 +50,16 @@ class EmployeeBlockBody(BaseModel):
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     permissions: dict[str, int]
+    # Per-tab CSV grants: {export: [...], import: [...], approve_import: [...]}
+    # of "{module}:{entity}" keys. Validated in the service (csv_access.validate),
+    # like `permissions`. Omit → no CSV access.
+    csv_access: dict[str, list[str]] | None = None
 
 
 class RolePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     permissions: dict[str, int] | None = None
+    csv_access: dict[str, list[str]] | None = None
 
 
 class CalendarEventCreate(BaseModel):

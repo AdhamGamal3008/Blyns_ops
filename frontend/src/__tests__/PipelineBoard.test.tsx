@@ -6,6 +6,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PipelineBoard } from "../client/crm/PipelineBoard";
 
+const CSV = { canExport: true, canImport: true, canApprove: true };
+
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -56,7 +58,7 @@ describe("PipelineBoard", () => {
 
   it("renders every stage bucket with its count and summed amount", async () => {
     stubFetch();
-    render(<PipelineBoard canWrite={true} />);
+    render(<PipelineBoard canWrite={true} csv={CSV} />);
 
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
     // empty stages still render as columns (acceptance #3)
@@ -71,7 +73,7 @@ describe("PipelineBoard", () => {
 
   it("moving a deal to lost asks for a reason before calling the API", async () => {
     const mock = stubFetch();
-    render(<PipelineBoard canWrite={true} />);
+    render(<PipelineBoard canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
     const selects = document.querySelectorAll('select[data-testid="deal-stage"]');
@@ -96,7 +98,7 @@ describe("PipelineBoard", () => {
 
   it("a non-moving stage change PATCHes straight through", async () => {
     const mock = stubFetch();
-    render(<PipelineBoard canWrite={true} />);
+    render(<PipelineBoard canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
     const selects = document.querySelectorAll('select[data-testid="deal-stage"]');
@@ -111,7 +113,7 @@ describe("PipelineBoard", () => {
 
   it("read-only users get no stage controls", async () => {
     stubFetch();
-    render(<PipelineBoard canWrite={false} />);
+    render(<PipelineBoard canWrite={false} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
     expect(document.querySelectorAll('select[data-testid="deal-stage"]').length).toBe(0);
     expect(screen.queryByText("New deal")).not.toBeInTheDocument();

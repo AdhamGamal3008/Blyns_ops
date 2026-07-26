@@ -91,6 +91,12 @@ async def block_employee(
 
 # --- client roles ----------------------------------------------------------------
 
+@router.get("/csv-catalog")
+async def csv_catalog(principal: ClientPrincipal = Depends(_read)):
+    """Every import/export tab, for the role editor's CSV-grant multi-selects."""
+    return envelope(service.csv_catalog())
+
+
 @router.get("/roles")
 async def list_roles(principal: ClientPrincipal = Depends(_read)):
     return envelope(to_api(await service.list_roles(principal)))

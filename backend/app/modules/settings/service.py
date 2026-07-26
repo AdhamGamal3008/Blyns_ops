@@ -35,6 +35,7 @@ from app.modules.settings.models import (
     RolePatch,
 )
 from app.modules.settings.seed import CLIENT_RESOURCES
+from app.shared import csv_access
 from app.shared.enums import Level
 from app.tenant.deps import ClientPrincipal
 
@@ -278,7 +279,17 @@ async def reset_employee_password(principal: ClientPrincipal, uid: str) -> str:
 # --- 1.3 client roles -----------------------------------------------------------
 
 async def list_roles(principal: ClientPrincipal) -> list[dict]:
-    return await principal.tenant_db.roles.find({}).to_list(length=500)
+    roles = await principal.tenant_db.roles.find({}).to_list(length=500)
+    # Surface *effective* CSV grants so the editor shows what a role actually
+    # has — including the Owner-equivalent rollout default for roles never edited.
+    for role in roles:
+        role["csv_access"] = csv_access.effective(role)
+    return roles
+
+
+def csv_catalog() -> list[dict]:
+    """Every CSV tab, for the role editor's grant multi-selects."""
+    return csv_access.catalog()
 
 
 async def create_role(principal: ClientPrincipal, payload: RoleCreate) -> dict:
@@ -289,6 +300,7 @@ async def create_role(principal: ClientPrincipal, payload: RoleCreate) -> dict:
     now = datetime.now(UTC)
     result = await tenant_db.roles.insert_one({
         "name": payload.name, "permissions": clean, "is_system": False,
+        "csv_access": csv_access.validate(payload.csv_access),
         "created_at": now, "updated_at": now,
     })
     await _log(principal, "settings.role.created",
@@ -336,6 +348,8 @@ async def patch_role(
                         http_status=409,
                     )
         updates["permissions"] = clean
+    if patch.csv_access is not None:
+        updates["csv_access"] = csv_access.validate(patch.csv_access)
     if updates:
         updates["updated_at"] = datetime.now(UTC)
         await tenant_db.roles.update_one({"_id": role["_id"]}, {"$set": updates})

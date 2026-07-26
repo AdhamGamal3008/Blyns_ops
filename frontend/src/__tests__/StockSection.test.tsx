@@ -6,6 +6,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StockSection } from "../client/inventory/StockSection";
 
+const CSV = { canExport: true, canImport: true, canApprove: true };
+
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -58,7 +60,7 @@ describe("StockSection", () => {
 
   it("shows on-hand per product/warehouse and flags low + negative rows", async () => {
     stubFetch();
-    render(<StockSection canWrite={true} />);
+    render(<StockSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
 
     expect(screen.getByText("Annex")).toBeInTheDocument();
@@ -70,7 +72,7 @@ describe("StockSection", () => {
 
   it("posts a receipt as a movement rather than editing on-hand", async () => {
     const mock = stubFetch();
-    render(<StockSection canWrite={true} />);
+    render(<StockSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("New movement"));
@@ -93,7 +95,7 @@ describe("StockSection", () => {
 
   it("requires a note on an adjustment before it can be submitted", async () => {
     const mock = stubFetch();
-    render(<StockSection canWrite={true} />);
+    render(<StockSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("New movement"));
@@ -115,7 +117,7 @@ describe("StockSection", () => {
 
   it("adjusts a row to a new count by posting an adjustment for the delta", async () => {
     const mock = stubFetch();
-    render(<StockSection canWrite={true} />);
+    render(<StockSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
 
     // first row is Widget @ Main WH, on_hand 3
@@ -148,7 +150,7 @@ describe("StockSection", () => {
 
   it("adjusting down posts a negative adjustment", async () => {
     const mock = stubFetch();
-    render(<StockSection canWrite={true} />);
+    render(<StockSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Gadget")).toBeInTheDocument());
 
     // second row is Gadget @ Main WH, on_hand 40
@@ -172,7 +174,7 @@ describe("StockSection", () => {
 
   it("read-only users get no movement or adjust controls", async () => {
     stubFetch();
-    render(<StockSection canWrite={false} />);
+    render(<StockSection canWrite={false} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Widget")).toBeInTheDocument());
     expect(screen.queryByText("New movement")).not.toBeInTheDocument();
     expect(screen.queryByText("Transfer")).not.toBeInTheDocument();

@@ -7,6 +7,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DataTransfer } from "../shared/csv/DataTransfer";
 
+// A full grant (export + import + approve): imports commit directly. `exportOnly`
+// must still suppress Import even with this.
+const FULL = { canExport: true, canImport: true, canApprove: true };
+
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -100,7 +104,7 @@ describe("Inventory DataTransfer", () => {
   it("offers no Import for a derived data set, even to a writer", async () => {
     stubFetch(STOCK_LEVELS);
     render(
-      <DataTransfer module="inventory" entity="stock-levels" exportOnly canWrite
+      <DataTransfer module="inventory" entity="stock-levels" exportOnly csv={FULL}
         onImported={() => {}} />,
     );
     expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
@@ -110,7 +114,7 @@ describe("Inventory DataTransfer", () => {
   it("hits the inventory routes, not the CRM ones", async () => {
     const mock = stubFetch(MOVEMENTS);
     render(
-      <DataTransfer module="inventory" entity="movements" canWrite
+      <DataTransfer module="inventory" entity="movements" csv={FULL}
         onImported={() => {}} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
@@ -129,7 +133,7 @@ describe("Inventory DataTransfer", () => {
   it("tells the truth about an append-only ledger", async () => {
     stubFetch(MOVEMENTS);
     render(
-      <DataTransfer module="inventory" entity="movements" canWrite
+      <DataTransfer module="inventory" entity="movements" csv={FULL}
         onImported={() => {}} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Import" }));
@@ -150,7 +154,7 @@ describe("Inventory DataTransfer", () => {
     const onImported = vi.fn();
     stubFetch(MOVEMENTS);
     render(
-      <DataTransfer module="inventory" entity="movements" canWrite
+      <DataTransfer module="inventory" entity="movements" csv={FULL}
         onImported={onImported} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Import" }));

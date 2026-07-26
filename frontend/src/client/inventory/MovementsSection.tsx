@@ -12,6 +12,7 @@ import {
   DataTable,
   type DataTableColumn,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 import type { Movement, Product, Warehouse } from "./types";
 import styles from "./MovementsSection.module.css";
@@ -20,7 +21,7 @@ const TONE: Record<string, BadgeTone> = {
   receipt: "success", issue: "warning", transfer: "info", adjustment: "danger",
 };
 
-export function MovementsSection(props: { canWrite: boolean }) {
+export function MovementsSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [movements, setMovements] = useState<Movement[] | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -96,7 +97,7 @@ export function MovementsSection(props: { canWrite: boolean }) {
         description="Immutable by design — corrections are posted as new adjustments."
         actions={
           <DataTransfer module="inventory" entity="movements"
-            canWrite={props.canWrite} onImported={load} />
+            csv={props.csv} onImported={load} />
         }
       />
       <DataState

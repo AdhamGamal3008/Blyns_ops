@@ -14,11 +14,59 @@ export type Realm = "client" | "admin";
 
 export type PermissionLevel = 0 | 1 | 2 | 3; // NONE | VIEW | READ | WRITE
 
+/** Per-tab CSV grants (docs/modules/SETTINGS.md §1.3): each list holds
+ *  `"{module}:{entity}"` keys the role may export / import / approve-import.
+ *  Layered on module READ; `approve_import` implies import. */
+export interface CsvAccess {
+  export: string[];
+  import: string[];
+  approve_import: string[];
+}
+
 export interface RoleInfo {
   id: string;
   name: string;
   permissions: Record<string, PermissionLevel>;
   is_client_portal?: boolean; // scoped approval-only client-contact (PM §9)
+  /** Effective grants — present on the client `/me` role, absent for admins. */
+  csv_access?: CsvAccess;
+}
+
+/** One import/export tab, from `GET /settings/csv-catalog` — drives the role
+ *  editor's grant multi-selects. `importable` is false for a derived, export-only
+ *  view (Inventory stock levels), which the import/approve selects omit. */
+export interface CsvCatalogEntry {
+  key: string;
+  module: string;
+  entity: string;
+  label: string;
+  importable: boolean;
+}
+
+/** A staged import awaiting approval (docs/modules/SETTINGS.md §1.3). */
+export interface ImportRequest {
+  id: string;
+  module: string;
+  entity: string;
+  status: "pending" | "approved" | "rejected";
+  filename: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  requested_at: string | null;
+  preview: ImportRequestCounts;
+  decided_by_name?: string | null;
+  decided_at?: string | null;
+  reject_reason?: string | null;
+  result?: ImportRequestCounts | null;
+}
+
+export interface ImportRequestCounts {
+  rows?: number;
+  created?: number;
+  updated?: number;
+  failed?: number;
+  columns?: string[];
+  ignored_columns?: string[];
 }
 
 export interface ClientMe {

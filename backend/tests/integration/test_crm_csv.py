@@ -498,34 +498,19 @@ async def test_export_fields_metadata_drives_the_ui(client_client):
     assert next(f for f in data["fields"] if f["key"] == "id")["importable"] is False
 
 
-# --- RBAC (§3: READ to read, WRITE to write) ---------------------------------
+# --- RBAC: per-tab CSV grants, layered on module READ (SETTINGS.md §1.3) ------
+#
+# CSV access is its own permission dimension: module READ lets you see the data
+# in the app, but pulling or pushing it as a spreadsheet needs an explicit
+# export/import grant on that tab. The grant only takes effect above module READ.
 
-async def test_crm_read_can_export_but_cannot_import(
+async def test_crm_module_read_alone_opens_no_csv_route(
     client, client_client, onboarded_company
 ):
+    """The new gate: a role that can read CRM but holds no CSV grant is denied on
+    every CSV route — reading in the app no longer implies spreadsheet access."""
     headers = await _limited_client(
-        client, client_client, onboarded_company, {"dashboard": 2, "crm": 2}, "csvread",
-    )
-    assert (await client.get("/api/v1/crm/export/accounts",
-                             headers=headers)).status_code == 200
-    assert (await client.get("/api/v1/crm/export/accounts/fields",
-                             headers=headers)).status_code == 200
-    assert (await client.get("/api/v1/crm/import/accounts/template",
-                             headers=headers)).status_code == 200
-
-    res = await client.post(
-        "/api/v1/crm/import/accounts", headers=headers,
-        files={"file": ("x.csv", _csv(["Name"], ["Sneaky Co"]).encode(), "text/csv")},
-    )
-    assert res.status_code == 403
-    assert res.json()["error"]["code"] == "PERMISSION_DENIED"
-
-
-async def test_crm_none_is_denied_on_every_csv_route(
-    client, client_client, onboarded_company
-):
-    headers = await _limited_client(
-        client, client_client, onboarded_company, {"dashboard": 2}, "csvnone",
+        client, client_client, onboarded_company, {"dashboard": 2, "crm": 2}, "csvnone",
     )
     for path in (
         "/api/v1/crm/export/accounts",
@@ -539,5 +524,54 @@ async def test_crm_none_is_denied_on_every_csv_route(
     res = await client.post(
         "/api/v1/crm/import/accounts", headers=headers,
         files={"file": ("x.csv", _csv(["Name"], ["Nope"]).encode(), "text/csv")},
+    )
+    assert res.status_code == 403
+
+
+async def test_crm_export_grant_exports_but_does_not_import(
+    client, client_client, onboarded_company
+):
+    """An export grant opens export and the shared fields metadata, but not the
+    import surface — importing is a separate grant, and its template is only for
+    someone who may actually import."""
+    headers = await _limited_client(
+        client, client_client, onboarded_company, {"dashboard": 2, "crm": 2},
+        "csvexport", csv_access={"export": ["crm:accounts"]},
+    )
+    assert (await client.get("/api/v1/crm/export/accounts",
+                             headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/crm/export/accounts/fields",
+                             headers=headers)).status_code == 200
+
+    # no import grant: neither the template nor a commit is allowed
+    assert (await client.get("/api/v1/crm/import/accounts/template",
+                             headers=headers)).status_code == 403
+    res = await client.post(
+        "/api/v1/crm/import/accounts", headers=headers,
+        files={"file": ("x.csv", _csv(["Name"], ["Sneaky Co"]).encode(), "text/csv")},
+    )
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    # a grant only for another tab does not spill onto this one
+    assert (await client.get("/api/v1/crm/export/contacts",
+                             headers=headers)).status_code == 403
+
+
+async def test_crm_csv_grant_is_inert_without_module_read(
+    client, client_client, onboarded_company
+):
+    """The READ floor: a grant does nothing for a role that cannot even see the
+    module. Nobody pulls or pushes a module's data via CSV they otherwise can't
+    read, however the grant list reads."""
+    headers = await _limited_client(
+        client, client_client, onboarded_company, {"dashboard": 2}, "csvnoread",
+        csv_access={"export": ["crm:accounts"], "import": ["crm:accounts"]},
+    )
+    assert (await client.get("/api/v1/crm/export/accounts",
+                             headers=headers)).status_code == 403
+    res = await client.post(
+        "/api/v1/crm/import/accounts", headers=headers,
+        files={"file": ("x.csv", _csv(["Name"], ["X"]).encode(), "text/csv")},
     )
     assert res.status_code == 403

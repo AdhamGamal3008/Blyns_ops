@@ -6,6 +6,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductsSection } from "../client/inventory/ProductsSection";
 
+const CSV = { canExport: true, canImport: true, canApprove: true };
+
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -41,7 +43,7 @@ describe("ProductsSection edit", () => {
 
   it("pre-fills the edit dialog from the row and PATCHes the changes", async () => {
     const mock = stubFetch();
-    render(<ProductsSection canWrite={true} />);
+    render(<ProductsSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Oak panel")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("Edit"));
@@ -73,7 +75,7 @@ describe("ProductsSection edit", () => {
 
   it("does not PATCH when opening the create dialog", async () => {
     stubFetch();
-    render(<ProductsSection canWrite={true} />);
+    render(<ProductsSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Oak panel")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("New product"));
@@ -85,7 +87,7 @@ describe("ProductsSection edit", () => {
 
   it("read-only users get no edit control", async () => {
     stubFetch();
-    render(<ProductsSection canWrite={false} />);
+    render(<ProductsSection canWrite={false} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Oak panel")).toBeInTheDocument());
     expect(screen.queryByText("Edit")).not.toBeInTheDocument();
     expect(screen.queryByText("New product")).not.toBeInTheDocument();

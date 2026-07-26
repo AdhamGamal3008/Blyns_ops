@@ -209,11 +209,16 @@ async def test_pipeline_excludes_deleted_and_counts_terminal_separately(client_c
 
 # --- acceptance #4: crm=NONE is locked out -----------------------------------
 
-async def _limited_client(client, client_client, onboarded_company, perms: dict, who: str):
-    """Create a role with `perms`, attach a fresh employee, return their client."""
-    res = await client_client.post("/api/v1/settings/roles", json={
-        "name": f"role-{who}", "permissions": perms,
-    })
+async def _limited_client(
+    client, client_client, onboarded_company, perms: dict, who: str,
+    csv_access: dict | None = None,
+):
+    """Create a role with `perms` (and optional per-tab `csv_access` grants),
+    attach a fresh employee, return their client."""
+    body: dict = {"name": f"role-{who}", "permissions": perms}
+    if csv_access is not None:
+        body["csv_access"] = csv_access
+    res = await client_client.post("/api/v1/settings/roles", json=body)
     role_id = res.json()["data"]["id"]
     email = f"{who}@{onboarded_company['slug']}.com"
     res = await client_client.post("/api/v1/settings/employees", json={

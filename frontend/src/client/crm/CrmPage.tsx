@@ -2,6 +2,8 @@
 // the pipeline board is the §3 `/crm/pipeline` view.
 
 import { useLocation, useOutletContext } from "react-router-dom";
+import { csvGrants } from "../../shared/csv/access";
+import { ImportApprovals } from "../../shared/csv/ImportApprovals";
 import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
@@ -16,10 +18,13 @@ export function CrmPage() {
   // the dashboard's `crm.lead.new` quick action deep-links to /app/crm/leads/new
   const deepLink = location.pathname.startsWith("/app/crm/leads");
   const canWrite = (me.role.permissions["crm"] ?? 0) >= 3;
+  const csv = (entity: string) => csvGrants(me, "crm", entity);
 
   return (
     <Stack>
       <PageHeader title="CRM" description="Leads, deals, accounts, and the people behind them" />
+
+      <ImportApprovals me={me} module="crm" />
 
       <Tabs defaultValue={deepLink ? "leads" : "pipeline"}>
         <TabsList>
@@ -29,13 +34,19 @@ export function CrmPage() {
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pipeline"><PipelineBoard canWrite={canWrite} /></TabsContent>
+        <TabsContent value="pipeline">
+          <PipelineBoard canWrite={canWrite} csv={csv("deals")} />
+        </TabsContent>
         <TabsContent value="leads">
-          <LeadsSection canWrite={canWrite}
+          <LeadsSection canWrite={canWrite} csv={csv("leads")}
             openNew={deepLink && location.pathname.endsWith("/new")} />
         </TabsContent>
-        <TabsContent value="accounts"><AccountsSection canWrite={canWrite} /></TabsContent>
-        <TabsContent value="contacts"><ContactsSection canWrite={canWrite} /></TabsContent>
+        <TabsContent value="accounts">
+          <AccountsSection canWrite={canWrite} csv={csv("accounts")} />
+        </TabsContent>
+        <TabsContent value="contacts">
+          <ContactsSection canWrite={canWrite} csv={csv("contacts")} />
+        </TabsContent>
       </Tabs>
     </Stack>
   );

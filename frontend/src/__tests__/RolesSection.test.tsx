@@ -36,8 +36,23 @@ describe("RolesSection", () => {
     expect(screen.getAllByText("Write").length).toBeGreaterThan(1);
   });
 
+  // The editor fetches the CSV-tab catalog on mount, so the mock returns a fresh
+  // Response per call (a single shared Response's body can only be read once) and
+  // answers the catalog route explicitly.
+  function editorFetch(catalog: unknown[] = []) {
+    return vi.fn(async (url: string, _init?: RequestInit) => {
+      if (String(url).includes("/settings/csv-catalog")) {
+        return okJson({ data: catalog });
+      }
+      return okJson({ data: { id: "r9" } });
+    });
+  }
+
+  const postCall = (mock: ReturnType<typeof editorFetch>) =>
+    mock.mock.calls.find(([, o]) => (o as RequestInit | undefined)?.method === "POST")!;
+
   it("editor renders a 4-way selector per resource and submits the map", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(okJson({ data: { id: "r9" } }));
+    const fetchMock = editorFetch();
     vi.stubGlobal("fetch", fetchMock);
     const onDone = vi.fn();
     render(<RoleEditor role={null} onDone={onDone} />);
@@ -52,11 +67,38 @@ describe("RolesSection", () => {
     fireEvent.click(screen.getByText("Save role"));
 
     await waitFor(() => expect(onDone).toHaveBeenCalled());
-    const [url, opts] = fetchMock.mock.calls[0];
+    const [url, opts] = postCall(fetchMock);
     expect(String(url)).toContain("/settings/roles");
-    const body = JSON.parse(opts.body);
+    const body = JSON.parse((opts as RequestInit).body as string);
     expect(body.name).toBe("Estimator");
     expect(body.permissions.crm).toBe(2);
     expect(body.permissions.finance).toBe(0);
+    // the new CSV-grant dimension travels with the role, empty by default
+    expect(body.csv_access).toEqual({ export: [], import: [], approve_import: [] });
+  });
+
+  it("grants CSV tabs from the catalog and submits them", async () => {
+    const fetchMock = editorFetch([
+      { key: "crm:accounts", module: "crm", entity: "accounts",
+        label: "Crm · Accounts", importable: true },
+      { key: "inventory:stock-levels", module: "inventory", entity: "stock-levels",
+        label: "Inventory · Stock levels", importable: false },
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+    const onDone = vi.fn();
+    render(<RoleEditor role={null} onDone={onDone} />);
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Exporter" } });
+
+    // the Export picker lists every tab (a derived, export-only one included)
+    const trigger = await screen.findByRole("button", { name: /Export: none/ });
+    fireEvent.click(trigger);
+    const tab = await screen.findByRole("checkbox", { name: "Crm · Accounts" });
+    fireEvent.click(tab);
+
+    fireEvent.click(screen.getByText("Save role"));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const body = JSON.parse((postCall(fetchMock)[1] as RequestInit).body as string);
+    expect(body.csv_access.export).toEqual(["crm:accounts"]);
   });
 });

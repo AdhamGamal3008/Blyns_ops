@@ -345,17 +345,49 @@ async def test_unknown_inventory_data_set_is_404(client_client):
     assert "products" in res.json()["error"]["message"]
 
 
-# --- RBAC --------------------------------------------------------------------
+# --- RBAC: per-tab CSV grants, layered on module READ (SETTINGS.md §1.3) ------
 
-async def test_inventory_read_can_export_but_not_import(
+async def test_inventory_module_read_alone_opens_no_csv_route(
+    client, client_client, onboarded_company
+):
+    """Reading Inventory in the app does not, by itself, open its CSV surface —
+    that needs an explicit per-tab grant."""
+    headers = await _limited_client(
+        client, client_client, onboarded_company,
+        {"dashboard": 2, "inventory": 2}, "invnone",
+    )
+    for path in (
+        "/api/v1/inventory/export/products",
+        "/api/v1/inventory/export/products/fields",
+        "/api/v1/inventory/import/products/template",
+    ):
+        res = await client.get(path, headers=headers)
+        assert res.status_code == 403, f"{path} → {res.status_code}"
+        assert res.json()["error"]["code"] == "PERMISSION_DENIED"
+
+    res = await client.post(
+        "/api/v1/inventory/import/products", headers=headers,
+        files={"file": ("x.csv", _csv(["SKU", "Name"], ["X", "Y"]).encode(),
+                        "text/csv")},
+    )
+    assert res.status_code == 403
+
+
+async def test_inventory_export_grant_exports_but_does_not_import(
     client, client_client, onboarded_company
 ):
     headers = await _limited_client(
         client, client_client, onboarded_company,
-        {"dashboard": 2, "inventory": 2}, "invread",
+        {"dashboard": 2, "inventory": 2}, "invexport",
+        csv_access={"export": ["inventory:products"]},
     )
     assert (await client.get("/api/v1/inventory/export/products",
                              headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/inventory/export/products/fields",
+                             headers=headers)).status_code == 200
+
+    assert (await client.get("/api/v1/inventory/import/products/template",
+                             headers=headers)).status_code == 403
     res = await client.post(
         "/api/v1/inventory/import/products", headers=headers,
         files={"file": ("x.csv", _csv(["SKU", "Name"], ["X", "Y"]).encode(),
@@ -365,16 +397,21 @@ async def test_inventory_read_can_export_but_not_import(
     assert res.json()["error"]["code"] == "PERMISSION_DENIED"
 
 
-async def test_inventory_none_is_denied_on_every_csv_route(
+async def test_inventory_csv_grant_is_inert_without_module_read(
     client, client_client, onboarded_company
 ):
+    """The READ floor applies to Inventory too: a grant on a module you cannot
+    see does nothing."""
     headers = await _limited_client(
-        client, client_client, onboarded_company, {"dashboard": 2}, "invnone",
+        client, client_client, onboarded_company, {"dashboard": 2}, "invnoread",
+        csv_access={"export": ["inventory:products"],
+                    "import": ["inventory:products"]},
     )
-    for path in (
-        "/api/v1/inventory/export/products",
-        "/api/v1/inventory/export/products/fields",
-        "/api/v1/inventory/import/products/template",
-    ):
-        res = await client.get(path, headers=headers)
-        assert res.status_code == 403, f"{path} → {res.status_code}"
+    assert (await client.get("/api/v1/inventory/export/products",
+                             headers=headers)).status_code == 403
+    res = await client.post(
+        "/api/v1/inventory/import/products", headers=headers,
+        files={"file": ("x.csv", _csv(["SKU", "Name"], ["X", "Y"]).encode(),
+                        "text/csv")},
+    )
+    assert res.status_code == 403

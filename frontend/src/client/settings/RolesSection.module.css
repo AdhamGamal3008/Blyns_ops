@@ -157,3 +157,17 @@
     text-align: left;
   }
 }
+
+/* --- CSV grant multi-selects (SETTINGS.md §1.3) --------------------------- */
+
+.grantRow {
+  flex-wrap: wrap;
+}
+
+.grantList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-height: 320px;
+  overflow: auto;
+}

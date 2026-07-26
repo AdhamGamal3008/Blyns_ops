@@ -25,6 +25,7 @@ from app.core.errors import (
     DomainError,
 )
 from app.core.security import hash_password, verify_password
+from app.shared import csv_access
 from app.shared.schemas import envelope
 from app.tenant.context import resolve_tenant
 from app.tenant.deps import ClientPrincipal, current_client_user
@@ -186,5 +187,8 @@ async def client_me(principal: ClientPrincipal = Depends(current_client_user)):
             # scoped client-portal user type (PROJECT_MANAGEMENT.md §9): lets the
             # SPA surface stage approvals to a client-contact without WRITE
             "is_client_portal": bool(principal.role.get("is_client_portal", False)),
+            # effective per-tab CSV grants (SETTINGS.md §1.3) so the SPA can show
+            # the right import/export controls and the approval state per tab
+            "csv_access": csv_access.effective(principal.role),
         },
     })

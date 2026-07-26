@@ -243,4 +243,4 @@ async def delete_activity(activity_id: str, principal: ClientPrincipal = Depends
 # `{entity}` is one of accounts | contacts | leads | deals. The routes are
 # generated from the shared engine, so CRM and Inventory run the same code.
 
-csv_routes(router, module="crm", registry=CSV_ENTITIES, read=_read, write=_write)
+csv_routes(router, module="crm", registry=CSV_ENTITIES)

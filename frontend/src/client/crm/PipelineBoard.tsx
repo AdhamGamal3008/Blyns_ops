@@ -17,6 +17,7 @@ import {
   Input,
   NativeSelect,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 import styles from "./PipelineBoard.module.css";
 
@@ -50,7 +51,7 @@ export function money(n: number, currency = "USD"): string {
   }).format(n);
 }
 
-export function PipelineBoard(props: { canWrite: boolean }) {
+export function PipelineBoard(props: { canWrite: boolean; csv: CsvGrants }) {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [deals, setDeals] = useState<Deal[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -91,7 +92,7 @@ export function PipelineBoard(props: { canWrite: boolean }) {
         description={pipeline ? `${money(pipeline.open_value)} open` : "Deal flow by stage"}
         actions={
           <>
-            <DataTransfer module="crm" entity="deals" canWrite={props.canWrite}
+            <DataTransfer module="crm" entity="deals" csv={props.csv}
               onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>

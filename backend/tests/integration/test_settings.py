@@ -262,3 +262,105 @@ async def test_settings_rbac_gate(client, client_client, onboarded_company):
     headers = {"Authorization": f"Bearer {res.json()['data']['access_token']}"}
     assert (await client.get("/api/v1/settings/company", headers=headers)).status_code == 403
     assert (await client.get("/api/v1/settings/roles", headers=headers)).status_code == 403
+
+
+# --- per-tab CSV grants on roles (SETTINGS.md §1.3) --------------------------
+#
+# A role carries `csv_access` — which tabs it may export, import, and approve —
+# alongside its module permissions. The editor reads the tab list from the
+# catalog; grants are validated like permissions and surfaced *effective*, so
+# the editor shows the Owner-rollout default too.
+
+async def test_csv_catalog_lists_every_import_export_tab(client_client):
+    res = await client_client.get("/api/v1/settings/csv-catalog")
+    assert res.status_code == 200
+    by_key = {e["key"]: e for e in res.json()["data"]}
+    assert {
+        "crm:accounts", "crm:contacts", "crm:leads", "crm:deals",
+        "inventory:products", "inventory:warehouses", "inventory:movements",
+        "inventory:stock-levels",
+    } <= set(by_key)
+    assert by_key["crm:accounts"]["module"] == "crm"
+    assert by_key["crm:accounts"]["entity"] == "accounts"
+    # a derived, export-only view is flagged so the editor omits it from import
+    assert by_key["inventory:products"]["importable"] is True
+    assert by_key["inventory:stock-levels"]["importable"] is False
+
+
+async def test_role_persists_and_returns_effective_csv_grants(client_client):
+    res = await client_client.post("/api/v1/settings/roles", json={
+        "name": "csv-editor", "permissions": {"dashboard": 2, "crm": 2},
+        "csv_access": {"export": ["crm:accounts"], "import": ["crm:accounts"]},
+    })
+    assert res.status_code == 201, res.text
+    created = res.json()["data"]
+    assert created["csv_access"]["export"] == ["crm:accounts"]
+    role_id = created["id"]
+
+    role = next(r for r in (await client_client.get(
+        "/api/v1/settings/roles")).json()["data"] if r["id"] == role_id)
+    assert role["csv_access"]["import"] == ["crm:accounts"]
+    assert role["csv_access"]["approve_import"] == []
+
+    # a patch replaces the grants wholesale, the way the editor submits them
+    res = await client_client.patch(f"/api/v1/settings/roles/{role_id}", json={
+        "csv_access": {"approve_import": ["crm:leads"]},
+    })
+    assert res.status_code == 200, res.text
+    role = next(r for r in (await client_client.get(
+        "/api/v1/settings/roles")).json()["data"] if r["id"] == role_id)
+    assert role["csv_access"]["approve_import"] == ["crm:leads"]
+    assert role["csv_access"]["export"] == []          # replaced, not merged
+    assert role["csv_access"]["import"] == []
+
+
+async def test_owner_is_grandfathered_into_full_csv_access(client_client):
+    """Rollout default: a role never given explicit grants gets full CSV access
+    iff it is Owner-equivalent (WRITE everywhere); every other seeded role gets
+    none until an admin grants it."""
+    roles = {r["name"]: r for r in (await client_client.get(
+        "/api/v1/settings/roles")).json()["data"]}
+
+    owner = roles["Owner"]["csv_access"]
+    assert "crm:accounts" in owner["export"]
+    assert "inventory:stock-levels" in owner["export"]   # export offers all tabs
+    assert "crm:accounts" in owner["import"]
+    assert "inventory:stock-levels" not in owner["import"]  # derived: never imports
+    assert owner["approve_import"] == owner["import"]
+
+    viewer = roles["Viewer"]["csv_access"]               # not Owner-equivalent
+    assert viewer == {"export": [], "import": [], "approve_import": []}
+
+    # /me carries the same effective grants (under role) for the SPA to render
+    # its import/export controls from
+    me = (await client_client.get("/api/v1/auth/me")).json()["data"]
+    assert "crm:accounts" in me["role"]["csv_access"]["export"]
+
+
+async def test_csv_grants_are_validated(client_client):
+    base = {"name": "x", "permissions": {"dashboard": 2}}
+
+    # a derived, export-only tab cannot be granted for import
+    res = await client_client.post("/api/v1/settings/roles", json={
+        **base, "name": "bad-import", "csv_access": {"import": ["inventory:stock-levels"]},
+    })
+    assert res.status_code == 422
+
+    # an unknown tab key
+    res = await client_client.post("/api/v1/settings/roles", json={
+        **base, "name": "bad-key", "csv_access": {"export": ["crm:invoices"]},
+    })
+    assert res.status_code == 422
+
+    # an unknown capability
+    res = await client_client.post("/api/v1/settings/roles", json={
+        **base, "name": "bad-cap", "csv_access": {"delete": ["crm:accounts"]},
+    })
+    assert res.status_code == 422
+
+    # but exporting that same derived tab is fine — it is export-only, not barred
+    res = await client_client.post("/api/v1/settings/roles", json={
+        **base, "name": "ok-export", "permissions": {"dashboard": 2, "inventory": 2},
+        "csv_access": {"export": ["inventory:stock-levels"]},
+    })
+    assert res.status_code == 201, res.text

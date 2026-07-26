@@ -16,6 +16,7 @@ import {
   Input,
   Select,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Contact {
@@ -35,7 +36,7 @@ interface Account {
 
 const NO_ACCOUNT = "__none";
 
-export function ContactsSection(props: { canWrite: boolean }) {
+export function ContactsSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -104,7 +105,7 @@ export function ContactsSection(props: { canWrite: boolean }) {
         description={contacts ? `${contacts.length} people` : "People at your accounts"}
         actions={
           <>
-            <DataTransfer module="crm" entity="contacts" canWrite={props.canWrite}
+            <DataTransfer module="crm" entity="contacts" csv={props.csv}
               onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>

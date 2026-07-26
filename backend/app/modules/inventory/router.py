@@ -164,5 +164,4 @@ async def reconcile(principal: ClientPrincipal = Depends(_read)):
 # through create_movement (so it claims stock and can be refused), and stock
 # levels are export-only because they are derived from the ledger.
 
-csv_routes(router, module="inventory", registry=CSV_ENTITIES,
-           read=_read, write=_write)
+csv_routes(router, module="inventory", registry=CSV_ENTITIES)

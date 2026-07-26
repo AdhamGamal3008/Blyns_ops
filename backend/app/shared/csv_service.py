@@ -45,6 +45,7 @@ from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
 
+from app.core import storage
 from app.core.audit import write_activity
 from app.core.config import settings
 from app.core.errors import TENANT_NOT_FOUND, VALIDATION_ERROR, DomainError
@@ -564,24 +565,15 @@ async def import_csv(
     if mode == "commit" and plan:
         created, updated, write_issues = await _apply(principal, entity, plan, actor)
         issues.extend(write_issues)
-        await write_activity(
-            db, actor_id=actor, action=f"{module}.import.completed",
-            entity={"type": f"{module}_import", "id": entity.name,
-                    "label": f"{entity.label} import"},
-            details={
-                "entity": entity.name, "file": filename,
-                "created": created, "updated": updated,
-                "failed": len({i.row for i in issues}), "rows": parsed.seen_rows,
-                "columns": parsed.present,
-            },
-            actor_name=principal.user["name"], module=module,
-        )
 
+    # Audit is written by the caller (submit/approve/reject), not here, so the
+    # feed can distinguish a direct commit from an approved one from a request.
     issues.sort(key=lambda i: i.row)
     return {
         "entity": entity.name,
         "label": entity.label,
         "mode": mode,
+        "status": "committed" if mode == "commit" else "validated",
         "file": filename,
         "rows": parsed.seen_rows,
         "created": created,
@@ -595,6 +587,215 @@ async def import_csv(
         ],
         "errors_truncated": len(issues) > _MAX_REPORTED_ERRORS,
     }
+
+
+# --- import approval workflow (SETTINGS.md §1.3) ------------------------------
+#
+# A holder who may import but may not approve cannot commit directly: the file
+# is staged in GridFS and a `csv_imports` request records the dry-run preview
+# for an approver to act on. An approver's own import commits immediately.
+
+_IMPORT_REQUESTS = "csv_imports"
+_IMPORT_BUCKET = "import_files"
+
+
+def _import_entity(action: str, module: str, entity: CsvEntity) -> dict:
+    return {"type": f"{module}_import", "id": entity.name,
+            "label": f"{entity.label} import"}
+
+
+async def _log_import(
+    principal: ClientPrincipal, module: str, action: str, entity: CsvEntity,
+    details: dict,
+) -> None:
+    await write_activity(
+        principal.tenant_db, actor_id=str(principal.user["_id"]),
+        action=action, entity=_import_entity(action, module, entity),
+        details=details, actor_name=principal.user["name"], module=module,
+    )
+
+
+def _counts(report: dict) -> dict:
+    return {k: report[k] for k in ("rows", "created", "updated", "failed", "columns")}
+
+
+async def submit_import(
+    principal: ClientPrincipal, entity: CsvEntity, data: bytes,
+    *, module: str, filename: str, can_approve: bool,
+) -> dict[str, Any]:
+    """The `mode=commit` path. An approver commits at once; anyone else has the
+    file staged and a pending request opened for approval."""
+    if can_approve:
+        report = await import_csv(
+            principal, entity, data, module=module, filename=filename, mode="commit",
+        )
+        await _log_import(principal, module, f"{module}.import.completed", entity, {
+            "entity": entity.name, "file": filename, **_counts(report),
+        })
+        return report
+
+    # stage: dry-run for the preview, then persist the file + a pending request
+    preview = await import_csv(
+        principal, entity, data, module=module, filename=filename, mode="validate",
+    )
+    db = principal.tenant_db
+    stored = await storage.save_bytes(
+        db, data, filename=filename, content_type="text/csv",
+        uploaded_by=str(principal.user["_id"]), bucket_name=_IMPORT_BUCKET,
+    )
+    now = datetime.now(UTC)
+    doc = {
+        "module": module, "entity": entity.name, "status": "pending",
+        "file_id": stored.file_id, "filename": filename,
+        "requested_by": str(principal.user["_id"]),
+        "requested_by_name": principal.user["name"],
+        "requested_at": now,
+        "preview": {
+            **_counts(preview),
+            "ignored_columns": preview["ignored_columns"],
+            "errors": preview["errors"], "errors_truncated": preview["errors_truncated"],
+        },
+        "decided_by": None, "decided_by_name": None, "decided_at": None,
+        "result": None, "reject_reason": None,
+        "created_at": now, "updated_at": now, "is_deleted": False,
+    }
+    res = await db[_IMPORT_REQUESTS].insert_one(doc)
+    await _log_import(principal, module, f"{module}.import.requested", entity, {
+        "entity": entity.name, "file": filename, "request_id": str(res.inserted_id),
+        **_counts(preview),
+    })
+    return {
+        "status": "pending_approval",
+        "request_id": str(res.inserted_id),
+        "entity": entity.name, "label": entity.label, "file": filename,
+        **{k: preview[k] for k in (
+            "rows", "created", "updated", "failed", "columns",
+            "ignored_columns", "errors", "errors_truncated",
+        )},
+    }
+
+
+def _request_public(doc: dict) -> dict:
+    """A request as the inbox/status views see it (no internal file id)."""
+    return {
+        "id": str(doc["_id"]),
+        "module": doc["module"], "entity": doc["entity"], "status": doc["status"],
+        "filename": doc.get("filename"),
+        "requested_by": doc.get("requested_by"),
+        "requested_by_name": doc.get("requested_by_name"),
+        "requested_at": doc.get("requested_at"),
+        "preview": doc.get("preview") or {},
+        "decided_by_name": doc.get("decided_by_name"),
+        "decided_at": doc.get("decided_at"),
+        "reject_reason": doc.get("reject_reason"),
+        "result": doc.get("result"),
+    }
+
+
+async def list_import_requests(
+    principal: ClientPrincipal, module: str, *, mine: bool, status: str | None,
+    approvable_entities: set[str],
+) -> list[dict]:
+    """Requests for a module. `mine` returns the caller's own (any status);
+    otherwise the approver inbox: pending requests whose entity the caller can
+    approve. `approvable_entities` is the set of entity names the caller may
+    approve in this module (computed by the router from csv_access)."""
+    db = principal.tenant_db
+    query: dict[str, Any] = {"module": module, "is_deleted": {"$ne": True}}
+    if mine:
+        query["requested_by"] = str(principal.user["_id"])
+        if status:
+            query["status"] = status
+    else:
+        query["status"] = status or "pending"
+        query["entity"] = {"$in": sorted(approvable_entities)}
+    docs = await db[_IMPORT_REQUESTS].find(query).sort("requested_at", -1).to_list(500)
+    return [_request_public(d) for d in docs]
+
+
+async def load_request(
+    principal: ClientPrincipal, module: str, request_id: str
+) -> dict:
+    doc = await principal.tenant_db[_IMPORT_REQUESTS].find_one({
+        "_id": _oid(request_id, "import request"), "module": module,
+        "is_deleted": {"$ne": True},
+    })
+    if doc is None:
+        raise DomainError(TENANT_NOT_FOUND, "Import request not found.", 404)
+    return doc
+
+
+async def approve_import_request(
+    principal: ClientPrincipal, entity: CsvEntity, module: str, request_id: str,
+) -> dict[str, Any]:
+    """Commit a pending request. The file is re-read and re-validated against
+    *current* data (it may have moved since the request), so approval commits
+    what is true now, not a stale snapshot."""
+    doc = await load_request(principal, module, request_id)
+    if doc["status"] != "pending":
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"This request was already {doc['status']}.", http_status=409,
+        )
+    db = principal.tenant_db
+    grid_out, _, _ = await storage.open_download(
+        db, doc["file_id"], bucket_name=_IMPORT_BUCKET
+    )
+    data = await grid_out.read()
+    report = await import_csv(
+        principal, entity, data, module=module,
+        filename=doc["filename"], mode="commit",
+    )
+    now = datetime.now(UTC)
+    await db[_IMPORT_REQUESTS].update_one({"_id": doc["_id"]}, {"$set": {
+        "status": "approved", "decided_by": str(principal.user["_id"]),
+        "decided_by_name": principal.user["name"], "decided_at": now,
+        "result": _counts(report), "updated_at": now,
+    }})
+    await storage.delete_file(db, doc["file_id"], bucket_name=_IMPORT_BUCKET)
+    await _log_import(principal, module, f"{module}.import.approved", entity, {
+        "entity": entity.name, "file": doc["filename"], "request_id": request_id,
+        "requested_by": doc.get("requested_by_name"), **_counts(report),
+    })
+    return {**report, "status": "approved", "request_id": request_id}
+
+
+async def reject_import_request(
+    principal: ClientPrincipal, entity: CsvEntity, module: str, request_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    doc = await load_request(principal, module, request_id)
+    if doc["status"] != "pending":
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"This request was already {doc['status']}.", http_status=409,
+        )
+    db = principal.tenant_db
+    now = datetime.now(UTC)
+    await db[_IMPORT_REQUESTS].update_one({"_id": doc["_id"]}, {"$set": {
+        "status": "rejected", "decided_by": str(principal.user["_id"]),
+        "decided_by_name": principal.user["name"], "decided_at": now,
+        "reject_reason": reason, "updated_at": now,
+    }})
+    await storage.delete_file(db, doc["file_id"], bucket_name=_IMPORT_BUCKET)
+    await _log_import(principal, module, f"{module}.import.rejected", entity, {
+        "entity": entity.name, "file": doc["filename"], "request_id": request_id,
+        "requested_by": doc.get("requested_by_name"), "reason": reason,
+    })
+    return _request_public({**doc, "status": "rejected", "reject_reason": reason,
+                            "decided_by_name": principal.user["name"],
+                            "decided_at": now})
+
+
+async def open_request_file(
+    principal: ClientPrincipal, module: str, request_id: str
+):
+    """Stream the staged CSV so an approver can inspect the actual rows."""
+    doc = await load_request(principal, module, request_id)
+    grid_out, filename, content_type = await storage.open_download(
+        principal.tenant_db, doc["file_id"], bucket_name=_IMPORT_BUCKET
+    )
+    return grid_out, filename, content_type
 
 
 async def _apply(

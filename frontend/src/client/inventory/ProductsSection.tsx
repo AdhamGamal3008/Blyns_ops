@@ -21,12 +21,13 @@ import {
   Row,
   Select,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 import { DEFAULT_UNIT, type Product } from "./types";
 
 const UNITS = ["pcs", "kg", "box"];
 
-export function ProductsSection(props: { canWrite: boolean }) {
+export function ProductsSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
@@ -125,7 +126,7 @@ export function ProductsSection(props: { canWrite: boolean }) {
         actions={
           <>
             <DataTransfer module="inventory" entity="products"
-              canWrite={props.canWrite} onImported={load} />
+              csv={props.csv} onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>
                 <Plus size={15} aria-hidden="true" />

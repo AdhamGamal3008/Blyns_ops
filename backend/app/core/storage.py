@@ -39,8 +39,38 @@ class StoredFile:
     size: int
 
 
-def bucket(db: AsyncIOMotorDatabase) -> AsyncIOMotorGridFSBucket:
-    return AsyncIOMotorGridFSBucket(db, bucket_name=_BUCKET)
+def bucket(
+    db: AsyncIOMotorDatabase, bucket_name: str = _BUCKET
+) -> AsyncIOMotorGridFSBucket:
+    return AsyncIOMotorGridFSBucket(db, bucket_name=bucket_name)
+
+
+async def save_bytes(
+    db: AsyncIOMotorDatabase, data: bytes, *, filename: str, content_type: str,
+    uploaded_by: str, bucket_name: str = _BUCKET,
+) -> StoredFile:
+    """Store already-buffered bytes in a named GridFS bucket. Used where the
+    caller already holds the content (a validated CSV import staged for
+    approval) rather than an incoming UploadFile stream."""
+    file_id = await bucket(db, bucket_name).upload_from_stream(
+        filename, data,
+        metadata={"content_type": content_type, "uploaded_by": uploaded_by},
+    )
+    return StoredFile(str(file_id), filename, content_type, len(data))
+
+
+async def delete_file(
+    db: AsyncIOMotorDatabase, file_id: str, bucket_name: str = _BUCKET
+) -> None:
+    """Best-effort removal of a stored file (a rejected/consumed import)."""
+    try:
+        oid = ObjectId(file_id)
+    except (InvalidId, TypeError):
+        return
+    try:
+        await bucket(db, bucket_name).delete(oid)
+    except Exception:
+        pass  # already gone — nothing to unwind
 
 
 async def save_upload(
@@ -93,7 +123,9 @@ async def file_metadata(db: AsyncIOMotorDatabase, file_id: str) -> StoredFile | 
     )
 
 
-async def open_download(db: AsyncIOMotorDatabase, file_id: str):
+async def open_download(
+    db: AsyncIOMotorDatabase, file_id: str, bucket_name: str = _BUCKET
+):
     """Open a GridFS download stream; raises 404 if the file id is unknown.
 
     Returns `(grid_out, filename, content_type)`. Read `grid_out` in chunks via
@@ -104,7 +136,7 @@ async def open_download(db: AsyncIOMotorDatabase, file_id: str):
     except (InvalidId, TypeError):
         raise DomainError(VALIDATION_ERROR, "Malformed file id.", http_status=422) from None
     try:
-        grid_out = await bucket(db).open_download_stream(oid)
+        grid_out = await bucket(db, bucket_name).open_download_stream(oid)
     except Exception:
         raise DomainError(TENANT_NOT_FOUND, "File not found.", http_status=404) from None
     meta = grid_out.metadata or {}

@@ -19,10 +19,11 @@ import {
   NativeSelect,
   Row,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 import { DEFAULT_UNIT, type Product, type StockLevel, type Warehouse } from "./types";
 
-export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
+export function StockSection(props: { canWrite: boolean; csv: CsvGrants; openMove?: boolean }) {
   const [levels, setLevels] = useState<StockLevel[] | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -111,7 +112,7 @@ export function StockSection(props: { canWrite: boolean; openMove?: boolean }) {
           <Row gap={2}>
             {/* Derived from the ledger, so there is nothing to import back. */}
             <DataTransfer module="inventory" entity="stock-levels" exportOnly
-              canWrite={props.canWrite} onImported={load} />
+              csv={props.csv} onImported={load} />
             {props.canWrite && (
               <>
                 <Button variant="secondary" size="compact"

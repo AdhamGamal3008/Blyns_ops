@@ -18,6 +18,7 @@ import {
   FormModal,
   Input,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Lead {
@@ -39,7 +40,7 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   unqualified: "danger", converted: "success",
 };
 
-export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
+export function LeadsSection(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(Boolean(props.openNew));
@@ -86,7 +87,7 @@ export function LeadsSection(props: { canWrite: boolean; openNew?: boolean }) {
         description={leads ? `${leads.length} in the funnel` : "Inbound and sourced leads"}
         actions={
           <>
-            <DataTransfer module="crm" entity="leads" canWrite={props.canWrite}
+            <DataTransfer module="crm" entity="leads" csv={props.csv}
               onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>

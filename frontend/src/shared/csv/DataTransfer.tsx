@@ -13,6 +13,7 @@
 import { Download, FileWarning, Upload } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, apiDownload, apiUpload } from "../api";
+import type { CsvGrants } from "./access";
 import {
   Badge,
   Banner,
@@ -72,7 +73,11 @@ interface ImportError {
 interface ImportReport {
   entity: string;
   label: string;
-  mode: "validate" | "commit";
+  mode?: "validate" | "commit";
+  // "committed" when written; "pending_approval" when the importer may not
+  // approve this tab and the file was staged for someone who can.
+  status?: "validated" | "committed" | "pending_approval";
+  request_id?: string;
   file: string;
   rows: number;
   created: number;
@@ -112,7 +117,10 @@ function useCsvMeta(module: CsvModule, entity: string, enabled: boolean) {
 export function DataTransfer(props: {
   module: CsvModule;
   entity: string;
-  canWrite: boolean;
+  /** Per-tab CSV grants for the current user (shared/csv/access.ts). Export and
+   *  Import each appear only when granted; an importer who cannot approve this
+   *  tab submits for approval instead of writing directly. */
+  csv: CsvGrants;
   /** Refresh the list once rows have actually landed. */
   onImported: () => void;
   /** Skip the Import button without asking the server — for a data set the
@@ -125,14 +133,21 @@ export function DataTransfer(props: {
   // refuse. Only fetched once either dialog has been opened.
   const { meta } = useCsvMeta(props.module, props.entity, exporting || importing);
   const canImport =
-    props.canWrite && !props.exportOnly && (meta?.importable ?? true);
+    props.csv.canImport && !props.exportOnly && (meta?.importable ?? true);
+  // An importer who cannot approve this tab has the file staged for review.
+  const needsApproval = canImport && !props.csv.canApprove;
+
+  // No grants for this tab → no controls at all.
+  if (!props.csv.canExport && !canImport) return null;
 
   return (
     <>
-      <Button variant="ghost" size="compact" onClick={() => setExporting(true)}>
-        <Download size={15} aria-hidden="true" />
-        Export
-      </Button>
+      {props.csv.canExport && (
+        <Button variant="ghost" size="compact" onClick={() => setExporting(true)}>
+          <Download size={15} aria-hidden="true" />
+          Export
+        </Button>
+      )}
       {canImport && (
         <Button variant="ghost" size="compact" onClick={() => setImporting(true)}>
           <Upload size={15} aria-hidden="true" />
@@ -140,16 +155,19 @@ export function DataTransfer(props: {
         </Button>
       )}
 
-      <ExportDialog
-        module={props.module}
-        entity={props.entity}
-        open={exporting}
-        onClose={() => setExporting(false)}
-      />
+      {props.csv.canExport && (
+        <ExportDialog
+          module={props.module}
+          entity={props.entity}
+          open={exporting}
+          onClose={() => setExporting(false)}
+        />
+      )}
       {canImport && (
         <ImportDialog
           module={props.module}
           entity={props.entity}
+          needsApproval={needsApproval}
           open={importing}
           onClose={() => setImporting(false)}
           onImported={props.onImported}
@@ -401,6 +419,8 @@ function ErrorTable(props: { report: ImportReport; title: string }) {
 function ImportDialog(props: {
   module: CsvModule;
   entity: string;
+  /** True when a commit is staged for approval rather than written directly. */
+  needsApproval: boolean;
   open: boolean;
   onClose: () => void;
   onImported: () => void;
@@ -434,7 +454,8 @@ function ImportDialog(props: {
       );
       if (mode === "commit") {
         setDone(res.data);
-        props.onImported();
+        // A staged file writes nothing yet, so there is no list to refresh.
+        if (res.data.status !== "pending_approval") props.onImported();
       } else {
         setReport(res.data);
       }
@@ -465,7 +486,13 @@ function ImportDialog(props: {
         disabled={busy || !file || !report || willWrite === 0}
         onClick={() => file && send(file, "commit")}
       >
-        {busy ? "Working…" : report ? `Import ${willWrite} row${willWrite === 1 ? "" : "s"}` : "Import"}
+        {busy
+          ? "Working…"
+          : report
+            ? props.needsApproval
+              ? `Submit ${willWrite} row${willWrite === 1 ? "" : "s"} for approval`
+              : `Import ${willWrite} row${willWrite === 1 ? "" : "s"}`
+            : "Import"}
       </Button>
     </>
   );
@@ -487,22 +514,35 @@ function ImportDialog(props: {
         )}
 
         {done ? (
-          <>
-            <Banner
-              tone={done.failed > 0 ? "warning" : "success"}
-              title={done.failed > 0 ? "Imported with some rows skipped" : "Import complete"}
-            >
-              {done.created} created, {done.updated} updated
-              {done.failed > 0 ? `, ${done.failed} skipped` : ""}.
+          done.status === "pending_approval" ? (
+            <Banner tone="info" title="Sent for approval">
+              {done.created + done.updated} row
+              {done.created + done.updated === 1 ? "" : "s"} were submitted for an
+              approver to review
+              {done.failed > 0
+                ? `; ${done.failed} row${done.failed === 1 ? "" : "s"} with ` +
+                  "problems will be left out"
+                : ""}
+              . Nothing is written until they approve.
             </Banner>
-            {/* Some rows can only fail at the moment they are written — an
-                Inventory movement is refused for insufficient stock when it
-                claims it, which the dry run could not know. Show those here
-                rather than only in the preview. */}
-            {done.errors.length > 0 && (
-              <ErrorTable report={done} title="These rows were skipped" />
-            )}
-          </>
+          ) : (
+            <>
+              <Banner
+                tone={done.failed > 0 ? "warning" : "success"}
+                title={done.failed > 0 ? "Imported with some rows skipped" : "Import complete"}
+              >
+                {done.created} created, {done.updated} updated
+                {done.failed > 0 ? `, ${done.failed} skipped` : ""}.
+              </Banner>
+              {/* Some rows can only fail at the moment they are written — an
+                  Inventory movement is refused for insufficient stock when it
+                  claims it, which the dry run could not know. Show those here
+                  rather than only in the preview. */}
+              {done.errors.length > 0 && (
+                <ErrorTable report={done} title="These rows were skipped" />
+              )}
+            </>
+          )
         ) : (
           <>
             <section className={styles.step}>
@@ -584,6 +624,13 @@ function ImportDialog(props: {
                     {report.failed} with problems
                   </Badge>
                 </Row>
+                {props.needsApproval && (
+                  <Banner tone="info" title="This import needs approval">
+                    You can prepare this import, but the changes take effect only
+                    once an approver signs off. Submitting sends the file for
+                    review — nothing is written yet.
+                  </Banner>
+                )}
                 <p className={styles.stepBody}>
                   {meta?.append_only
                     ? "These are ledger entries, so importing this file again " +

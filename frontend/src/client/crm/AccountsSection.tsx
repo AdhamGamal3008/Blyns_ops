@@ -19,6 +19,7 @@ import {
   NativeSelect,
   Select,
 } from "../../shared/ui";
+import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 
 interface Account {
@@ -35,7 +36,7 @@ const TONE: Record<string, BadgeTone> = {
   prospect: "neutral", customer: "success", inactive: "warning",
 };
 
-export function AccountsSection(props: { canWrite: boolean }) {
+export function AccountsSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
@@ -109,7 +110,7 @@ export function AccountsSection(props: { canWrite: boolean }) {
         description={accounts ? `${accounts.length} on the books` : "Customer and prospect accounts"}
         actions={
           <>
-            <DataTransfer module="crm" entity="accounts" canWrite={props.canWrite}
+            <DataTransfer module="crm" entity="accounts" csv={props.csv}
               onImported={load} />
             {props.canWrite && (
               <Button size="compact" onClick={() => setCreating(true)}>
