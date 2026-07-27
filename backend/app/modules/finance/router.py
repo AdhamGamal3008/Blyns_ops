@@ -14,6 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, Query
 
 from app.modules.finance import service
+from app.modules.finance.csv_schema import ENTITIES as CSV_ENTITIES
 from app.modules.finance.models import (
     AccountCreate,
     AccountPatch,
@@ -25,6 +26,7 @@ from app.modules.finance.models import (
     PaymentCreate,
     VoidBody,
 )
+from app.shared.csv_router import csv_routes
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
 from app.tenant.deps import ClientPrincipal, require
@@ -228,3 +230,9 @@ async def aging(
     principal: ClientPrincipal = Depends(_read),
 ):
     return envelope(to_api(await service.aging(principal, type)))
+
+
+# --- CSV import & export (§7 parity) -----------------------------------------
+# accounts import + export; invoices/bills export-only (declared in csv_schema).
+# Access is the per-tab CSV grant layered on finance READ (shared/csv_access.py).
+csv_routes(router, module="finance", registry=CSV_ENTITIES)

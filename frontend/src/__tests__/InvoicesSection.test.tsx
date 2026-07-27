@@ -6,6 +6,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { InvoicesSection } from "../client/finance/InvoicesSection";
 
+// Invoices are export-only, so `exportOnly` suppresses Import regardless; the
+// grant just governs whether the Export button shows.
+const CSV = { canExport: true, canImport: false, canApprove: false };
+
 const okJson = (body: unknown) =>
   new Response(JSON.stringify(body), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -54,7 +58,7 @@ describe("InvoicesSection", () => {
 
   it("shows a draft with no number and its outstanding balance", async () => {
     stubFetch();
-    render(<InvoicesSection canWrite={true} />);
+    render(<InvoicesSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Draft Co")).toBeInTheDocument());
 
     const rows = [...document.querySelectorAll("tbody tr")].map((r) =>
@@ -67,7 +71,7 @@ describe("InvoicesSection", () => {
 
   it("offers Send only on a draft, and pay/void only on a posted invoice", async () => {
     stubFetch();
-    render(<InvoicesSection canWrite={true} />);
+    render(<InvoicesSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Draft Co")).toBeInTheDocument());
 
     const rows = [...document.querySelectorAll("tbody tr")];
@@ -81,7 +85,7 @@ describe("InvoicesSection", () => {
 
   it("sending a draft posts to the send endpoint", async () => {
     const mock = stubFetch();
-    render(<InvoicesSection canWrite={true} />);
+    render(<InvoicesSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Draft Co")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("Send"));
@@ -94,7 +98,7 @@ describe("InvoicesSection", () => {
 
   it("voiding requires a reason before it will submit", async () => {
     const mock = stubFetch();
-    render(<InvoicesSection canWrite={true} />);
+    render(<InvoicesSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Sent Co")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("Void"));
@@ -116,7 +120,7 @@ describe("InvoicesSection", () => {
 
   it("a payment defaults to the outstanding amount, not the total", async () => {
     const mock = stubFetch();
-    render(<InvoicesSection canWrite={true} />);
+    render(<InvoicesSection canWrite={true} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Sent Co")).toBeInTheDocument());
 
     fireEvent.click(screen.getByText("Record payment"));
@@ -141,7 +145,7 @@ describe("InvoicesSection", () => {
 
   it("read-only users get no posting controls", async () => {
     stubFetch();
-    render(<InvoicesSection canWrite={false} />);
+    render(<InvoicesSection canWrite={false} csv={CSV} />);
     await waitFor(() => expect(screen.getByText("Draft Co")).toBeInTheDocument());
     expect(screen.queryByText("New invoice")).not.toBeInTheDocument();
     expect(screen.queryByText("Send")).not.toBeInTheDocument();

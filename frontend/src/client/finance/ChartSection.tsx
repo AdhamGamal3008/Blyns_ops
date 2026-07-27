@@ -4,6 +4,8 @@
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
+import type { CsvGrants } from "../../shared/csv/access";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 import {
   Badge,
   type BadgeTone,
@@ -27,7 +29,7 @@ const TONE: Record<string, BadgeTone> = {
   income: "info", expense: "danger",
 };
 
-export function ChartSection(props: { canWrite: boolean }) {
+export function ChartSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
@@ -85,12 +87,16 @@ export function ChartSection(props: { canWrite: boolean }) {
         title="Chart of accounts"
         description="The Finance ledger. CRM's customer accounts are a different thing entirely."
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New account
-            </Button>
-          )
+          <>
+            <DataTransfer module="finance" entity="accounts" csv={props.csv}
+              onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New account
+              </Button>
+            )}
+          </>
         }
       />
 

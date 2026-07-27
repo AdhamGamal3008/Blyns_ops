@@ -279,12 +279,17 @@ async def test_csv_catalog_lists_every_import_export_tab(client_client):
         "crm:accounts", "crm:contacts", "crm:leads", "crm:deals",
         "inventory:products", "inventory:warehouses", "inventory:movements",
         "inventory:stock-levels",
+        "finance:accounts", "finance:invoices", "finance:bills",
     } <= set(by_key)
     assert by_key["crm:accounts"]["module"] == "crm"
     assert by_key["crm:accounts"]["entity"] == "accounts"
     # a derived, export-only view is flagged so the editor omits it from import
     assert by_key["inventory:products"]["importable"] is True
     assert by_key["inventory:stock-levels"]["importable"] is False
+    # Finance: the chart of accounts imports; the posted books are export-only
+    assert by_key["finance:accounts"]["importable"] is True
+    assert by_key["finance:invoices"]["importable"] is False
+    assert by_key["finance:bills"]["importable"] is False
 
 
 async def test_role_persists_and_returns_effective_csv_grants(client_client):
@@ -324,8 +329,11 @@ async def test_owner_is_grandfathered_into_full_csv_access(client_client):
     owner = roles["Owner"]["csv_access"]
     assert "crm:accounts" in owner["export"]
     assert "inventory:stock-levels" in owner["export"]   # export offers all tabs
+    assert "finance:invoices" in owner["export"]
     assert "crm:accounts" in owner["import"]
+    assert "finance:accounts" in owner["import"]
     assert "inventory:stock-levels" not in owner["import"]  # derived: never imports
+    assert "finance:invoices" not in owner["import"]        # posted book: export-only
     assert owner["approve_import"] == owner["import"]
 
     viewer = roles["Viewer"]["csv_access"]               # not Owner-equivalent

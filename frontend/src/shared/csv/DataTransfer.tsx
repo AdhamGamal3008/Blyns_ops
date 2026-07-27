@@ -33,7 +33,7 @@ import styles from "./DataTransfer.module.css";
 
 /** Which module owns the routes. Entity names are the server's to define, so
  *  they stay free-form strings rather than a union the UI has to keep in sync. */
-export type CsvModule = "crm" | "inventory";
+export type CsvModule = "crm" | "inventory" | "finance";
 
 interface CsvFieldMeta {
   key: string;

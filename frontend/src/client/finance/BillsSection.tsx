@@ -3,6 +3,8 @@
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
+import type { CsvGrants } from "../../shared/csv/access";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 import {
   Badge,
   Banner,
@@ -19,7 +21,7 @@ import {
 import { STATUS_TONE, money, type Bill } from "./types";
 import styles from "./Finance.module.css";
 
-export function BillsSection(props: { canWrite: boolean }) {
+export function BillsSection(props: { canWrite: boolean; csv: CsvGrants }) {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
@@ -128,12 +130,16 @@ export function BillsSection(props: { canWrite: boolean }) {
         title="Bills"
         description="Vendor bills — the accounts-payable mirror of invoices."
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New bill
-            </Button>
-          )
+          <>
+            <DataTransfer module="finance" entity="bills" csv={props.csv}
+              exportOnly onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New bill
+              </Button>
+            )}
+          </>
         }
       />
 

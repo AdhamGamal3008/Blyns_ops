@@ -4,6 +4,8 @@
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
+import type { CsvGrants } from "../../shared/csv/access";
+import { DataTransfer } from "../../shared/csv/DataTransfer";
 import {
   Badge,
   Banner,
@@ -22,7 +24,7 @@ import {
 import { STATUS_TONE, money, type Invoice } from "./types";
 import styles from "./Finance.module.css";
 
-export function InvoicesSection(props: { canWrite: boolean; openNew?: boolean }) {
+export function InvoicesSection(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(Boolean(props.openNew));
@@ -125,12 +127,16 @@ export function InvoicesSection(props: { canWrite: boolean; openNew?: boolean })
         title="Invoices"
         description="A draft has no number until it is sent; a sent invoice can only be voided."
         actions={
-          props.canWrite && (
-            <Button size="compact" onClick={() => setCreating(true)}>
-              <Plus size={15} aria-hidden="true" />
-              New invoice
-            </Button>
-          )
+          <>
+            <DataTransfer module="finance" entity="invoices" csv={props.csv}
+              exportOnly onImported={load} />
+            {props.canWrite && (
+              <Button size="compact" onClick={() => setCreating(true)}>
+                <Plus size={15} aria-hidden="true" />
+                New invoice
+              </Button>
+            )}
+          </>
         }
       />
 

@@ -34,7 +34,7 @@ CAPABILITIES = ("export", "import", "approve_import")
 
 # Modules that expose CSV entities. Kept here (not derived) so this module does
 # not import the module routers; the catalog reads each module's spec registry.
-_CSV_MODULES = ("crm", "inventory")
+_CSV_MODULES = ("crm", "inventory", "finance")
 
 
 def _registry(module: str) -> dict[str, Any]:
@@ -45,6 +45,9 @@ def _registry(module: str) -> dict[str, Any]:
         return ENTITIES
     if module == "inventory":
         from app.modules.inventory.csv_schema import ENTITIES
+        return ENTITIES
+    if module == "finance":
+        from app.modules.finance.csv_schema import ENTITIES
         return ENTITIES
     return {}
 
