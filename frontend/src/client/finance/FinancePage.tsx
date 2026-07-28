@@ -14,11 +14,17 @@ import { ReportsSection } from "./ReportsSection";
 
 export function FinancePage() {
   const me = useOutletContext<ClientMe>();
-  const location = useLocation();
-  // the dashboard's `finance.invoice.new` quick action deep-links here
-  const newInvoice = location.pathname.endsWith("/invoices/new");
+  const { pathname } = useLocation();
   const canWrite = (me.role.permissions["finance"] ?? 0) >= 3;
   const csv = (entity: string) => csvGrants(me, "finance", entity);
+
+  // Dashboard quick actions deep-link to /app/finance/<section>[/new]: pick the
+  // tab from the path and open the create modal when the path ends in /new.
+  const tab = pathname.startsWith("/app/finance/bills") ? "bills"
+    : pathname.startsWith("/app/finance/reports") ? "reports"
+    : pathname.startsWith("/app/finance/chart") ? "chart"
+    : "invoices";
+  const isNew = pathname.endsWith("/new");
 
   return (
     <Stack>
@@ -26,7 +32,7 @@ export function FinancePage() {
 
       <ImportApprovals me={me} module="finance" />
 
-      <Tabs defaultValue="invoices">
+      <Tabs defaultValue={tab}>
         <TabsList>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="bills">Bills</TabsTrigger>
@@ -35,10 +41,12 @@ export function FinancePage() {
         </TabsList>
 
         <TabsContent value="invoices">
-          <InvoicesSection canWrite={canWrite} csv={csv("invoices")} openNew={newInvoice} />
+          <InvoicesSection canWrite={canWrite} csv={csv("invoices")}
+            openNew={tab === "invoices" && isNew} />
         </TabsContent>
         <TabsContent value="bills">
-          <BillsSection canWrite={canWrite} csv={csv("bills")} />
+          <BillsSection canWrite={canWrite} csv={csv("bills")}
+            openNew={tab === "bills" && isNew} />
         </TabsContent>
         <TabsContent value="reports"><ReportsSection /></TabsContent>
         <TabsContent value="chart">

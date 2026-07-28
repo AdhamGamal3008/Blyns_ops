@@ -10,12 +10,19 @@ All three surfaces are role-aware:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.control_plane.companies.models import KNOWN_MODULES
+from app.core.audit import write_activity
+from app.core.config import settings
 from app.core.errors import VALIDATION_ERROR, DomainError
 from app.modules.dashboard import repository as repo
-from app.modules.dashboard.permissions import KPI_SOURCES, QUICK_ACTIONS
+from app.modules.dashboard.permissions import (
+    EXACT_ACTIONS,
+    KPI_SOURCES,
+    QUICK_ACTIONS,
+)
 from app.shared.enums import Level
 from app.tenant.deps import ClientPrincipal
 
@@ -30,13 +37,208 @@ def _readable_modules(principal: ClientPrincipal) -> set[str]:
     }
 
 
-def quick_actions(principal: ClientPrincipal) -> list[dict]:
+@dataclass(frozen=True)
+class QaConfig:
+    """Ranking constants snapshotted from settings per request, so `_score` stays
+    a pure function of its arguments (config + role + events) — no global reads
+    inside the formula (docs/QUICK_ACTIONS_PERSONALIZATION_PLAN.md §5)."""
+
+    window_days: int
+    half_life_days: float
+    w_exact: float
+    w_module: float
+    role_write: float
+    role_read: float
+    tie_epsilon: float
+    event_fetch_cap: int
+
+    @classmethod
+    def from_settings(cls) -> QaConfig:
+        return cls(
+            window_days=settings.qa_window_days,
+            half_life_days=settings.qa_half_life_days,
+            w_exact=settings.qa_weight_exact,
+            w_module=settings.qa_weight_module,
+            role_write=settings.qa_role_weight_write,
+            role_read=settings.qa_role_weight_read,
+            tie_epsilon=settings.qa_tie_epsilon,
+            event_fetch_cap=settings.qa_event_fetch_cap,
+        )
+
+
+def _role_weight(level: Level, cfg: QaConfig) -> float:
+    if level >= Level.WRITE:
+        return cfg.role_write
+    if level >= Level.READ:
+        return cfg.role_read
+    return 0.0
+
+
+def _decay(age_days: float, half_life_days: float) -> float:
+    """Recency half-life: an event `half_life_days` old counts half as much."""
+    return 0.5 ** (age_days / half_life_days)
+
+
+def _score(
+    action: dict,
+    declaration_index: int,
+    catalog_size: int,
+    level: Level,
+    events: list[dict],
+    now: datetime,
+    cfg: QaConfig,
+) -> float:
+    """Explainable, deterministic score for one candidate action. Pure: identical
+    arguments always yield the identical number (§2).
+
+        role affinity
+      + W_EXACT  · Σ decay(age)  over events whose action is exactly this one
+      + W_MODULE · Σ decay(age)  over events in this action's module
+      + curated tiebreak (earlier-declared wins)
+
+    With no events both sums are zero, so the order collapses to the curated
+    declaration order — the cold-start guarantee."""
+    exact = EXACT_ACTIONS.get(action["key"], frozenset())
+    module = action["module"]
+    exact_sum = 0.0
+    module_sum = 0.0
+    for e in events:
+        occurred = e["occurred_at"]
+        if occurred.tzinfo is None:  # Mongo may hand back naive UTC
+            occurred = occurred.replace(tzinfo=UTC)
+        weight = _decay((now - occurred).total_seconds() / 86_400, cfg.half_life_days)
+        if e.get("action") in exact:
+            exact_sum += weight
+        if e.get("module") == module:
+            module_sum += weight
+    curated_bias = cfg.tie_epsilon * (catalog_size - declaration_index)
+    return (
+        _role_weight(level, cfg)
+        + cfg.w_exact * exact_sum
+        + cfg.w_module * module_sum
+        + curated_bias
+    )
+
+
+def _candidates(principal: ClientPrincipal) -> list[tuple[int, dict]]:
+    """The hard gate: (declaration index, action) for every action whose module
+    is enabled AND the caller is ≥ its required level. Everything downstream —
+    ranking, pins, hides — only ever reorders or trims this set, so a forbidden
+    action can never surface (§ locked decisions, non-negotiable rule 3)."""
     enabled = set(principal.tenant.company["enabled_modules"])
     return [
-        a for a in QUICK_ACTIONS
+        (i, a)
+        for i, a in enumerate(QUICK_ACTIONS)
         if a["module"] in enabled
         and principal.level_for(a["module"]) >= Level(a["required_level"])
     ]
+
+
+async def quick_actions(principal: ClientPrincipal) -> tuple[list[dict], bool]:
+    """The caller's ranked, personalized quick actions, plus whether they have
+    anything to customize (used to keep the Customize entry reachable even when
+    every action is hidden).
+
+    Order: the user's pinned actions first (in pin order), then the
+    behavior-ranked remainder (Phase 1); hidden actions are dropped. With no
+    prefs and no recent activity this is exactly the curated order — cold start
+    is preserved. Each returned action carries a `pinned` flag for the UI."""
+    candidates = _candidates(principal)
+    actor_id = str(principal.user["_id"])
+    prefs = await repo.get_quick_action_prefs(principal.tenant_db, actor_id)
+    pin_rank = {key: n for n, key in enumerate(prefs["pinned"])}
+    hidden = set(prefs["hidden"])
+
+    visible = [(i, a) for i, a in candidates if a["key"] not in hidden]
+
+    cfg = QaConfig.from_settings()
+    now = datetime.now(UTC)
+    events = await repo.recent_activity_for_actor(
+        principal.tenant_db, actor_id, now - timedelta(days=cfg.window_days), cfg.event_fetch_cap
+    )
+    catalog_size = len(QUICK_ACTIONS)
+
+    pinned_actions = sorted(
+        (a for _, a in visible if a["key"] in pin_rank),
+        key=lambda a: pin_rank[a["key"]],
+    )
+    ranked_rest = [
+        a
+        for _, _, a in sorted(
+            (
+                (
+                    _score(a, i, catalog_size, principal.level_for(a["module"]), events, now, cfg),
+                    i,  # explicit tiebreak, so ties never hinge on float equality
+                    a,
+                )
+                for i, a in visible
+                if a["key"] not in pin_rank
+            ),
+            key=lambda t: (-t[0], t[1]),
+        )
+    ]
+
+    ordered = [{**a, "pinned": a["key"] in pin_rank} for a in pinned_actions + ranked_rest]
+    return ordered, len(candidates) > 0
+
+
+async def customizable_actions(principal: ClientPrincipal) -> list[dict]:
+    """Every action the caller may take, in curated order, tagged with its
+    current pin/hide state — the source the Customize dialog renders (it includes
+    hidden actions, so they can be brought back)."""
+    actor_id = str(principal.user["_id"])
+    prefs = await repo.get_quick_action_prefs(principal.tenant_db, actor_id)
+    pinned, hidden = set(prefs["pinned"]), set(prefs["hidden"])
+    return [
+        {
+            "key": a["key"],
+            "label": a["label"],
+            "module": a["module"],
+            "pinned": a["key"] in pinned,
+            "hidden": a["key"] in hidden,
+        }
+        for _, a in _candidates(principal)
+    ]
+
+
+async def set_quick_action_prefs(
+    principal: ClientPrincipal, pinned: list[str], hidden: list[str]
+) -> list[dict]:
+    """Replace the caller's pins/hides. Only keys they may actually use are
+    allowed — you cannot pin or hide what you cannot see — and an action cannot
+    be both. The write is audited (non-negotiable rule 4)."""
+    permitted = {a["key"] for _, a in _candidates(principal)}
+    pinned = list(dict.fromkeys(pinned))  # de-dupe; this order IS the pin order
+    hidden = list(dict.fromkeys(hidden))
+
+    unknown = sorted((set(pinned) | set(hidden)) - permitted)
+    if unknown:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"Not permitted or unknown quick actions: {', '.join(unknown)}.",
+            422,
+        )
+    both = sorted(set(pinned) & set(hidden))
+    if both:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"An action cannot be both pinned and hidden: {', '.join(both)}.",
+            422,
+        )
+
+    await repo.set_quick_action_prefs(
+        principal.tenant_db, str(principal.user["_id"]), pinned, hidden
+    )
+    await write_activity(
+        principal.tenant_db,
+        actor_id=str(principal.user["_id"]),
+        action="dashboard.quick_actions.customized",
+        entity={},
+        details={"pinned": pinned, "hidden": hidden},
+        actor_name=principal.user["name"],
+        module="dashboard",
+    )
+    return await customizable_actions(principal)
 
 
 async def kpis(principal: ClientPrincipal) -> dict:

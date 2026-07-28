@@ -27,10 +27,10 @@ import { DEFAULT_UNIT, type Product } from "./types";
 
 const UNITS = ["pcs", "kg", "box"];
 
-export function ProductsSection(props: { canWrite: boolean; csv: CsvGrants }) {
+export function ProductsSection(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(props.openNew));
   // The product being edited, or null when the edit dialog is closed.
   const [editing, setEditing] = useState<Product | null>(null);
 

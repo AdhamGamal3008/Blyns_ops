@@ -21,10 +21,10 @@ import {
 import { STATUS_TONE, money, type Bill } from "./types";
 import styles from "./Finance.module.css";
 
-export function BillsSection(props: { canWrite: boolean; csv: CsvGrants }) {
+export function BillsSection(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(props.openNew));
 
   const load = useCallback(() => {
     setError(null);

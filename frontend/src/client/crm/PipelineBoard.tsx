@@ -51,12 +51,12 @@ export function money(n: number, currency = "USD"): string {
   }).format(n);
 }
 
-export function PipelineBoard(props: { canWrite: boolean; csv: CsvGrants }) {
+export function PipelineBoard(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [deals, setDeals] = useState<Deal[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [moving, setMoving] = useState<Deal | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(props.openNew));
 
   // scope the cards to the same pipeline the buckets count, so a column's
   // total can never disagree with the cards under it

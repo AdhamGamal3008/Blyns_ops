@@ -91,6 +91,18 @@ export interface QuickAction {
   module: string;
   required_level: number;
   target_route: string;
+  /** Set by the server when the user has pinned this action (Phase 2). */
+  pinned?: boolean;
+}
+
+/** One row of the "Customize quick actions" dialog: every action the user may
+ *  take, with its current pin/hide state (includes hidden ones). */
+export interface CustomizableQuickAction {
+  key: string;
+  label: string;
+  module: string;
+  pinned: boolean;
+  hidden: boolean;
 }
 
 export interface KpiSet {

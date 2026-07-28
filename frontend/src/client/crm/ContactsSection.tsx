@@ -36,11 +36,11 @@ interface Account {
 
 const NO_ACCOUNT = "__none";
 
-export function ContactsSection(props: { canWrite: boolean; csv: CsvGrants }) {
+export function ContactsSection(props: { canWrite: boolean; csv: CsvGrants; openNew?: boolean }) {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState<unknown>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(Boolean(props.openNew));
 
   const load = useCallback(() => {
     api<Contact[]>("/crm/contacts?page_size=100")

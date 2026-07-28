@@ -38,12 +38,14 @@ async def _make_user(tenant_db, slug: str, name: str, levels: dict[str, int]) ->
 
 
 async def test_quick_actions_match_write_permissions(client, client_client, onboarded_company):
-    # Owner (WRITE everything): all five actions
+    # Owner (WRITE everything): the full catalog
     res = await client_client.get("/api/v1/dashboard/quick-actions")
     assert res.status_code == 200
     assert {a["key"] for a in res.json()["data"]} == {
         "project.new", "crm.lead.new", "inventory.adjust",
         "finance.invoice.new", "employee.invite",
+        "crm.deal.new", "crm.contact.new", "finance.bill.new",
+        "inventory.product.new",
     }
 
     # custom role: WRITE crm only, READ dashboard
@@ -54,7 +56,9 @@ async def test_quick_actions_match_write_permissions(client, client_client, onbo
         client, onboarded_company["slug"], user["email"], user["password"]
     )
     res = await client.get("/api/v1/dashboard/quick-actions", headers=headers)
-    assert {a["key"] for a in res.json()["data"]} == {"crm.lead.new"}
+    assert {a["key"] for a in res.json()["data"]} == {
+        "crm.lead.new", "crm.deal.new", "crm.contact.new",
+    }
 
 
 async def test_kpis_respect_module_read_and_report_values(client, client_client, onboarded_company):

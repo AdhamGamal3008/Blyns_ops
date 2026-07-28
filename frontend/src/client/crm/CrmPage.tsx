@@ -14,11 +14,18 @@ import { PipelineBoard } from "./PipelineBoard";
 
 export function CrmPage() {
   const me = useOutletContext<ClientMe>();
-  const location = useLocation();
-  // the dashboard's `crm.lead.new` quick action deep-links to /app/crm/leads/new
-  const deepLink = location.pathname.startsWith("/app/crm/leads");
+  const { pathname } = useLocation();
   const canWrite = (me.role.permissions["crm"] ?? 0) >= 3;
   const csv = (entity: string) => csvGrants(me, "crm", entity);
+
+  // Dashboard quick actions deep-link to /app/crm/<section>[/new]: pick the tab
+  // from the path (a bare /app/crm lands on the pipeline) and open the section's
+  // create modal when the path ends in /new. Deals live on the pipeline board.
+  const tab = pathname.startsWith("/app/crm/leads") ? "leads"
+    : pathname.startsWith("/app/crm/contacts") ? "contacts"
+    : pathname.startsWith("/app/crm/accounts") ? "accounts"
+    : "pipeline";
+  const isNew = pathname.endsWith("/new");
 
   return (
     <Stack>
@@ -26,7 +33,7 @@ export function CrmPage() {
 
       <ImportApprovals me={me} module="crm" />
 
-      <Tabs defaultValue={deepLink ? "leads" : "pipeline"}>
+      <Tabs defaultValue={tab}>
         <TabsList>
           <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
           <TabsTrigger value="leads">Leads</TabsTrigger>
@@ -35,17 +42,19 @@ export function CrmPage() {
         </TabsList>
 
         <TabsContent value="pipeline">
-          <PipelineBoard canWrite={canWrite} csv={csv("deals")} />
+          <PipelineBoard canWrite={canWrite} csv={csv("deals")}
+            openNew={pathname.startsWith("/app/crm/deals") && isNew} />
         </TabsContent>
         <TabsContent value="leads">
           <LeadsSection canWrite={canWrite} csv={csv("leads")}
-            openNew={deepLink && location.pathname.endsWith("/new")} />
+            openNew={tab === "leads" && isNew} />
         </TabsContent>
         <TabsContent value="accounts">
           <AccountsSection canWrite={canWrite} csv={csv("accounts")} />
         </TabsContent>
         <TabsContent value="contacts">
-          <ContactsSection canWrite={canWrite} csv={csv("contacts")} />
+          <ContactsSection canWrite={canWrite} csv={csv("contacts")}
+            openNew={tab === "contacts" && isNew} />
         </TabsContent>
       </Tabs>
     </Stack>

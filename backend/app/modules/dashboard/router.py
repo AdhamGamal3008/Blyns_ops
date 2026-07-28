@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
 from app.modules.dashboard import service
 from app.shared.enums import Level
@@ -21,11 +22,37 @@ from app.tenant.deps import ClientPrincipal, require
 router = APIRouter(prefix="/api/v1", tags=["client-dashboard"])
 
 
+class QuickActionPrefsInput(BaseModel):
+    """A full replacement of the caller's pins/hides (Phase 2). Order of `pinned`
+    is the order they appear inline."""
+
+    pinned: list[str] = Field(default_factory=list)
+    hidden: list[str] = Field(default_factory=list)
+
+
 @router.get("/dashboard/quick-actions")
 async def quick_actions(
     principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),
 ):
-    return envelope(service.quick_actions(principal))
+    actions, customizable = await service.quick_actions(principal)
+    return envelope(actions, meta={"customizable": customizable})
+
+
+@router.get("/dashboard/quick-actions/prefs")
+async def quick_action_prefs(
+    principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),
+):
+    return envelope(await service.customizable_actions(principal))
+
+
+@router.put("/dashboard/quick-actions/prefs")
+async def update_quick_action_prefs(
+    body: QuickActionPrefsInput,
+    principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),
+):
+    return envelope(
+        await service.set_quick_action_prefs(principal, body.pinned, body.hidden)
+    )
 
 
 @router.get("/dashboard/kpis")

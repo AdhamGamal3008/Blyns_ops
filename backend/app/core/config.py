@@ -54,6 +54,21 @@ class Settings(BaseSettings):
     max_import_mb: int = 5
     max_import_rows: int = 5000
 
+    # Quick-action ranking (docs/QUICK_ACTIONS_PERSONALIZATION_PLAN.md). Pure,
+    # in-house scoring over the caller's OWN recent activity_log — no external
+    # service, deterministic. All env-overridable (ERP_QA_*) and valid across
+    # local/test/prod. `window_days` bounds the fetch; `half_life_days` sets the
+    # recency decay; the weights trade off exact-action vs module engagement;
+    # `event_fetch_cap` bounds cost.
+    qa_window_days: int = 30
+    qa_half_life_days: float = 7.0
+    qa_weight_exact: float = 3.0
+    qa_weight_module: float = 1.0
+    qa_role_weight_write: float = 2.0
+    qa_role_weight_read: float = 0.5
+    qa_tie_epsilon: float = 0.001
+    qa_event_fetch_cap: int = 500
+
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 

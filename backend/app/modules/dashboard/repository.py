@@ -257,6 +257,46 @@ async def calendar_settings(
 # --- Activity feed (§3) -------------------------------------------------------
 
 
+async def get_quick_action_prefs(db: AsyncIOMotorDatabase, actor_id: str) -> dict:
+    """One user's quick-action pins/hides (Phase 2). Absent → empty prefs, so a
+    user who never customized behaves exactly as pure ranking."""
+    doc = await db.quick_action_prefs.find_one({"actor_id": actor_id})
+    if doc is None:
+        return {"pinned": [], "hidden": []}
+    return {
+        "pinned": list(doc.get("pinned") or []),
+        "hidden": list(doc.get("hidden") or []),
+    }
+
+
+async def set_quick_action_prefs(
+    db: AsyncIOMotorDatabase, actor_id: str, pinned: list[str], hidden: list[str]
+) -> None:
+    await db.quick_action_prefs.update_one(
+        {"actor_id": actor_id},
+        {"$set": {"pinned": pinned, "hidden": hidden, "updated_at": datetime.now(UTC)}},
+        upsert=True,
+    )
+
+
+async def recent_activity_for_actor(
+    db: AsyncIOMotorDatabase, actor_id: str, since: datetime, cap: int
+) -> list[dict]:
+    """One user's recent events, newest-first, for quick-action ranking
+    (docs/QUICK_ACTIONS_PERSONALIZATION_PLAN.md §1/§4). Projected to the three
+    fields the scorer reads and capped, so the cost is one indexed query
+    (activity_log[(actor_id,1),(occurred_at,-1)]) bounded by `cap`."""
+    cursor = (
+        db.activity_log.find(
+            {"actor_id": actor_id, "occurred_at": {"$gte": since}},
+            {"_id": 0, "action": 1, "module": 1, "occurred_at": 1},
+        )
+        .sort("occurred_at", -1)
+        .limit(cap)
+    )
+    return await cursor.to_list(length=cap)
+
+
 async def activity_page(
     db: AsyncIOMotorDatabase,
     query: dict,

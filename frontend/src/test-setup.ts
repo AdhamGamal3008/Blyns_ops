@@ -19,6 +19,13 @@ if (typeof globalThis.ResizeObserver !== "function") {
   } as unknown as typeof ResizeObserver;
 }
 
+// jsdom implements no layout, so Element.scrollIntoView is absent. Tabs calls it
+// on mount to bring the active trigger into view; a no-op is the honest stub
+// (there is nothing to scroll) and keeps any Tabs-mounting test from throwing.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // jsdom ships no matchMedia. Components read it to decide whether to animate,
 // so provide a real-shaped stub that reports "no preference"; a test that cares
 // about reduced motion overrides `matches` for the query it is exercising.

@@ -14,11 +14,18 @@ import { StockSection } from "./StockSection";
 
 export function InventoryPage() {
   const me = useOutletContext<ClientMe>();
-  const location = useLocation();
-  // the dashboard's `inventory.adjust` quick action deep-links to /app/inventory/adjust
-  const adjustDeepLink = location.pathname.endsWith("/adjust");
+  const { pathname } = useLocation();
   const canWrite = (me.role.permissions["inventory"] ?? 0) >= 3;
   const csv = (entity: string) => csvGrants(me, "inventory", entity);
+
+  // Dashboard quick actions deep-link here: /adjust opens the stock-move modal
+  // (stock tab); /products/new opens the new-product modal (products tab).
+  const tab = pathname.startsWith("/app/inventory/products") ? "products"
+    : pathname.startsWith("/app/inventory/movements") ? "movements"
+    : pathname.startsWith("/app/inventory/low") ? "low"
+    : "stock";
+  const adjustDeepLink = pathname.endsWith("/adjust");
+  const newProduct = tab === "products" && pathname.endsWith("/new");
 
   return (
     <Stack>
@@ -26,7 +33,7 @@ export function InventoryPage() {
 
       <ImportApprovals me={me} module="inventory" />
 
-      <Tabs defaultValue="stock">
+      <Tabs defaultValue={tab}>
         <TabsList>
           <TabsTrigger value="stock">Stock</TabsTrigger>
           <TabsTrigger value="products">Products</TabsTrigger>
@@ -38,7 +45,7 @@ export function InventoryPage() {
           <StockSection canWrite={canWrite} csv={csv("stock-levels")} openMove={adjustDeepLink} />
         </TabsContent>
         <TabsContent value="products">
-          <ProductsSection canWrite={canWrite} csv={csv("products")} />
+          <ProductsSection canWrite={canWrite} csv={csv("products")} openNew={newProduct} />
         </TabsContent>
         <TabsContent value="movements">
           <MovementsSection canWrite={canWrite} csv={csv("movements")} />
