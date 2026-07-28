@@ -23,6 +23,7 @@ from app.modules.dashboard.permissions import (
     KPI_SOURCES,
     QUICK_ACTIONS,
 )
+from app.modules.dashboard.suggestions import RULES, SUGGESTION_KEYS, Suggestion
 from app.shared.enums import Level
 from app.tenant.deps import ClientPrincipal
 
@@ -332,3 +333,91 @@ async def activity(
     if time_range:
         query["occurred_at"] = time_range
     return await repo.activity_page(principal.tenant_db, query, cursor, limit)
+
+
+# --- Suggestions strip (Phase 3) ---------------------------------------------
+
+
+async def _live_suggestions(principal: ClientPrincipal) -> list[Suggestion]:
+    """Every rule that fires for this caller, before dismissals/cap. A rule runs
+    only when its module is enabled AND the caller is ≥ its required level, so a
+    forbidden suggestion is never even computed."""
+    enabled = set(principal.tenant.company["enabled_modules"])
+    db = principal.tenant_db
+    out: list[Suggestion] = []
+    for rule in RULES:
+        if rule.module not in enabled or principal.level_for(rule.module) < rule.required_level:
+            continue
+        n = await rule.count(db)
+        if n > 0:
+            out.append(
+                Suggestion(
+                    key=rule.key,
+                    message=rule.message(n),
+                    cta_label=rule.cta_label,
+                    target_route=rule.target_route,
+                    priority=rule.priority,
+                    signal=n,
+                )
+            )
+    return out
+
+
+def _suppressed(s: Suggestion, dismissals: dict, now: datetime, ttl: timedelta) -> bool:
+    """A dismissed suggestion stays hidden until either the dismissal ages out
+    (ttl) or its signal grows past what was dismissed (something new accrued)."""
+    d = dismissals.get(s.key)
+    if d is None:
+        return False
+    at = d["at"]
+    if at.tzinfo is None:  # Mongo may hand back naive UTC
+        at = at.replace(tzinfo=UTC)
+    if now - at >= ttl:
+        return False
+    return s.signal <= d["signal"]
+
+
+def _public(s: Suggestion) -> dict:
+    # `signal` is internal dismissal bookkeeping — not part of the API surface.
+    return {
+        "key": s.key,
+        "message": s.message,
+        "cta_label": s.cta_label,
+        "target_route": s.target_route,
+        "priority": s.priority,
+    }
+
+
+async def suggestions(principal: ClientPrincipal) -> list[dict]:
+    """The caller's contextual next-step suggestions: data-state rules they may
+    act on, minus the ones they've dismissed, highest-priority first, capped."""
+    live = await _live_suggestions(principal)
+    dismissals = await repo.get_suggestion_dismissals(
+        principal.tenant_db, str(principal.user["_id"])
+    )
+    now = datetime.now(UTC)
+    ttl = timedelta(days=settings.suggestion_dismiss_days)
+    visible = [s for s in live if not _suppressed(s, dismissals, now, ttl)]
+    visible.sort(key=lambda s: (-s.priority, s.key))
+    return [_public(s) for s in visible[: settings.suggestion_limit]]
+
+
+async def dismiss_suggestion(principal: ClientPrincipal, key: str) -> list[dict]:
+    """Dismiss one suggestion for this user. Recorded with the suggestion's
+    current signal so it can resurface once something new accrues; audited."""
+    if key not in SUGGESTION_KEYS:
+        raise DomainError(VALIDATION_ERROR, f"Unknown suggestion: {key}.", 422)
+    live = {s.key: s.signal for s in await _live_suggestions(principal)}
+    await repo.dismiss_suggestion(
+        principal.tenant_db, str(principal.user["_id"]), key, live.get(key, 0)
+    )
+    await write_activity(
+        principal.tenant_db,
+        actor_id=str(principal.user["_id"]),
+        action="dashboard.suggestion.dismissed",
+        entity={},
+        details={"suggestion": key},
+        actor_name=principal.user["name"],
+        module="dashboard",
+    )
+    return await suggestions(principal)

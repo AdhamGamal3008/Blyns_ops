@@ -25,3 +25,5 @@ async def seed(tenant_db: AsyncIOMotorDatabase) -> None:
     # Per-user quick-action personalization (pins/hides): one doc per user
     # (docs/QUICK_ACTIONS_PERSONALIZATION_PLAN.md Phase 2).
     await tenant_db.quick_action_prefs.create_index("actor_id", unique=True)
+    # Per-user dismissed dashboard suggestions, one doc per user (Phase 3).
+    await tenant_db.suggestion_dismissals.create_index("actor_id", unique=True)

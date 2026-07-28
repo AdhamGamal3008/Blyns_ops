@@ -257,6 +257,43 @@ async def calendar_settings(
 # --- Activity feed (§3) -------------------------------------------------------
 
 
+# --- Suggestion signals + dismissals (Phase 3) -------------------------------
+
+
+async def count_draft_invoices(db: AsyncIOMotorDatabase) -> int:
+    return await db.invoices.count_documents({"status": "draft"})
+
+
+async def count_unpaid_invoices(db: AsyncIOMotorDatabase) -> int:
+    return await db.invoices.count_documents({"status": {"$in": ["sent", "partly_paid"]}})
+
+
+async def count_new_leads(db: AsyncIOMotorDatabase) -> int:
+    return await db.leads.count_documents({"status": "new", "is_deleted": {"$ne": True}})
+
+
+async def get_suggestion_dismissals(db: AsyncIOMotorDatabase, actor_id: str) -> dict:
+    """This user's dismissed suggestions as {key: {"signal": int, "at": datetime}}.
+    Stored as an array (suggestion keys contain dots, which cannot be Mongo field
+    names), and read back into a dict for O(1) lookup."""
+    doc = await db.suggestion_dismissals.find_one({"actor_id": actor_id})
+    entries = (doc or {}).get("entries") or []
+    return {e["key"]: {"signal": e["signal"], "at": e["at"]} for e in entries}
+
+
+async def dismiss_suggestion(
+    db: AsyncIOMotorDatabase, actor_id: str, key: str, signal: int
+) -> None:
+    """Record (or refresh) a dismissal for one suggestion. Read-modify-write the
+    array so re-dismissing a key replaces its entry rather than duplicating it."""
+    doc = await db.suggestion_dismissals.find_one({"actor_id": actor_id})
+    entries = [e for e in ((doc or {}).get("entries") or []) if e["key"] != key]
+    entries.append({"key": key, "signal": signal, "at": datetime.now(UTC)})
+    await db.suggestion_dismissals.update_one(
+        {"actor_id": actor_id}, {"$set": {"entries": entries}}, upsert=True
+    )
+
+
 async def get_quick_action_prefs(db: AsyncIOMotorDatabase, actor_id: str) -> dict:
     """One user's quick-action pins/hides (Phase 2). Absent → empty prefs, so a
     user who never customized behaves exactly as pure ranking."""

@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     qa_tie_epsilon: float = 0.001
     qa_event_fetch_cap: int = 500
 
+    # Dashboard "next step" suggestions (docs/QUICK_ACTIONS_PERSONALIZATION_PLAN.md
+    # Phase 3): a data-state strip. The cap bounds how many show at once; a
+    # dismissal re-surfaces after this many days or once its signal grows.
+    suggestion_limit: int = 3
+    suggestion_dismiss_days: int = 14
+
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 

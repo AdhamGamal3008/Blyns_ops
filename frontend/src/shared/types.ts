@@ -105,6 +105,16 @@ export interface CustomizableQuickAction {
   hidden: boolean;
 }
 
+/** A contextual "next step" nudge on the dashboard (Phase 3): a data-state
+ *  suggestion with a deep-link CTA. Dismissible per-user. */
+export interface Suggestion {
+  key: string;
+  message: string;
+  cta_label: string;
+  target_route: string;
+  priority: number;
+}
+
 export interface KpiSet {
   open_projects?: number;
   overdue_tasks?: number;

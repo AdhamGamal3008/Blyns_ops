@@ -55,6 +55,21 @@ async def update_quick_action_prefs(
     )
 
 
+@router.get("/dashboard/suggestions")
+async def suggestions(
+    principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),
+):
+    return envelope(await service.suggestions(principal))
+
+
+@router.post("/dashboard/suggestions/{key}/dismiss")
+async def dismiss_suggestion(
+    key: str,
+    principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),
+):
+    return envelope(await service.dismiss_suggestion(principal, key))
+
+
 @router.get("/dashboard/kpis")
 async def kpis(
     principal: ClientPrincipal = Depends(require("dashboard", Level.VIEW)),

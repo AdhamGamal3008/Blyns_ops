@@ -9,6 +9,7 @@ import { ActivityPanel } from "./ActivityPanel";
 import { CalendarView } from "./CalendarView";
 import { KpiCards } from "./KpiCards";
 import { QuickActions } from "./QuickActions";
+import { SuggestionsStrip } from "./SuggestionsStrip";
 
 /** "Good morning" reads as care, and it costs one function. */
 function greeting(): string {
@@ -30,6 +31,8 @@ export function DashboardPage() {
         description={`${me.company.name} · ${me.role.name}`}
         actions={<QuickActions />}
       />
+
+      <SuggestionsStrip />
 
       <KpiCards />
 
