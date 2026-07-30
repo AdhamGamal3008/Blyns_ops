@@ -12,13 +12,12 @@ passed, automated validation passed, AND an approver holding the stage's role
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.modules.projects import repository as repo
-from app.modules.projects.permissions import CLIENT_APPROVER_ROLE
+from app.modules.projects.permissions import HANDOVER_STAGE_KEY
 
 
 def _now() -> datetime:
@@ -302,6 +301,37 @@ async def run_auto_validation(
         ),
     })
 
+    # v2.0 Stage 6 · Factory Release (§5-C): the four v1.0 approvals became one
+    # release decision — all four checklist sections must be complete first.
+    checklist = definition.get("release_checklist") or []
+    if checklist:
+        done = set(instance.get("checklist_done") or [])
+        missing = [s for s in checklist if s not in done]
+        checks.append({
+            "key": "release_checklist_complete",
+            "passed": not missing,
+            "detail": (
+                "Release checklist incomplete: " + ", ".join(missing)
+                if missing else "All release checklist sections complete."
+            ),
+        })
+
+    # v2.0 Stage 9 · Handover (SOP §9): no open snag proceeds to handover unless
+    # a written client acceptance is on record.
+    if definition.get("key") == HANDOVER_STAGE_KEY:
+        snags = await repo.open_snags(db, project["_id"])
+        accepted = bool(project.get("client_acceptance"))
+        checks.append({
+            "key": "snags_closed",
+            "passed": not snags or accepted,
+            "detail": (
+                "All snags closed." if not snags
+                else "Open snags waived by written client acceptance."
+                if accepted
+                else f"{len(snags)} open snag(s) — close them or record client acceptance."
+            ),
+        })
+
     return {
         "passed": all(c["passed"] for c in checks),
         "checks": checks,
@@ -330,16 +360,6 @@ async def open_or_create_approval(
         "change_report_id": None,
         "created_by": actor_id,
     })
-
-
-def is_client_approval(definition: dict) -> bool:
-    """§9/acceptance #9: stages whose approver position is `client` are only
-    ever approved through scoped client-portal access."""
-    if definition.get("approver_role") == CLIENT_APPROVER_ROLE:
-        return True
-    co: list[Any] = definition.get("co_approver_roles") or []
-    conditional: list[Any] = definition.get("conditional_approvers") or []
-    return CLIENT_APPROVER_ROLE in co or CLIENT_APPROVER_ROLE in conditional
 
 
 async def bump_recovery(db: AsyncIOMotorDatabase, instance_id: ObjectId) -> int:

@@ -1,8 +1,9 @@
 import type { BadgeTone } from "../../shared/ui";
 
 // Shapes for the Project Management module (docs/modules/PROJECT_MANAGEMENT.md).
-// The 16-stage stage-gate machine: a project holds current_stage_* + a timeline
-// of stage instances; each stage carries gates, tasks, and an approval.
+// The v2.0 stage-gate machine (nine stages): a project holds current_stage_* + a
+// timeline of stage instances; each stage carries gates, tasks, and an approval.
+// The stage count is never hardcoded — it derives from the timeline/config length.
 
 export interface Budget {
   planned: number;
@@ -66,6 +67,8 @@ export interface StageDefinition {
   quality_gates: string[];
   approver_role?: string | null;
   co_approver_roles?: string[];
+  auto_advance?: boolean;               // v2.0 Stage 2 · Site Survey (no approver)
+  release_checklist?: string[];         // v2.0 Stage 6 · Factory Release (4 sections)
 }
 
 export interface StageInstance {
@@ -73,6 +76,7 @@ export interface StageInstance {
   status: StageStatus;
   documents_supplied?: string[];
   document_refs?: DocumentRef[];
+  checklist_done?: string[];            // v2.0 Stage 6 release-checklist sections done
   waiting_on?: string[];
   blocked_by?: string[];
   task_results?: { task: string; status: string }[];
@@ -107,6 +111,8 @@ export interface GateResult {
   type: string;
   passed: boolean;
   severe: boolean;
+  waived?: boolean;                 // v2.0: a director's written waiver (SOP §3)
+  reason?: string | null;           // the waiver reason, when waived
   explanation: string;
   captured_at: string;
 }
@@ -126,6 +132,15 @@ export interface GateRule {
   attach_to_stages?: string[];
   threshold?: Record<string, unknown>;
   checklist?: string[];
+}
+
+/** One row of the Settings-editable approver map (§9): a position resolved to
+ *  tenant client roles and/or specific users. Used to tell whether the current
+ *  user holds the project_director position (who alone may waive a hard gate). */
+export interface ApproverEntry {
+  approver_role: string;
+  client_roles?: string[];
+  assigned_user_ids?: string[];
 }
 
 export type DeliverableKind =

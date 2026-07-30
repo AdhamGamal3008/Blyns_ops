@@ -1,4 +1,4 @@
-// A single project: the 16-stage pipeline as the page's spine, with the
+// A single project: the stage-gate pipeline as the page's spine, with the
 // selected stage's controls and the deliverables / reports / job-cost tabs
 // beneath it (docs/modules/PROJECT_MANAGEMENT.md §12).
 
@@ -29,18 +29,24 @@ import { DeliverablesSection } from "./DeliverablesSection";
 import { JobCostsSection } from "./JobCostsSection";
 import { ReportsSection } from "./ReportsSection";
 import { StagePanel } from "./StagePanel";
-import { PROJECT_TONE, humanize, money, type Project, type Timeline } from "./types";
+import {
+  PROJECT_TONE, humanize, money,
+  type ApproverEntry, type Project, type Timeline,
+} from "./types";
 import styles from "./ProjectDetail.module.css";
+
+const DIRECTOR_ROLE = "project_director";
 
 export function ProjectDetail() {
   const me = useOutletContext<ClientMe>();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const canWrite = (me.role.permissions["projects"] ?? 0) >= 3;
-  const canApprove = canWrite || Boolean(me.role.is_client_portal);
+  const canApprove = canWrite;
 
   const [project, setProject] = useState<Project | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [approvers, setApprovers] = useState<ApproverEntry[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -55,6 +61,20 @@ export function ProjectDetail() {
   }, [id]);
 
   useEffect(reload, [reload]);
+  // who holds the project_director position — only they may waive a hard gate
+  // (SOP §3; the backend enforces it too). Resolved from the approver map.
+  useEffect(() => {
+    api<ApproverEntry[]>("/projects/config/approver-roles")
+      .then((r) => setApprovers(r.data)).catch(() => setApprovers([]));
+  }, []);
+
+  const canWaive = useMemo(() => {
+    const entry = approvers.find((e) => e.approver_role === DIRECTOR_ROLE);
+    if (!entry) return false;
+    const roles = (entry.client_roles ?? []).map((r) => r.toLowerCase());
+    return roles.includes((me.role.name ?? "").toLowerCase())
+      || (entry.assigned_user_ids ?? []).includes(me.id);
+  }, [approvers, me]);
 
   const stages = useMemo<RailStage[]>(
     () =>
@@ -96,7 +116,7 @@ export function ProjectDetail() {
             </Badge>
             <span>
               {project.current_stage_order
-                ? `Stage ${project.current_stage_order} of 16 · ${humanize(project.current_stage_key)}`
+                ? `Stage ${project.current_stage_order} of ${timeline.stages.length} · ${humanize(project.current_stage_key)}`
                 : "No stage machine (legacy record)"}
             </span>
           </Row>
@@ -165,6 +185,7 @@ export function ProjectDetail() {
             order={activeOrder}
             canWrite={canWrite}
             canApprove={canApprove}
+            canWaive={canWaive}
             onChanged={reload}
           />
         </TabsContent>

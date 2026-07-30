@@ -11,15 +11,17 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core import storage
-from app.core.errors import PERMISSION_DENIED, DomainError
 from app.modules.projects import service
 from app.modules.projects.models import (
     ApproveBody,
+    ChecklistMark,
+    ClientAcceptanceCreate,
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
     GateDocumentAttach,
     GateResultCreate,
+    GateWaive,
     JobCostCreate,
     ProjectCreate,
     ProjectPatch,
@@ -32,57 +34,12 @@ from app.modules.projects.models import (
 )
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
-from app.tenant.deps import ClientPrincipal, current_client_user, require
+from app.tenant.deps import ClientPrincipal, require
 
 router = APIRouter(prefix="/api/v1/projects", tags=["client-projects"])
 
 _read = require("projects", Level.READ)
 _write = require("projects", Level.WRITE)
-
-
-async def _approve_access(
-    principal: ClientPrincipal = Depends(current_client_user),
-) -> ClientPrincipal:
-    """Guard for approve/reject (§9, acceptance #9). Two ways in:
-
-      * `projects` WRITE — a normal staff approver, or
-      * scoped client-portal access (`projects` >= VIEW **and** the role's
-        `is_client_portal` flag) — a client-contact signing off THEIR stages
-        without full module access.
-
-    The service's `_assert_may_approve` still enforces that the caller holds the
-    stage's approver position, so portal access alone approves nothing.
-    """
-    level = principal.level_for("projects")
-    if level >= Level.WRITE:
-        return principal
-    if level >= Level.VIEW and principal.role.get("is_client_portal"):
-        return principal
-    raise DomainError(
-        PERMISSION_DENIED,
-        "Requires WRITE on 'projects', or scoped client-portal access.",
-        http_status=403,
-    )
-
-
-async def _document_access(
-    principal: ClientPrincipal = Depends(current_client_user),
-) -> ClientPrincipal:
-    """Guard for opening a document's file. Same two ways in as approve/reject:
-    `projects` READ, or scoped client-portal access. An approver must be able to
-    view the evidence attached to the stage they are signing off — a client
-    contact holds VIEW, which is below READ, so plain `_read` would lock them out.
-    """
-    level = principal.level_for("projects")
-    if level >= Level.READ:
-        return principal
-    if level >= Level.VIEW and principal.role.get("is_client_portal"):
-        return principal
-    raise DomainError(
-        PERMISSION_DENIED,
-        "Requires READ on 'projects', or scoped client-portal access.",
-        http_status=403,
-    )
 
 
 # --- config (§12) — declared before /{project_id} so `config` is not an id ----
@@ -194,7 +151,7 @@ async def submit_stage(
 @router.post("/{project_id}/stages/{order}/approve")
 async def approve_stage(
     project_id: str, order: int, body: ApproveBody,
-    principal: ClientPrincipal = Depends(_approve_access),
+    principal: ClientPrincipal = Depends(_write),
 ):
     return envelope(to_api(
         await service.approve_stage(principal, project_id, order, body.comment)
@@ -204,7 +161,7 @@ async def approve_stage(
 @router.post("/{project_id}/stages/{order}/reject")
 async def reject_stage(
     project_id: str, order: int, body: RejectBody,
-    principal: ClientPrincipal = Depends(_approve_access),
+    principal: ClientPrincipal = Depends(_write),
 ):
     return envelope(to_api(await service.reject_stage(
         principal, project_id, order, body.comment, body.report_type, body.owner_id
@@ -245,6 +202,29 @@ async def record_gate_result(
     ))
 
 
+@router.post("/{project_id}/stages/{order}/gates/{gate_key}/waive")
+async def waive_gate(
+    project_id: str, order: int, gate_key: str, body: GateWaive,
+    principal: ClientPrincipal = Depends(_write),
+):
+    """SOP §3 — waive a hard gate. Requires `projects` WRITE, and the service
+    additionally enforces that the caller holds the `project_director` position."""
+    return envelope(to_api(
+        await service.waive_gate(principal, project_id, order, gate_key, body)
+    ))
+
+
+@router.post("/{project_id}/stages/{order}/checklist/{section}")
+async def mark_checklist_section(
+    project_id: str, order: int, section: str, body: ChecklistMark,
+    principal: ClientPrincipal = Depends(_write),
+):
+    """v2.0 Stage 6 · Factory Release — mark a release-checklist section complete."""
+    return envelope(to_api(
+        await service.mark_checklist_section(principal, project_id, order, section, body)
+    ))
+
+
 @router.post("/{project_id}/stages/{order}/tasks/{task_key}/run")
 async def run_task(
     project_id: str, order: int, task_key: str,
@@ -282,7 +262,7 @@ async def upload_deliverable_file(
 @router.get("/{project_id}/deliverables/{did}/download")
 async def download_deliverable(
     project_id: str, did: str, version: int | None = None,
-    principal: ClientPrincipal = Depends(_document_access),
+    principal: ClientPrincipal = Depends(_read),
 ):
     """Stream an uploaded document version as an attachment (never inline)."""
     grid_out, filename, content_type = await service.open_deliverable_file(
@@ -336,6 +316,18 @@ async def patch_report(
     principal: ClientPrincipal = Depends(_write),
 ):
     return envelope(to_api(await service.patch_report(principal, project_id, rid, body)))
+
+
+@router.post("/{project_id}/client-acceptance")
+async def record_client_acceptance(
+    project_id: str, body: ClientAcceptanceCreate,
+    principal: ClientPrincipal = Depends(_write),
+):
+    """SOP §9 — record a written client acceptance so an open snag does not
+    block the Stage-9 handover."""
+    return envelope(to_api(
+        await service.record_client_acceptance(principal, project_id, body)
+    ))
 
 
 # --- job costing -------------------------------------------------------------

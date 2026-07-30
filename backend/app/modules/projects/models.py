@@ -124,6 +124,27 @@ class GateResultCreate(BaseModel):
     notes: str | None = None
 
 
+class GateWaive(BaseModel):
+    """§3 (SOP) — a director's written waiver of a hard gate. Recorded as a
+    passing gate result with provenance; the reason is mandatory."""
+
+    reason: str = Field(min_length=1)
+
+
+class ChecklistMark(BaseModel):
+    """v2.0 Stage 6 · Factory Release — mark one of the four release-checklist
+    sections complete (or reopen it). All four must be complete before release."""
+
+    complete: bool = True
+
+
+class ClientAcceptanceCreate(BaseModel):
+    """v2.0 Stage 9 (SOP §9) — a written client acceptance that lets the handover
+    proceed with an open snag. The note (what the client accepted) is mandatory."""
+
+    note: str = Field(min_length=1)
+
+
 class SubmitBody(BaseModel):
     note: str | None = None
 

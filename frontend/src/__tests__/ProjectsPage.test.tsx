@@ -29,10 +29,14 @@ function me(level: number): ClientMe {
   };
 }
 
+// the machine's length drives the "X/N" denominator — nine stages in v2.0
+const STAGES = { data: Array.from({ length: 9 }, (_, i) => ({ order: i + 1 })) };
+
 function stubFetch() {
   const mock = vi.fn(async (url: string, _init?: RequestInit) => {
     const u = String(url);
     if (u.includes("/crm/accounts")) return okJson({ data: [] });
+    if (u.includes("/projects/config/stages")) return okJson(STAGES);
     if (u.includes("/projects")) return okJson(PROJECTS);
     return okJson({ data: {} });
   });
@@ -72,7 +76,7 @@ describe("ProjectsPage", () => {
     await waitFor(() =>
       expect(screen.getByText("Tower A Lobby Cladding")).toBeInTheDocument());
     expect(screen.getByText("PRJ-0001")).toBeInTheDocument();
-    expect(screen.getByText(/3\/16 · Site survey/)).toBeInTheDocument();
+    expect(screen.getByText(/3\/9 · Site survey/)).toBeInTheDocument();
   });
 
   it("lets a WRITE user create a project", async () => {

@@ -25,14 +25,14 @@ async def _upload(client_client, pid, data=b"PDF-BYTES-\x00\x01", filename="spec
     return res.json()["data"]
 
 
-STAGE1_DOCS = ("quotation_approved", "contract_signed", "client_info_present",
-               "scope_present", "initial_drawings_present")
-STAGE2_DOCS = ("architectural_drawings", "design_package", "material_specs",
-               "client_requirements")
+# Stage 1 · Project Initiation — the three required entry documents (v2.0).
+STAGE1_DOCS = ("loi_or_po", "scope_boq_approved", "site_access_confirmed")
 
 
-async def _clear_stage(client_client, pid, order, docs):
-    """Attach evidence to a stage's document gates, submit, and approve it."""
+async def _clear_stage(client_client, pid, order, docs=()):
+    """Attach evidence to a stage's document gates, submit, and approve it. An
+    approver-less auto-advance stage (v2.0 Stage 2 · Site Survey) advances on
+    submit alone, with no documents to attach and no approval step."""
     for key in docs:
         r = await client_client.post(
             f"{BASE}/{pid}/stages/{order}/documents/{key}/attach",
@@ -40,9 +40,19 @@ async def _clear_stage(client_client, pid, order, docs):
                   "file_ref": f"https://docs.example.com/{key}.pdf"},
         )
         assert r.status_code == 201, r.text
-    await client_client.post(f"{BASE}/{pid}/stages/{order}/submit", json={})
+    submit = await client_client.post(f"{BASE}/{pid}/stages/{order}/submit", json={})
+    assert submit.status_code == 200, submit.text
+    if submit.json()["data"].get("auto_advanced"):
+        return
     r = await client_client.post(f"{BASE}/{pid}/stages/{order}/approve", json={})
     assert r.status_code == 200, r.text
+
+
+async def _reach_stage3(client_client, pid):
+    """Walk the project to Stage 3 · Design Package, whose only entry gate is a
+    dependency (survey_complete) — no document to attach."""
+    await _clear_stage(client_client, pid, 1, STAGE1_DOCS)
+    await _clear_stage(client_client, pid, 2)  # Site Survey auto-advances
 
 
 async def _employee(client, client_client, slug: str, role_name: str, tag: str):
@@ -145,21 +155,21 @@ async def test_supply_document_records_reference(client_client):
 
     # satisfy a Stage-1 document gate, referencing that document as evidence
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/1/documents/contract_signed",
+        f"{BASE}/{pid}/stages/1/documents/loi_or_po",
         json={"deliverable_id": doc["id"]},
     )
     assert res.status_code == 200, res.text
 
     stage = (await client_client.get(f"{BASE}/{pid}/stages/1")).json()["data"]
     refs = stage["instance"].get("document_refs") or []
-    match = [r for r in refs if r["gate_key"] == "contract_signed"]
+    match = [r for r in refs if r["gate_key"] == "loi_or_po"]
     assert len(match) == 1
     assert match[0]["deliverable_id"] == doc["id"]
     assert match[0]["title"] == "Contract PDF"
     assert match[0]["by"]  # who attached it
     assert match[0]["at"]  # when
     # the gate is still satisfied
-    assert "contract_signed" in stage["instance"]["documents_supplied"]
+    assert "loi_or_po" in stage["instance"]["documents_supplied"]
 
 
 async def test_document_gate_cannot_be_supplied_without_evidence(client_client):
@@ -167,23 +177,22 @@ async def test_document_gate_cannot_be_supplied_without_evidence(client_client):
     never be ticked off empty."""
     pid = await _project(client_client)
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/1/documents/contract_signed", json={})
+        f"{BASE}/{pid}/stages/1/documents/loi_or_po", json={})
     assert res.status_code == 422, res.text
     assert "requires a document" in res.json()["error"]["message"]
 
     stage = (await client_client.get(f"{BASE}/{pid}/stages/1")).json()["data"]
-    assert "contract_signed" not in (stage["instance"]["documents_supplied"] or [])
+    assert "loi_or_po" not in (stage["instance"]["documents_supplied"] or [])
 
 
 async def test_non_document_gate_is_still_marked_without_a_file(client_client):
     """The evidence rule is scoped to document gates. A dependency gate — Stage
-    3's project_approved, or Stage 14's acclimation phase — has no file to
-    attach, so it stays directly markable and must not 422."""
+    3's survey_complete — has no file to attach, so it stays directly markable
+    and must not 422."""
     pid = await _project(client_client)
-    await _clear_stage(client_client, pid, 1, STAGE1_DOCS)
-    await _clear_stage(client_client, pid, 2, STAGE2_DOCS)
+    await _reach_stage3(client_client, pid)
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/3/documents/project_approved", json={})
+        f"{BASE}/{pid}/stages/3/documents/survey_complete", json={})
     assert res.status_code == 200, res.text
 
 
@@ -214,21 +223,21 @@ async def test_attach_uploaded_file_at_a_gate_satisfies_it(client_client):
     handle = await _upload(client_client, pid, data=payload, filename="contract.pdf")
 
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/1/documents/contract_signed/attach",
+        f"{BASE}/{pid}/stages/1/documents/loi_or_po/attach",
         json={"source_type": "upload", "file_id": handle["file_id"]},
     )
     assert res.status_code == 201, res.text
     doc = res.json()["data"]["document"]
     # kind + stage derived from the gate, never asked for
     assert doc["kind"] == "certificate"
-    assert doc["stage_key"] == "lead_conversion"
-    assert doc["gate_key"] == "contract_signed"
-    assert doc["title"] == "Contract signed"
+    assert doc["stage_key"] == "project_initiation"
+    assert doc["gate_key"] == "loi_or_po"
+    assert doc["title"] == "Loi or po"
 
     stage = (await client_client.get(f"{BASE}/{pid}/stages/1")).json()["data"]
-    assert "contract_signed" in stage["instance"]["documents_supplied"]
+    assert "loi_or_po" in stage["instance"]["documents_supplied"]
     ref = next(r for r in stage["instance"]["document_refs"]
-               if r["gate_key"] == "contract_signed")
+               if r["gate_key"] == "loi_or_po")
     # the reference carries what an approver needs to open it
     assert ref["source_type"] == "upload"
     assert ref["deliverable_id"] == doc["id"]
@@ -241,13 +250,13 @@ async def test_attach_uploaded_file_at_a_gate_satisfies_it(client_client):
 async def test_attach_url_at_a_gate(client_client):
     pid = await _project(client_client)
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/1/documents/quotation_approved/attach",
+        f"{BASE}/{pid}/stages/1/documents/scope_boq_approved/attach",
         json={"source_type": "url", "file_ref": "https://drive.example.com/quote.pdf"},
     )
     assert res.status_code == 201, res.text
     stage = (await client_client.get(f"{BASE}/{pid}/stages/1")).json()["data"]
     ref = next(r for r in stage["instance"]["document_refs"]
-               if r["gate_key"] == "quotation_approved")
+               if r["gate_key"] == "scope_boq_approved")
     assert ref["source_type"] == "url"
     assert ref["file_ref"] == "https://drive.example.com/quote.pdf"
 
@@ -261,36 +270,39 @@ async def test_attach_rejects_unknown_and_non_document_gates(client_client):
     assert bad.status_code == 422
 
     # walk to Stage 3, whose entry gate is a dependency, not a document
-    await _clear_stage(client_client, pid, 1, STAGE1_DOCS)
-    await _clear_stage(client_client, pid, 2, STAGE2_DOCS)
+    await _reach_stage3(client_client, pid)
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/3/documents/project_approved/attach",
+        f"{BASE}/{pid}/stages/3/documents/survey_complete/attach",
         json={"source_type": "url", "file_ref": "https://x/y"})
     assert res.status_code == 422
     assert "does not take a document" in res.json()["error"]["message"]
 
 
 def test_bom_gate_maps_to_the_bom_kind():
-    """Stage 8 finds the BOM by kind to reserve stock — the gate mapping must
-    keep bom_present storing as `bom`."""
+    """Stage 5 (Material Procurement) finds the BOM by kind to reserve stock —
+    the gate mapping must keep bom_present storing as `bom`."""
     from app.modules.projects.permissions import GATE_DOCUMENT_KINDS
     assert GATE_DOCUMENT_KINDS["bom_present"] == "bom"
 
 
-async def test_approver_can_open_gate_evidence(client, client_client, onboarded_company):
-    """A client-portal approver holds VIEW (below READ) — they must still be able
-    to download the evidence attached to the stage they are signing off."""
+async def test_read_user_can_open_gate_evidence(client, client_client, onboarded_company):
+    """Downloading a document's file requires `projects` READ — a reviewer with
+    read access can open the evidence attached to a stage."""
     slug = onboarded_company["slug"]
     pid = await _project(client_client)
     payload = b"contract-for-approver"
     handle = await _upload(client_client, pid, data=payload, filename="c.pdf")
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/1/documents/contract_signed/attach",
+        f"{BASE}/{pid}/stages/1/documents/loi_or_po/attach",
         json={"source_type": "upload", "file_id": handle["file_id"]})
     did = res.json()["data"]["document"]["id"]
 
-    portal = await _employee(client, client_client, slug, "client_contact", "approver")
-    dl = await client.get(f"{BASE}/{pid}/deliverables/{did}/download", headers=portal)
+    role = await client_client.post("/api/v1/settings/roles", json={
+        "name": "Reviewer", "permissions": {"dashboard": 2, "projects": 2},  # READ
+    })
+    assert role.status_code == 201, role.text
+    reviewer = await _employee(client, client_client, slug, "Reviewer", "reviewer")
+    dl = await client.get(f"{BASE}/{pid}/deliverables/{did}/download", headers=reviewer)
     assert dl.status_code == 200, dl.text
     assert dl.content == payload
 

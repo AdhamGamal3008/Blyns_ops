@@ -1,6 +1,11 @@
-"""Project Management acceptance criteria (docs/modules/PROJECT_MANAGEMENT.md
-§15): the 16-stage stage-gate machine — gates, engines, approvals, recovery
-loops, physical thresholds, and the CRM/Inventory/Finance integrations."""
+"""Project Management acceptance criteria (docs/PROJECT_MANAGEMENT_V2_MIGRATION_PLAN
+§8, docs/modules/PROJECT_WORKFLOW_V2_SOP.md): the v2.0 nine-stage stage-gate
+machine — gates, engines, approvals, recovery loops, physical thresholds, and the
+CRM/Inventory/Finance integrations.
+
+The machine is driven from /config/stages + /config/gates, so the helpers here
+adapt to the seed automatically; test_projects_v2.py reuses them for the
+auto-advance and severe-rollback behaviours specific to v2.0."""
 
 from __future__ import annotations
 
@@ -8,10 +13,8 @@ from datetime import UTC, datetime, timedelta
 
 BASE = "/api/v1/projects"
 
-STAGE1_DOCS = (
-    "quotation_approved", "contract_signed", "client_info_present",
-    "scope_present", "initial_drawings_present",
-)
+# Stage 1 · Project Initiation — the three required entry documents (v2.0).
+STAGE1_DOCS = ("loi_or_po", "scope_boq_approved", "site_access_confirmed")
 
 
 def _iso(days: int) -> str:
@@ -45,16 +48,6 @@ async def _supply(client_client, pid: str, order: int, *gate_keys: str) -> dict:
         assert res.status_code == 201, res.text
         last = res.json()["data"]["instance"]
     return last
-
-
-async def _supply_phase(client_client, pid: str, order: int, gate_key: str) -> dict:
-    """Mark a foundational-phase gate (a dependency, not a document) satisfied —
-    these carry no file, so they are marked directly."""
-    res = await client_client.post(
-        f"{BASE}/{pid}/stages/{order}/documents/{gate_key}", json={}
-    )
-    assert res.status_code == 200, res.text
-    return res.json()["data"]
 
 
 async def _submit(client_client, pid: str, order: int):
@@ -112,17 +105,15 @@ async def _machine_config(client_client) -> tuple[list[dict], dict[str, dict]]:
 
 async def _advance(client_client, pid: str, order: int, stages=None, gates=None):
     """Drive one stage start→approved: supply documents, log passing gate
-    results, submit, approve (as the Owner, whom every seeded position maps to)."""
+    results, submit, then approve (as the Owner, whom every seeded position maps
+    to). An approver-less auto-advance stage (v2.0 Stage 2) advances on submit
+    with no approval step, so this returns the submit body for it."""
     if stages is None or gates is None:
         stages, gates = await _machine_config(client_client)
     definition = next(s for s in stages if s["order"] == order)
-    stage_keys = {s["key"] for s in stages}
 
     for gate in definition.get("entry_gates") or []:
         if gate["type"] == "document":
-            await _supply(client_client, pid, order, gate["key"])
-        elif gate["type"] == "dependency" and gate.get("depends_on") not in stage_keys:
-            # a phase reference (e.g. acclimation) is satisfied by its evidence
             await _supply(client_client, pid, order, gate["key"])
 
     for gate_key in definition.get("quality_gates") or []:
@@ -132,9 +123,19 @@ async def _advance(client_client, pid: str, order: int, stages=None, gates=None)
         assert res.status_code == 200, res.text
         assert res.json()["data"]["result"]["passed"] is True, gate_key
 
+    # v2.0 Stage 6: all four release-checklist sections must be complete
+    for section in definition.get("release_checklist") or []:
+        res = await client_client.post(
+            f"{BASE}/{pid}/stages/{order}/checklist/{section}", json={"complete": True}
+        )
+        assert res.status_code == 200, res.text
+
     res = await _submit(client_client, pid, order)
     assert res.status_code == 200, res.text
-    assert res.json()["data"]["validation"]["passed"] is True, res.text
+    body = res.json()["data"]
+    assert body["validation"]["passed"] is True, res.text
+    if body.get("auto_advanced"):
+        return body
 
     res = await _approve(client_client, pid, order)
     assert res.status_code == 200, res.text
@@ -194,34 +195,33 @@ async def test_create_project_enters_the_machine_waiting_on_documents(client_cli
     project = await _create_project(client_client)
     assert project["code"] == "PRJ-0001"
     assert project["current_stage_order"] == 1
-    assert project["current_stage_key"] == "lead_conversion"
+    assert project["current_stage_key"] == "project_initiation"
     assert project["status"] == "active"
-    # stage 1's five blocking documents are missing → `waiting` (§4, acceptance #2)
+    # stage 1's three blocking documents are missing → `waiting` (§4, acceptance #2)
     assert project["stage_instance"]["status"] == "waiting"
 
     detail = await _stage(client_client, project["id"], 1)
     waiting = set(detail["evaluation"]["waiting_on"])
     assert waiting == {
-        "doc:quotation_approved", "doc:contract_signed", "doc:client_info_present",
-        "doc:scope_present", "doc:initial_drawings_present",
+        "doc:loi_or_po", "doc:scope_boq_approved", "doc:site_access_confirmed",
     }
 
     # sequential per-tenant codes
     second = await _create_project(client_client, name="Villa Flooring")
     assert second["code"] == "PRJ-0002"
 
-    # the timeline exposes all 16 stages, only stage 1 entered
+    # the timeline exposes all 9 stages, only stage 1 entered
     res = await client_client.get(f"{BASE}/{project['id']}/timeline")
     stages = res.json()["data"]["stages"]
-    assert [s["order"] for s in stages] == list(range(1, 17))
+    assert [s["order"] for s in stages] == list(range(1, 10))
     assert stages[0]["status"] == "waiting"
     assert all(s["status"] == "pending" for s in stages[1:])
 
     # board mirrors the current stage picture
     res = await client_client.get(f"{BASE}/{project['id']}/board")
     board = res.json()["data"]
-    assert board["stage"]["key"] == "lead_conversion"
-    assert "doc:contract_signed" in board["waiting_on"]
+    assert board["stage"]["key"] == "project_initiation"
+    assert "doc:site_access_confirmed" in board["waiting_on"]
 
     # activity feed carries the machine events (§14)
     res = await client_client.get("/api/v1/activity", params={"module": "projects"})
@@ -273,11 +273,7 @@ async def test_supply_submit_approve_advances_to_next_stage(client_client):
     project = await _create_project(client_client)
     pid = project["id"]
 
-    instance = await _supply(
-        client_client, pid, 1,
-        "quotation_approved", "contract_signed", "client_info_present",
-        "scope_present", "initial_drawings_present",
-    )
+    instance = await _supply(client_client, pid, 1, *STAGE1_DOCS)
     assert instance["status"] == "in_progress"  # §4: waiting → in_progress
 
     res = await _submit(client_client, pid, 1)
@@ -292,13 +288,14 @@ async def test_supply_submit_approve_advances_to_next_stage(client_client):
     assert body["stage"] == "approved"
     assert body["next_stage"]["order"] == 2
 
-    # the project moved, history recorded the exit, stage 2 is waiting on docs
+    # the project moved, history recorded the exit; stage 2's only entry gate is
+    # a dependency on stage 1 (now approved), so it opens straight to in_progress
     res = await client_client.get(f"{BASE}/{pid}")
     doc = res.json()["data"]
     assert doc["current_stage_order"] == 2
-    assert doc["stage_history"][-1]["key"] == "lead_conversion"
+    assert doc["stage_history"][-1]["key"] == "project_initiation"
     assert doc["stage_history"][-1]["result"] == "approved"
-    assert (await _stage(client_client, pid, 2))["instance"]["status"] == "waiting"
+    assert (await _stage(client_client, pid, 2))["instance"]["status"] == "in_progress"
 
     # a decided stage cannot be re-submitted (§4: approved is terminal)
     res = await _submit(client_client, pid, 1)
@@ -311,11 +308,7 @@ async def test_approver_must_hold_the_stage_position(client, client_client, onbo
     slug = onboarded_company["slug"]
     project = await _create_project(client_client)
     pid = project["id"]
-    await _supply(
-        client_client, pid, 1,
-        "quotation_approved", "contract_signed", "client_info_present",
-        "scope_present", "initial_drawings_present",
-    )
+    await _supply(client_client, pid, 1, *STAGE1_DOCS)
     await _submit(client_client, pid, 1)
 
     # Member holds projects WRITE but is not project_director
@@ -343,9 +336,7 @@ async def test_rejection_opens_typed_report_and_recovery_loop(client_client):
     stage reopened for mandatory resubmission."""
     project = await _create_project(client_client)
     pid = project["id"]
-    docs = ("quotation_approved", "contract_signed", "client_info_present",
-            "scope_present", "initial_drawings_present")
-    await _supply(client_client, pid, 1, *docs)
+    await _supply(client_client, pid, 1, *STAGE1_DOCS)
     await _submit(client_client, pid, 1)
 
     res = await _reject(client_client, pid, 1, comment="Scope missing annex B")
@@ -367,64 +358,62 @@ async def test_rejection_opens_typed_report_and_recovery_loop(client_client):
     assert res.status_code == 200
     assert res.json()["data"]["next_stage"]["order"] == 2
 
-    # stage 10's recovery prescribes an NCR; a rejection there must type it —
-    # covered structurally: reject body may force a type
+    # exactly one typed report was opened for the rejection
     res = await client_client.get(f"{BASE}/{pid}/reports", params={"type": "change"})
     assert res.json()["meta"]["total"] == 1
 
 
-async def test_stage2_starvation_raises_missing_information_report(client_client):
-    """§6.2: a stage starved of documents raises a Missing Information report
-    when its verification task runs (deduped while it stays open)."""
+async def test_starved_stage_raises_missing_information_report(client_client):
+    """§6.2: a stage starved of its entry documents raises a Missing Information
+    report when its verification task runs (deduped while it stays open). In
+    v2.0 the entry documents live on Stage 1 (project_initiation)."""
     project = await _create_project(client_client)
     pid = project["id"]
-    docs = ("quotation_approved", "contract_signed", "client_info_present",
-            "scope_present", "initial_drawings_present")
-    await _supply(client_client, pid, 1, *docs)
-    await _submit(client_client, pid, 1)
-    await _approve(client_client, pid, 1)
 
     res = await client_client.post(
-        f"{BASE}/{pid}/stages/2/tasks/verify_document_completeness/run"
+        f"{BASE}/{pid}/stages/1/tasks/log_client_requirements/run"
     )
     assert res.status_code == 200, res.text
     await client_client.post(
-        f"{BASE}/{pid}/stages/2/tasks/verify_document_completeness/run"
+        f"{BASE}/{pid}/stages/1/tasks/log_client_requirements/run"
     )
     missing = await _reports(client_client, pid, type="missing_information")
     assert len(missing) == 1
     assert missing[0]["status"] == "open"
 
     # unknown task key on the stage is a validation error
-    res = await client_client.post(f"{BASE}/{pid}/stages/2/tasks/not_a_task/run")
+    res = await client_client.post(f"{BASE}/{pid}/stages/1/tasks/not_a_task/run")
     assert res.status_code == 422
 
 
 # --- physical gates & the on_hold loop (§8, acceptance #3/#4) -----------------
 
-async def test_severe_deviation_at_stage7_holds_the_project(client_client):
+async def test_reject_holds_the_project_until_the_report_is_resolved(client_client):
+    """Stage 7 (Site Readiness) recovery is `on_hold`: a rejected inspection
+    suspends the whole project until the recovery report is resolved (§4). No
+    crew mobilises before the site is signed off."""
     project = await _create_project(client_client)
     pid = project["id"]
     stages, gates = await _machine_config(client_client)
     for order in range(1, 7):
         await _advance(client_client, pid, order, stages, gates)
 
-    await _supply(client_client, pid, 7, "shop_drawings_present", "raw_site_data_present")
+    # log passing readiness readings so the stage can reach an approval decision
+    for gate_key in ("concrete_rh_astm_f2170", "subfloor_flatness", "substrate_soundness"):
+        res = await _gate_result(client_client, pid, 7, gate_key,
+                                 **_passing_payload(gates[gate_key]))
+        assert res.json()["data"]["result"]["passed"] is True, gate_key
+    await _submit(client_client, pid, 7)
 
-    # 7.1mm deviation breaches the severe 6mm tier → project on_hold + report
-    res = await _gate_result(client_client, pid, 7, "deviation_within_tolerance",
-                             readings=[{"location": "grid-B", "value": 7.1}])
-    assert res.status_code == 200
-    body = res.json()["data"]
-    assert body["result"]["passed"] is False
-    assert body["result"]["severe"] is True
-    assert body["project_status"] == "on_hold"
-    assert body["instance"]["status"] == "on_hold"
+    # the inspector rejects: the site is not ready → project + stage on_hold
+    res = await _reject(client_client, pid, 7, comment="Slab still wet in zone C")
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["instance"]["status"] == "on_hold"
 
     res = await client_client.get(f"{BASE}/{pid}")
     assert res.json()["data"]["status"] == "on_hold"
 
-    # fabrication is blocked: the held stage cannot be submitted (§4)
+    # installation is blocked: the held stage cannot be submitted (§4)
     res = await _submit(client_client, pid, 7)
     assert res.status_code == 409
 
@@ -441,13 +430,11 @@ async def test_severe_deviation_at_stage7_holds_the_project(client_client):
     assert res.json()["data"]["status"] == "active"
     assert (await _stage(client_client, pid, 7))["instance"]["status"] == "in_progress"
 
-    # verification repeats with an in-tolerance scan → stage approves
-    res = await _gate_result(client_client, pid, 7, "deviation_within_tolerance",
-                             readings=[{"location": "grid-B", "value": 2.0}])
-    assert res.json()["data"]["result"]["passed"] is True
+    # the readings still stand → resubmit and the stage approves
     await _submit(client_client, pid, 7)
     res = await _approve(client_client, pid, 7)
     assert res.status_code == 200, res.text
+    assert res.json()["data"]["next_stage"]["order"] == 8
 
 
 async def test_gate_results_are_scored_by_the_engine_not_the_caller(client_client):
@@ -464,7 +451,7 @@ async def test_gate_results_are_scored_by_the_engine_not_the_caller(client_clien
 
 async def test_tenant_edited_threshold_drives_evaluation(client_client):
     """§8: thresholds are seeded defaults, editable per tenant — the engine
-    scores against the tenant's copy."""
+    scores against the tenant's copy. Concrete RH (G3) lives on Stage 7."""
     res = await client_client.patch(f"{BASE}/config/gates/concrete_rh_astm_f2170",
                                     json={"threshold": {"max_rh_pct": 60}})
     assert res.status_code == 200
@@ -473,13 +460,11 @@ async def test_tenant_edited_threshold_drives_evaluation(client_client):
     project = await _create_project(client_client)
     pid = project["id"]
     stages, gates = await _machine_config(client_client)
-    for order in range(1, 13):
-        if order == 8:
-            await _supply(client_client, pid, 8, "bom_present")
+    for order in range(1, 7):
         await _advance(client_client, pid, order, stages, gates)
 
     # 65% RH passes the seeded 75 default but fails the tenant's 60 limit
-    res = await _gate_result(client_client, pid, 13, "concrete_rh_astm_f2170",
+    res = await _gate_result(client_client, pid, 7, "concrete_rh_astm_f2170",
                              readings=[{"location": "slab", "value": 65}])
     assert res.json()["data"]["result"]["passed"] is False
 
@@ -489,9 +474,7 @@ async def test_tenant_edited_threshold_drives_evaluation(client_client):
 async def test_over_budget_blocks_automated_validation(client_client):
     project = await _create_project(client_client, planned_budget=100)
     pid = project["id"]
-    docs = ("quotation_approved", "contract_signed", "client_info_present",
-            "scope_present", "initial_drawings_present")
-    await _supply(client_client, pid, 1, *docs)
+    await _supply(client_client, pid, 1, *STAGE1_DOCS)
 
     # a 200 actual against a 100 plan → budget_ok fails at submit
     res = await client_client.post(f"{BASE}/{pid}/job-costs", json={
@@ -551,25 +534,28 @@ async def test_job_cost_posts_balanced_entry_and_rolls_into_budget(client_client
     assert res.json()["meta"]["total"] == 1
 
 
-# --- stage 8: inventory reservation (§1, acceptance #7) -----------------------
+# --- stage 5: inventory reservation (§1, acceptance #7) -----------------------
 
-async def test_stage8_reserves_bom_stock_through_inventory(client_client):
+async def test_stage5_reserves_bom_stock_through_inventory(client_client):
     product = await _product_with_stock(client_client, "SKU-CLAD", qty=100, cost_price=40)
     project = await _create_project(client_client, planned_budget=50_000)
     pid = project["id"]
     stages, gates = await _machine_config(client_client)
-    for order in range(1, 8):
+    for order in range(1, 5):
         await _advance(client_client, pid, order, stages, gates)
 
-    await _supply(client_client, pid, 8, "bom_present")
+    # Stage 5 · Material Procurement (G2): the bom_present gate is a document,
+    # the reservable BOM carries the product lines (a bom_present *file* must not
+    # shadow the real BOM — §3 trap).
+    await _supply(client_client, pid, 5, "bom_present")
     res = await client_client.post(f"{BASE}/{pid}/deliverables", json={
         "kind": "bom", "title": "Lobby BOM", "file_ref": "vault://bom-r1",
         "lines": [{"product_id": product["id"], "qty": 10}],
     })
     assert res.status_code == 201, res.text
 
-    await _submit(client_client, pid, 8)
-    res = await _approve(client_client, pid, 8)
+    await _submit(client_client, pid, 5)
+    res = await _approve(client_client, pid, 5)
     assert res.status_code == 200, res.text
     reservations = res.json()["data"]["integration"]["reservations"]
     assert len(reservations) == 1
@@ -587,7 +573,7 @@ async def test_stage8_reserves_bom_stock_through_inventory(client_client):
     res = await client_client.get(f"{BASE}/{pid}")
     assert res.json()["data"]["budget"]["committed"] == 400
 
-    # stage 9 material actuals convert commitment → actual (no double count)
+    # a material actual converts commitment → actual (no double count)
     res = await client_client.post(f"{BASE}/{pid}/job-costs", json={
         "cost_type": "material", "quantity": 10, "unit_cost": 40,
     })
@@ -597,7 +583,7 @@ async def test_stage8_reserves_bom_stock_through_inventory(client_client):
     assert budget["committed"] == 0
 
 
-async def test_insufficient_stock_fails_stage8_approval_recoverably(client_client):
+async def test_insufficient_stock_fails_stage5_approval_recoverably(client_client):
     """Inventory's own INSUFFICIENT_STOCK guard applies (§1) — and a failed
     integration must NOT wedge the machine: the stage stays pending_approval
     and approving again after a receipt succeeds."""
@@ -606,10 +592,10 @@ async def test_insufficient_stock_fails_stage8_approval_recoverably(client_clien
     project = await _create_project(client_client)
     pid = project["id"]
     stages, gates = await _machine_config(client_client)
-    for order in range(1, 8):
+    for order in range(1, 5):
         await _advance(client_client, pid, order, stages, gates)
 
-    await _supply(client_client, pid, 8, "bom_present")
+    await _supply(client_client, pid, 5, "bom_present")
     res = await client_client.post(f"{BASE}/{pid}/deliverables", json={
         "kind": "bom", "title": "BOM", "file_ref": "vault://bom",
         "lines": [
@@ -618,9 +604,9 @@ async def test_insufficient_stock_fails_stage8_approval_recoverably(client_clien
         ],
     })
     assert res.status_code == 201, res.text
-    await _submit(client_client, pid, 8)
+    await _submit(client_client, pid, 5)
 
-    res = await _approve(client_client, pid, 8)
+    res = await _approve(client_client, pid, 5)
     assert res.status_code == 409, res.text
     assert res.json()["error"]["code"] == "INSUFFICIENT_STOCK"
 
@@ -629,9 +615,9 @@ async def test_insufficient_stock_fails_stage8_approval_recoverably(client_clien
     assert await _on_hand(client_client, scarce) == 3
 
     # the stage is still awaiting the decision, not stuck approved
-    assert (await _stage(client_client, pid, 8))["instance"]["status"] == "pending_approval"
+    assert (await _stage(client_client, pid, 5))["instance"]["status"] == "pending_approval"
     res = await client_client.get(f"{BASE}/{pid}")
-    assert res.json()["data"]["current_stage_order"] == 8
+    assert res.json()["data"]["current_stage_order"] == 5
 
     # goods arrive → the same approval now goes through
     wh = scarce["warehouse"]
@@ -640,7 +626,7 @@ async def test_insufficient_stock_fails_stage8_approval_recoverably(client_clien
         "type": "receipt", "qty": 20,
     })
     assert res.status_code == 201
-    res = await _approve(client_client, pid, 8)
+    res = await _approve(client_client, pid, 5)
     assert res.status_code == 200, res.text
     assert await _on_hand(client_client, plenty) == 30
     assert await _on_hand(client_client, scarce) == 13
@@ -648,10 +634,11 @@ async def test_insufficient_stock_fails_stage8_approval_recoverably(client_clien
 
 # --- the full walk (acceptance #1, #4, #8) ------------------------------------
 
-async def test_full_walk_to_client_handover(client_client):
-    """Walk all 16 stages start→finish, proving the machine only ever advances
-    through gates+validation+approval, physical thresholds hold installation,
-    and stage 16 emits the handover pack + final invoice and closes."""
+async def test_full_walk_to_handover(client_client):
+    """Walk all 9 stages start→finish, proving the machine only ever advances
+    through gates+validation+approval, the timber-MC gate holds installation, and
+    Stage 9 emits the handover pack (incl. the G1–G5 defence file) + final
+    invoice and closes."""
     product = await _product_with_stock(client_client, "SKU-WALK", qty=30, cost_price=25)
 
     # CRM link (§1: stage 1 links the project to a CRM account)
@@ -667,58 +654,55 @@ async def test_full_walk_to_client_handover(client_client):
     assert project["crm_account_id"] == account_id
     stages, gates = await _machine_config(client_client)
 
-    for order in range(1, 8):
+    for order in range(1, 5):  # Stage 1, auto-advance Stage 2, Stages 3–4
         await _advance(client_client, pid, order, stages, gates)
 
-    # stage 8 with a real BOM reservation
-    await _supply(client_client, pid, 8, "bom_present")
+    # Stage 5 with a real BOM reservation
+    await _supply(client_client, pid, 5, "bom_present")
     await client_client.post(f"{BASE}/{pid}/deliverables", json={
         "kind": "bom", "title": "BOM", "file_ref": "vault://bom",
         "lines": [{"product_id": product["id"], "qty": 8}],
     })
-    await _submit(client_client, pid, 8)
-    assert (await _approve(client_client, pid, 8)).status_code == 200
+    await _submit(client_client, pid, 5)
+    assert (await _approve(client_client, pid, 5)).status_code == 200
 
-    for order in range(9, 14):
+    for order in (6, 7):  # Factory Release, Site Readiness
         await _advance(client_client, pid, order, stages, gates)
 
-    # stage 14: installation cannot pass while timber MC is out of range (§15 #4)
-    await _supply_phase(client_client, pid, 14, "acclimation_complete")
-    res = await _gate_result(client_client, pid, 14, "timber_moisture_content",
+    # Stage 8: installation cannot pass while timber MC is out of range (§15 #4/G5)
+    res = await _gate_result(client_client, pid, 8, "timber_moisture_content",
                              readings=[{"location": "panel-A", "value": 10.5}])
     assert res.json()["data"]["result"]["passed"] is False
-    res = await _submit(client_client, pid, 14)
+    res = await _submit(client_client, pid, 8)
     body = res.json()["data"]
     assert body["validation"]["passed"] is False
     failed = {c["key"] for c in body["validation"]["checks"] if not c["passed"]}
     assert "quality_gates_passed" in failed
 
-    # acclimation completes: MC back in range + the rest of the gates pass
-    for gate_key in ("timber_moisture_content", "ambient_rh_temp_log",
-                     "fixing_channel_alignment", "reveal_gap_3mm"):
-        res = await _gate_result(client_client, pid, 14, gate_key,
+    # MC back in range + the ambient log recorded → the gate passes
+    for gate_key in ("timber_moisture_content", "ambient_rh_temp_log"):
+        res = await _gate_result(client_client, pid, 8, gate_key,
                                  **_passing_payload(gates[gate_key]))
         assert res.json()["data"]["result"]["passed"] is True, gate_key
-    await _submit(client_client, pid, 14)
-    assert (await _approve(client_client, pid, 14)).status_code == 200
+    await _submit(client_client, pid, 8)
+    assert (await _approve(client_client, pid, 8)).status_code == 200
 
-    await _advance(client_client, pid, 15, stages, gates)
-
-    # stage 16: handover closes the machine (§15 #8)
-    result = await _advance(client_client, pid, 16, stages, gates)
+    # Stage 9: Final Inspection & Client Handover closes the machine (§15 #8)
+    result = await _advance(client_client, pid, 9, stages, gates)
     assert result["project_status"] == "completed"
     assert result["next_stage"] is None
     handover = result["handover"]
     assert {d["title"] for d in handover["documents"]} == {
         "Completion Certificate", "Warranty",
         "Operation & Maintenance Manuals", "As-built Drawings",
+        "Gate Records G1–G5 (Technical Defence File)",
     }
     assert handover["final_invoice"]["total"] == 8_000
 
     res = await client_client.get(f"{BASE}/{pid}")
     doc = res.json()["data"]
     assert doc["status"] == "completed"
-    assert len(doc["stage_history"]) == 16
+    assert len(doc["stage_history"]) == 9
 
     res = await client_client.get(f"{BASE}/{pid}/timeline")
     assert all(s["status"] == "approved" for s in res.json()["data"]["stages"])
@@ -769,79 +753,12 @@ async def test_deliverable_revisions_are_append_only(client_client):
     assert res.json()["meta"]["total"] == 1
 
 
-# --- client approvals (§9, acceptance #9) -------------------------------------
-
-async def test_client_position_rejects_full_module_approvers(client_client):
-    """A stage whose approver position is `client` may never be approved by a
-    full-module user — only scoped client-portal access qualifies."""
-    res = await client_client.patch(f"{BASE}/config/stages/lead_conversion",
-                                    json={"approver_role": "client"})
-    assert res.status_code == 200
-    assert res.json()["data"]["approver_role"] == "client"
-
-    project = await _create_project(client_client)
-    pid = project["id"]
-    await _supply(
-        client_client, pid, 1,
-        "quotation_approved", "contract_signed", "client_info_present",
-        "scope_present", "initial_drawings_present",
-    )
-    await _submit(client_client, pid, 1)
-
-    res = await _approve(client_client, pid, 1)  # Owner: full access, no portal
-    assert res.status_code == 403
-    assert "client-portal" in res.json()["error"]["message"]
-
-
-async def test_client_portal_user_signs_off_a_client_stage(
-    client, client_client, onboarded_company
-):
-    """The scoped client-portal flow actually works: a client_contact (the
-    seeded is_client_portal role) approves a client stage that staff prepared —
-    and has no other project access (acceptance #9)."""
-    slug = onboarded_company["slug"]
-    await client_client.patch(f"{BASE}/config/stages/lead_conversion",
-                              json={"approver_role": "client"})
-    project = await _create_project(client_client)
-    pid = project["id"]
-    # staff (Owner, WRITE) prepares the draft and submits it for the client
-    await _supply(client_client, pid, 1, *STAGE1_DOCS)
-    await _submit(client_client, pid, 1)
-
-    portal = await _employee(client, client_client, slug, "client_contact", "portal")
-
-    # the client signs off through the portal → the stage advances
-    res = await client.post(f"{BASE}/{pid}/stages/1/approve", json={}, headers=portal)
-    assert res.status_code == 200, res.text
-    assert res.json()["data"]["next_stage"]["order"] == 2
-
-    # …but portal access is approval-only: no create, no submit, no other writes
-    assert (await client.post(BASE, json={"name": "x"}, headers=portal)).status_code == 403
-    assert (await client.post(f"{BASE}/{pid}/stages/2/submit", json={},
-                              headers=portal)).status_code == 403
-
-
-async def test_projects_view_without_portal_flag_cannot_approve(
-    client, client_client, onboarded_company
-):
-    """The guard keys off the is_client_portal flag, not `projects` VIEW: a
-    plain VIEW role created through the API (no flag) is turned away."""
-    slug = onboarded_company["slug"]
-    res = await client_client.post("/api/v1/settings/roles", json={
-        "name": "Reviewer", "permissions": {"dashboard": 2, "projects": 1},  # projects=VIEW
-    })
-    assert res.status_code == 201, res.text
-
-    await client_client.patch(f"{BASE}/config/stages/lead_conversion",
-                              json={"approver_role": "client"})
-    project = await _create_project(client_client)
-    pid = project["id"]
-    await _supply(client_client, pid, 1, *STAGE1_DOCS)
-    await _submit(client_client, pid, 1)
-
-    reviewer = await _employee(client, client_client, slug, "Reviewer", "rev")
-    res = await client.post(f"{BASE}/{pid}/stages/1/approve", json={}, headers=reviewer)
-    assert res.status_code == 403  # VIEW alone is not portal access
+# --- client approvals (§9) ----------------------------------------------------
+#
+# v2.0 folds client acceptance into Stage 9 (project_director): there is no
+# `client` approver stage and no client-portal user type. Approving a stage
+# requires `projects` WRITE plus the stage's approver position — nothing
+# client-scoped remains to test.
 
 
 # --- calendar contribution (§14) ---------------------------------------------
@@ -905,8 +822,11 @@ async def test_projects_rbac_gates(client, client_client, onboarded_company):
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "PERMISSION_DENIED"
 
-    # client_contact: projects=VIEW → sees it exists, cannot open the module
-    contact = await _employee(client, client_client, slug, "client_contact", "pm-contact")
+    # projects=VIEW (below READ) → sees it exists, cannot open the module
+    await client_client.post("/api/v1/settings/roles", json={
+        "name": "Contact", "permissions": {"dashboard": 2, "projects": 1},  # VIEW
+    })
+    contact = await _employee(client, client_client, slug, "Contact", "pm-contact")
     assert (await client.get(BASE, headers=contact)).status_code == 403
 
     # Manager: WRITE → full lifecycle allowed

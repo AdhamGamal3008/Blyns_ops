@@ -85,14 +85,55 @@ async def _build_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
     await tenant_db.activity_log.create_index("module")
 
 
+_DEFINITION_COLLECTIONS = (
+    "stage_definitions", "gate_rules", "report_types",
+    "approver_role_map", "foundational_phases",
+)
+
+
+async def _applied_version(tenant_db: AsyncIOMotorDatabase) -> int:
+    """The workflow machine_version this tenant is on. A tenant seeded before
+    pm_meta existed has definitions but no marker → treat it as version 1."""
+    meta = await tenant_db.pm_meta.find_one({"_id": "state_machine"})
+    if meta is not None:
+        return int(meta.get("machine_version", 1))
+    if await tenant_db.stage_definitions.count_documents({}) > 0:
+        return 1
+    return 0
+
+
+async def _reset_definitions(tenant_db: AsyncIOMotorDatabase) -> None:
+    """Wipe the DEFINITION collections so a machine-version bump doesn't leave the
+    superseded machine's stages/roles/gates behind (a plain $setOnInsert re-seed
+    can neither update nor remove them, and the unique `order` index would collide
+    on insert). Runtime collections — projects, stage_instances, gate_results,
+    approvals, … — are never touched here (docs/PROJECT_MANAGEMENT_V2_MIGRATION_PLAN.md §3).
+    NOTE: in-flight projects on the old numbering are NOT remapped by this reset;
+    the migration strategy (D1) is reset + re-provision, so run this only where
+    losing the old definitions is intended."""
+    for coll in _DEFINITION_COLLECTIONS:
+        await tenant_db[coll].delete_many({})
+
+
 async def seed(tenant_db: AsyncIOMotorDatabase) -> None:
     """Idempotent entry point invoked by the provisioning engine."""
     data = _load_seed()
+    target_version = int(data.get("machine_version", 1))
 
     await _build_indexes(tenant_db)
+
+    current = await _applied_version(tenant_db)
+    if 1 <= current < target_version:
+        await _reset_definitions(tenant_db)
 
     await _upsert_by(tenant_db.foundational_phases, data["foundational_phases"], "key")
     await _upsert_by(tenant_db.gate_rules, data["gate_rules"], "key")
     await _upsert_by(tenant_db.report_types, data["report_types"], "type")
     await _upsert_by(tenant_db.approver_role_map, data["approver_role_map"], "approver_role")
     await _upsert_by(tenant_db.stage_definitions, data["stage_definitions"], "key")
+
+    await tenant_db.pm_meta.update_one(
+        {"_id": "state_machine"},
+        {"$set": {"machine_version": target_version}},
+        upsert=True,
+    )

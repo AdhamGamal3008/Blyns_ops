@@ -171,6 +171,18 @@ async def gate_results_for(
     ]
 
 
+async def waived_gate_results(
+    db: AsyncIOMotorDatabase, project_id: ObjectId
+) -> list[dict]:
+    """Every director-waived hard gate on a project — the handover's technical
+    defence file (SOP §9) records these alongside the measured readings."""
+    return [
+        d async for d in db[GATE_RESULTS].find(
+            {"project_id": project_id, "waived": True}
+        ).sort([("captured_at", 1)])
+    ]
+
+
 # --- approvals ---------------------------------------------------------------
 
 async def open_approval(
@@ -194,6 +206,22 @@ async def open_reports(
     return [
         d async for d in db[REPORTS].find({
             "project_id": project_id, "status": {"$in": statuses}, **_LIVE,
+        })
+    ]
+
+
+async def open_snags(db: AsyncIOMotorDatabase, project_id: ObjectId) -> list[dict]:
+    """Open snag reports (SOP §9) — a `na` report that is not yet resolved."""
+    from app.modules.projects.permissions import (
+        OPEN_REPORT_STATUSES,
+        SNAG_REPORT_TYPES,
+    )
+    return [
+        d async for d in db[REPORTS].find({
+            "project_id": project_id,
+            "type": {"$in": SNAG_REPORT_TYPES},
+            "status": {"$in": OPEN_REPORT_STATUSES},
+            **_LIVE,
         })
     ]
 

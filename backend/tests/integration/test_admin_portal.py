@@ -75,7 +75,7 @@ async def test_patch_enabled_modules_runs_seed(admin_client):
     })
     assert res.status_code == 200
     assert "projects" in res.json()["data"]["enabled_modules"]
-    assert await t.stage_definitions.count_documents({}) == 16  # seed ran
+    assert await t.stage_definitions.count_documents({}) == 9  # seed ran
 
 
 async def test_seat_limit_enforced_on_admin_employee_create(admin_client):

@@ -27,7 +27,6 @@ export interface RoleInfo {
   id: string;
   name: string;
   permissions: Record<string, PermissionLevel>;
-  is_client_portal?: boolean; // scoped approval-only client-contact (PM §9)
   /** Effective grants — present on the client `/me` role, absent for admins. */
   csv_access?: CsvAccess;
 }

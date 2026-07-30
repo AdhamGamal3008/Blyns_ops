@@ -48,7 +48,7 @@ function SampleContent() {
     <>
       <PageHeader
         title="Projects"
-        description="The 16-stage stage-gate pipeline across every active job."
+        description="The stage-gate pipeline across every active job."
         actions={<Button>New project</Button>}
       />
       <div

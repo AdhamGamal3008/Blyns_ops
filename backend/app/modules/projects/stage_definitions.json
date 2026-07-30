@@ -1,70 +1,35 @@
 {
   "version": 1,
-  "description": "Seed data for the Project Management construction/fabrication state machine. Consumed by modules/projects/seed.py. Idempotent: the loader inserts these on tenant provisioning and does NOT overwrite tenant-customized copies on re-run.",
+  "machine_version": 2,
+  "description": "Seed data for the Project Management state machine, v2.0 (9-stage workflow per docs/modules/PROJECT_WORKFLOW_V2_SOP.md). Consumed by modules/projects/seed.py. On a tenant still on machine_version 1, the loader resets the definition collections before inserting these (see seed.py); fresh tenants seed straight to v2.",
 
   "foundational_phases": [
     {
-      "key": "shop_drawing_submittal",
-      "order": 1,
-      "name": "Shop Drawing & Submittal",
-      "preceding_dependency": "Architectural design files and client specifications",
-      "site_conditions": ["Architectural layout verification", "Initial client design-intent review"],
-      "downstream": "Translates architectural concepts into buildable shop drawings; generates initial BOM",
-      "maps_to_stage_key": "shop_drawings"
-    },
-    {
       "key": "site_measurement_audit",
-      "order": 2,
+      "order": 1,
       "name": "Site Measurement Audit",
-      "preceding_dependency": "Approved initial shop drawings and structural framing completion",
+      "preceding_dependency": "Approved design package",
       "site_conditions": ["Physical/laser-scanned field measurements", "Substrate alignment, plumbness, structural soundness"],
-      "downstream": "Updates drawings with actual site dimensions before fabrication; reduces waste",
-      "maps_to_stage_key": "site_measurement_verification"
-    },
-    {
-      "key": "material_procurement",
-      "order": 3,
-      "name": "Material Procurement",
-      "preceding_dependency": "Confirmed and audited manufacturing drawings",
-      "site_conditions": ["Inventory safety-stock verification", "Delivery scheduling for specialty laminates/hardware"],
-      "downstream": "Automates POs from finalized requirements; allocates raw stock to jobs for costing",
-      "maps_to_stage_key": "material_procurement"
-    },
-    {
-      "key": "shop_fabrication_assembly",
-      "order": 4,
-      "name": "Shop Fabrication & Assembly",
-      "preceding_dependency": "Verified site dimensions and material receipt",
-      "site_conditions": ["Dimensional/joint QC", "Adhesive curing and lacquer drying times"],
-      "downstream": "Converts raw materials into finished panels/flooring/furniture; captures shop labor hours",
-      "maps_to_stage_key": "factory_production"
+      "downstream": "Freezes drawings against actual site dimensions before any material is cut.",
+      "maps_to_stage_key": "measurement_verification"
     },
     {
       "key": "core_material_acclimation",
-      "order": 5,
+      "order": 2,
       "name": "Core Material Acclimation",
-      "preceding_dependency": "Controlled completion of fabrication and on-site delivery",
+      "preceding_dependency": "Fabrication complete and delivered to site",
       "site_conditions": ["Ambient RH and temperature logging", "Moisture content testing of timber (target 6%-9%)"],
-      "downstream": "Prevents premature installation; mitigates warping/shrinking/gapping; protects warranties",
+      "downstream": "Prevents premature installation; the Stage 8 timber-MC gate (G5) is the enforced check.",
       "maps_to_stage_key": "installation"
     },
     {
       "key": "site_prep_moisture_testing",
-      "order": 6,
+      "order": 3,
       "name": "Site Prep & Moisture Testing",
-      "preceding_dependency": "Acclimation period completion and trade coordination",
+      "preceding_dependency": "Goods released from factory",
       "site_conditions": ["Subfloor flatness (max 1/4in over 10ft)", "Concrete RH profiling via in-situ probes (ASTM F2170)"],
-      "downstream": "Locks installation if subfloor RH too high; protects against adhesive failure/cupping/buckling",
+      "downstream": "Locks installation if the subfloor is not ready; protects against adhesive failure/cupping/buckling.",
       "maps_to_stage_key": "site_readiness"
-    },
-    {
-      "key": "cladding_panel_assembly",
-      "order": 7,
-      "name": "Cladding & Panel Assembly",
-      "preceding_dependency": "Site preparation clearance and structural track placement",
-      "site_conditions": ["Alignment checks on aluminum fixing channels/clips", "Level and gap verification (3mm reveal)"],
-      "downstream": "Ensures seamless alignment with adjacent trades; finalizes delivery and sign-off",
-      "maps_to_stage_key": "installation"
     }
   ],
 
@@ -73,400 +38,271 @@
       "key": "deviation_within_tolerance",
       "type": "measurement",
       "blocking": true,
-      "attach_to_stages": ["site_measurement_verification"],
+      "hard_gate": "G1",
+      "attach_to_stages": ["measurement_verification"],
       "threshold": {"max_deviation_mm": 3.0, "unit": "mm"},
-      "severe_threshold": {"max_deviation_mm": 6.0, "unit": "mm", "on_fail": "on_hold"},
-      "note": "Deviation beyond max halts progression; beyond severe halts fabrication (on_hold)."
-    },
-    {
-      "key": "timber_moisture_content",
-      "type": "measurement",
-      "blocking": true,
-      "attach_to_stages": ["installation"],
-      "phase_ref": "core_material_acclimation",
-      "threshold": {"min": 6, "max": 9, "unit": "%"},
-      "note": "Timber MC must sit within range before installation is approved."
-    },
-    {
-      "key": "ambient_rh_temp_log",
-      "type": "measurement",
-      "blocking": true,
-      "attach_to_stages": ["installation"],
-      "phase_ref": "core_material_acclimation",
-      "threshold": {"site_defined": true},
-      "note": "RH/temperature acclimation window defined per project/site; continuous logging required."
-    },
-    {
-      "key": "subfloor_flatness",
-      "type": "measurement",
-      "blocking": true,
-      "attach_to_stages": ["site_readiness"],
-      "phase_ref": "site_prep_moisture_testing",
-      "threshold": {"max_deviation_in": 0.25, "over_ft": 10},
-      "note": "Max 1/4in deviation over 10ft."
+      "severe_threshold": {"max_deviation_mm": 6.0, "unit": "mm", "on_fail": "return_to_stage"},
+      "note": "G1. Point of no return — material is cut after this. ≤3mm acceptable, >6mm severe returns the project to Stage 3 for redesign."
     },
     {
       "key": "concrete_rh_astm_f2170",
       "type": "measurement",
       "blocking": true,
+      "hard_gate": "G3",
       "attach_to_stages": ["site_readiness"],
       "phase_ref": "site_prep_moisture_testing",
       "threshold": {"max_rh_pct": 75, "method": "ASTM F2170", "configurable": true},
-      "note": "Default 75% RH; final limit is set by the flooring/adhesive manufacturer per tenant."
+      "note": "G3. Warranty-bearing. In-situ probe, not surface. Default 75% RH; final limit set by the flooring/adhesive manufacturer per tenant."
     },
     {
-      "key": "fixing_channel_alignment",
-      "type": "inspection",
-      "blocking": true,
-      "attach_to_stages": ["installation"],
-      "phase_ref": "cladding_panel_assembly",
-      "checklist": [
-        "Aluminum channels level within tolerance",
-        "Channels plumb within tolerance",
-        "Clip spacing per shop drawing",
-        "Anchorage secure"
-      ]
-    },
-    {
-      "key": "reveal_gap_3mm",
+      "key": "subfloor_flatness",
       "type": "measurement",
       "blocking": true,
+      "hard_gate": "G4",
+      "attach_to_stages": ["site_readiness"],
+      "phase_ref": "site_prep_moisture_testing",
+      "threshold": {"max_deviation_in": 0.25, "over_ft": 10},
+      "note": "G4. The #1 cause of rework. Max 1/4in deviation over 10ft."
+    },
+    {
+      "key": "timber_moisture_content",
+      "type": "measurement",
+      "blocking": true,
+      "hard_gate": "G5",
       "attach_to_stages": ["installation"],
-      "phase_ref": "cladding_panel_assembly",
-      "threshold": {"target_mm": 3, "tolerance_mm": 1, "unit": "mm"},
-      "note": "Standardized 3mm reveal between panels."
+      "phase_ref": "core_material_acclimation",
+      "threshold": {"min": 6, "max": 9, "unit": "%"},
+      "note": "G5. Warranty-bearing. Timber MC must sit within range before laying begins."
     },
     {
       "key": "substrate_soundness",
       "type": "inspection",
-      "blocking": true,
+      "blocking": false,
       "attach_to_stages": ["site_survey", "site_readiness"],
       "checklist": [
         "Substrate structurally sound",
         "No delamination or defects",
         "Surface clean and dry",
         "Alignment and plumbness within tolerance"
-      ]
+      ],
+      "note": "Logged, not blocking (v2.0). Recorded in the Stage 2 findings register; the Stage 7 reading is the one that counts."
+    },
+    {
+      "key": "ambient_rh_temp_log",
+      "type": "measurement",
+      "blocking": false,
+      "attach_to_stages": ["installation"],
+      "phase_ref": "core_material_acclimation",
+      "threshold": {"site_defined": true},
+      "note": "Logged, not blocking (v2.0). Passive daily log during install — honest data for a dispute, not a mid-work blocker."
+    },
+    {
+      "key": "fixing_channel_alignment",
+      "type": "inspection",
+      "blocking": false,
+      "attach_to_stages": ["final_inspection_handover"],
+      "checklist": [
+        "Aluminum channels level within tolerance",
+        "Channels plumb within tolerance",
+        "Clip spacing per shop drawing",
+        "Anchorage secure"
+      ],
+      "note": "Logged, not blocking (v2.0). Workmanship criterion assessed on the finished surface at Stage 9 as a snag."
+    },
+    {
+      "key": "reveal_gap_3mm",
+      "type": "measurement",
+      "blocking": false,
+      "attach_to_stages": ["final_inspection_handover"],
+      "threshold": {"target_mm": 3, "tolerance_mm": 1, "unit": "mm"},
+      "note": "Logged, not blocking (v2.0). Assessed on the finished surface at Stage 9 as a snag."
     }
   ],
 
   "report_types": [
-    {"type": "missing_information", "label": "Missing Information Report", "raised_at_stages": ["requirements_collection"]},
-    {"type": "issue", "label": "Issue Report", "raised_at_stages": ["site_measurement_verification", "installation", "*"]},
-    {"type": "change", "label": "Change Report / Change Order", "raised_at_stages": ["*"]},
-    {"type": "ncr", "label": "Non-Conformance Report", "raised_at_stages": ["factory_qc"]},
-    {"type": "capa", "label": "Corrective & Preventive Action", "raised_at_stages": ["final_qc"]},
+    {"type": "missing_information", "label": "Missing Information Report", "raised_at_stages": ["project_initiation"]},
+    {"type": "issue", "label": "Issue Report", "raised_at_stages": ["measurement_verification", "installation", "*"]},
+    {"type": "change", "label": "Change Report / Variation Order", "raised_at_stages": ["*"]},
+    {"type": "ncr", "label": "Non-Conformance Report", "raised_at_stages": ["factory_release"]},
+    {"type": "capa", "label": "Corrective & Preventive Action", "raised_at_stages": ["final_inspection_handover"]},
     {"type": "rfi", "label": "Request for Information", "raised_at_stages": ["installation"]},
-    {"type": "qa", "label": "Quality Assurance Report", "raised_at_stages": ["final_qc"]}
+    {"type": "qa", "label": "Quality Assurance Report", "raised_at_stages": ["final_inspection_handover"]},
+    {"type": "na", "label": "Snag / Non-Applicable", "raised_at_stages": ["final_inspection_handover"]}
   ],
 
   "approver_role_map": [
     {"approver_role": "project_director", "client_roles": ["owner"], "assigned_user_ids": []},
     {"approver_role": "design_manager", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "engineering_manager", "client_roles": ["owner"], "assigned_user_ids": []},
     {"approver_role": "engineering", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "procurement", "client_roles": ["owner"], "assigned_user_ids": []},
     {"approver_role": "procurement_manager", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "production_supervisor", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "qc_manager", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "qc", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "warehouse_manager", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "logistics", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "site_engineer", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "project_manager", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "site_supervisor", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "finance", "client_roles": ["owner"], "assigned_user_ids": []},
-    {"approver_role": "client", "client_roles": ["client_contact"], "assigned_user_ids": []}
+    {"approver_role": "production_manager", "client_roles": ["owner"], "assigned_user_ids": []},
+    {"approver_role": "project_manager", "client_roles": ["owner"], "assigned_user_ids": []}
   ],
 
   "stage_definitions": [
     {
       "order": 1,
-      "key": "lead_conversion",
-      "name": "Lead Conversion & Project Creation",
+      "key": "project_initiation",
+      "name": "Project Initiation",
       "phase_ref": null,
       "entry_gates": [
-        {"key": "quotation_approved", "type": "document", "blocking": true},
-        {"key": "contract_signed", "type": "document", "blocking": true},
-        {"key": "client_info_present", "type": "document", "blocking": true},
-        {"key": "scope_present", "type": "document", "blocking": true},
-        {"key": "initial_drawings_present", "type": "document", "blocking": true}
+        {"key": "loi_or_po", "type": "document", "blocking": true},
+        {"key": "scope_boq_approved", "type": "document", "blocking": true},
+        {"key": "site_access_confirmed", "type": "document", "blocking": true}
       ],
-      "automated_tasks": ["create_project_record", "build_folder_hierarchy", "generate_timeline_milestones", "assign_pm"],
+      "automated_tasks": ["create_project_record", "assign_core_team", "log_client_requirements", "confirm_commercial_terms"],
       "quality_gates": [],
       "approver_role": "project_director",
       "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [{"module": "crm", "action": "link_account"}],
-      "recovery": {"on": "missing_docs", "action": "hold_and_notify", "target": "sales", "state": "waiting", "note": "Prevent scheduling until docs supplied."},
+      "recovery": {"on": "missing_docs", "action": "hold_and_notify", "target": "sales", "state": "waiting", "note": "Prevent initiation until the 3 required documents are supplied."},
       "is_active": true
     },
     {
       "order": 2,
-      "key": "requirements_collection",
-      "name": "Requirements Collection",
+      "key": "site_survey",
+      "name": "Site Survey & Technical Assessment",
       "phase_ref": null,
+      "auto_advance": true,
       "entry_gates": [
-        {"key": "architectural_drawings", "type": "document", "blocking": true},
-        {"key": "design_package", "type": "document", "blocking": true},
-        {"key": "material_specs", "type": "document", "blocking": true},
-        {"key": "client_requirements", "type": "document", "blocking": true}
+        {"key": "initiation_approved", "type": "dependency", "depends_on": "project_initiation", "blocking": true}
       ],
-      "automated_tasks": ["verify_document_completeness", "detect_missing_or_conflicting_drawings", "generate_requirements_checklist"],
-      "quality_gates": [],
-      "approver_role": "design_manager",
+      "automated_tasks": ["dimensional_survey", "substrate_observation", "services_and_level_check", "access_and_logistics_assessment"],
+      "quality_gates": ["substrate_soundness"],
+      "approver_role": null,
       "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [],
-      "recovery": {"on": "missing_info", "action": "generate_report", "report_type": "missing_information", "state": "waiting", "note": "Request docs and repeat stage."},
+      "recovery": {"on": "incomplete_survey", "action": "generate_report", "report_type": "issue", "state": "waiting", "note": "No separate approval or gate — auto-advances on completion; its output feeds the design package."},
       "is_active": true
     },
     {
       "order": 3,
-      "key": "site_survey",
-      "name": "Site Survey",
+      "key": "design_package",
+      "name": "Design Package",
       "phase_ref": null,
       "entry_gates": [
-        {"key": "project_approved", "type": "dependency", "depends_on": "requirements_collection", "blocking": true}
+        {"key": "survey_complete", "type": "dependency", "depends_on": "site_survey", "blocking": true}
       ],
-      "automated_tasks": ["schedule_survey", "assign_surveyor", "collect_measurements_scans_photos", "generate_survey_report"],
-      "quality_gates": ["substrate_soundness"],
-      "approver_role": "engineering_manager",
+      "automated_tasks": ["concept_design", "material_selection", "specification", "shop_drawings"],
+      "quality_gates": [],
+      "approver_role": "design_manager",
       "co_approver_roles": [],
       "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "discrepancy", "action": "flag_out_of_tolerance", "target": "concept_design", "state": "rejected", "note": "Return to Design to update drawings."},
+      "integrations": [{"module": "inventory", "action": "check_availability"}],
+      "recovery": {"on": "rejection", "action": "record_comments_generate_v2", "target": "design_package", "state": "rejected", "note": "Concept, material and shop drawings approved as one package; a material that is unavailable or over budget is resolved here, not in a second queue."},
       "is_active": true
     },
     {
       "order": 4,
-      "key": "concept_design",
-      "name": "Concept Design",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "site_survey_completed", "type": "dependency", "depends_on": "site_survey", "blocking": true}
-      ],
-      "automated_tasks": ["generate_design_version", "track_revisions", "compare_against_scope", "estimate_material_and_budget"],
-      "quality_gates": [],
-      "approver_role": "design_manager",
-      "co_approver_roles": ["client"],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "rejection", "action": "record_comments_generate_v2", "target": "concept_design", "state": "rejected", "note": "Client comments recorded; V2 generated; loop."},
-      "is_active": true
-    },
-    {
-      "order": 5,
-      "key": "material_selection",
-      "name": "Material Selection",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "concept_approved", "type": "dependency", "depends_on": "concept_design", "blocking": true}
-      ],
-      "automated_tasks": ["validate_compatibility", "check_availability_leadtime_warranty_budget", "suggest_alternatives"],
-      "quality_gates": [],
-      "approver_role": "procurement",
-      "co_approver_roles": ["client"],
-      "conditional_approvers": [],
-      "integrations": [{"module": "inventory", "action": "check_availability"}],
-      "recovery": {"on": "unavailable_material", "action": "search_approved_alternatives", "state": "in_progress", "note": "Request approval and update specs."},
-      "is_active": true
-    },
-    {
-      "order": 6,
-      "key": "shop_drawings",
-      "name": "Shop Drawings",
-      "phase_ref": "shop_drawing_submittal",
-      "entry_gates": [
-        {"key": "materials_approved", "type": "dependency", "depends_on": "material_selection", "blocking": true},
-        {"key": "concept_approved", "type": "dependency", "depends_on": "concept_design", "blocking": true}
-      ],
-      "automated_tasks": ["generate_production_drawings_and_bom", "detect_clashes", "check_tolerances", "version_control"],
-      "quality_gates": [],
-      "approver_role": "engineering",
-      "co_approver_roles": [],
-      "conditional_approvers": [{"role": "client", "when": "client_review_required"}],
-      "integrations": [],
-      "recovery": {"on": "rejection", "action": "highlight_issues_new_revision", "target": "shop_drawings", "state": "rejected", "note": "Route back to Engineering."},
-      "is_active": true
-    },
-    {
-      "order": 7,
-      "key": "site_measurement_verification",
-      "name": "Site Measurement Verification",
+      "key": "measurement_verification",
+      "name": "Measurement Verification & Design Freeze",
       "phase_ref": "site_measurement_audit",
       "entry_gates": [
         {"key": "shop_drawings_present", "type": "document", "blocking": true},
         {"key": "raw_site_data_present", "type": "document", "blocking": true}
       ],
-      "automated_tasks": ["import_laser_scans", "compare_against_drawings", "detect_deviations", "update_dimensions", "recalculate_quantities"],
+      "automated_tasks": ["import_as_built_measurements", "compare_against_drawings", "detect_deviations", "freeze_design"],
       "quality_gates": ["deviation_within_tolerance"],
       "approver_role": "engineering",
       "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [],
-      "recovery": {"on": "severe_deviation", "action": "halt_fabrication_update_drawings", "target": "site_measurement_verification", "state": "on_hold", "note": "Repeat verification loop."},
+      "recovery": {"on": "severe_deviation", "action": "return_to_stage", "target": "design_package", "state": "rejected", "note": "G1. Point of no return. A severe deviation (>6mm) returns the project to Stage 3 for redesign — not a verbal pass. After freeze, any change is a Variation Order."},
       "is_active": true
     },
     {
-      "order": 8,
+      "order": 5,
       "key": "material_procurement",
       "name": "Material Procurement",
-      "phase_ref": "material_procurement",
+      "phase_ref": null,
       "entry_gates": [
-        {"key": "shop_drawings_verified", "type": "dependency", "depends_on": "site_measurement_verification", "blocking": true},
+        {"key": "design_frozen", "type": "dependency", "depends_on": "measurement_verification", "blocking": true},
         {"key": "bom_present", "type": "document", "blocking": true}
       ],
-      "automated_tasks": ["generate_purchase_orders", "reserve_inventory", "track_lead_times", "monitor_deliveries", "predict_schedule_delays"],
+      "automated_tasks": ["finalise_bom", "confirm_supplier_lead_times", "raise_purchase_orders", "reserve_stock", "confirm_delivery_window"],
       "quality_gates": [],
       "approver_role": "procurement_manager",
       "co_approver_roles": [],
-      "conditional_approvers": [{"role": "finance", "when": "over_budget"}],
+      "conditional_approvers": [],
       "integrations": [
         {"module": "inventory", "action": "reserve_stock"},
         {"module": "finance", "action": "record_commitment"}
       ],
-      "recovery": {"on": "supplier_delay", "action": "split_procurement_adjust_schedule", "state": "in_progress", "note": "Check alternatives; notify PM."},
+      "recovery": {"on": "supplier_delay", "action": "split_procurement_adjust_schedule", "state": "in_progress", "note": "G2. Approval reserves BOM stock via Inventory."},
       "is_active": true
     },
     {
-      "order": 9,
-      "key": "factory_production",
-      "name": "Factory Production",
-      "phase_ref": "shop_fabrication_assembly",
+      "order": 6,
+      "key": "factory_release",
+      "name": "Factory Release",
+      "phase_ref": null,
       "entry_gates": [
-        {"key": "materials_received", "type": "dependency", "depends_on": "material_procurement", "blocking": true}
+        {"key": "materials_reserved", "type": "dependency", "depends_on": "material_procurement", "blocking": true}
       ],
-      "automated_tasks": ["create_work_orders", "allocate_machines_and_labor", "track_progress", "record_labor_hours", "monitor_kpis"],
+      "automated_tasks": ["production", "quality_control", "packing_protection", "delivery_planning"],
+      "release_checklist": ["production", "quality_control", "packing_protection", "delivery_planning"],
       "quality_gates": [],
-      "approver_role": "production_supervisor",
+      "approver_role": "production_manager",
       "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [
         {"module": "inventory", "action": "consume_stock"},
         {"module": "finance", "action": "post_job_costs"}
       ],
-      "recovery": {"on": "machine_failure", "action": "reschedule_reallocate_machines", "state": "in_progress", "note": "Notify PM."},
+      "recovery": {"on": "release_failure", "action": "rework_or_repackage", "state": "in_progress", "note": "Four sequential v1.0 approvals became one release decision; all four checklist sections must be complete before release."},
       "is_active": true
     },
     {
-      "order": 10,
-      "key": "factory_qc",
-      "name": "Factory Quality Control",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "fabrication_completed", "type": "dependency", "depends_on": "factory_production", "blocking": true}
-      ],
-      "automated_tasks": ["generate_checklists", "verify_dimensions_surfaces_finishes", "approve_packaging", "capture_defect_data"],
-      "quality_gates": [],
-      "approver_role": "qc_manager",
-      "co_approver_roles": [],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "qc_failure", "action": "generate_ncr_assign_rework", "report_type": "ncr", "target": "factory_qc", "state": "rejected", "note": "Repeat QC."},
-      "is_active": true
-    },
-    {
-      "order": 11,
-      "key": "packing_protection",
-      "name": "Packing & Protection",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "finished_goods_approved", "type": "dependency", "depends_on": "factory_qc", "blocking": true}
-      ],
-      "automated_tasks": ["determine_packing_type", "generate_labels_and_loading_sequence", "track_packaged_items"],
-      "quality_gates": [],
-      "approver_role": "warehouse_manager",
-      "co_approver_roles": [],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "damage", "action": "repackage_secondary_qc", "state": "in_progress", "note": "Secondary QC verification required."},
-      "is_active": true
-    },
-    {
-      "order": 12,
-      "key": "delivery_planning",
-      "name": "Delivery Planning",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "packaged_goods_ready", "type": "dependency", "depends_on": "packing_protection", "blocking": true}
-      ],
-      "automated_tasks": ["optimize_delivery_schedule", "assign_vehicle", "generate_routing", "generate_delivery_documents"],
-      "quality_gates": [],
-      "approver_role": "logistics",
-      "co_approver_roles": [],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "vehicle_unavailable", "action": "assign_replacement_update_eta", "state": "in_progress", "note": "Notify client."},
-      "is_active": true
-    },
-    {
-      "order": 13,
+      "order": 7,
       "key": "site_readiness",
       "name": "Site Readiness Inspection",
       "phase_ref": "site_prep_moisture_testing",
       "entry_gates": [
-        {"key": "approaching_delivery_date", "type": "temporal", "blocking": true}
+        {"key": "goods_released", "type": "dependency", "depends_on": "factory_release", "blocking": true}
       ],
-      "automated_tasks": ["check_civil_electrical_hvac_painting", "verify_access_storage_safety"],
-      "quality_gates": ["subfloor_flatness", "concrete_rh_astm_f2170", "substrate_soundness"],
+      "automated_tasks": ["concrete_rh_test", "subfloor_flatness_check", "verify_access_storage_safety"],
+      "quality_gates": ["concrete_rh_astm_f2170", "subfloor_flatness", "substrate_soundness"],
       "approver_role": "project_manager",
-      "co_approver_roles": ["site_engineer"],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "site_not_ready", "action": "generate_punch_list_notify_contractor", "state": "on_hold", "note": "Reschedule delivery."},
-      "is_active": true
-    },
-    {
-      "order": 14,
-      "key": "installation",
-      "name": "Installation",
-      "phase_ref": "cladding_panel_assembly",
-      "entry_gates": [
-        {"key": "site_readiness_cleared", "type": "dependency", "depends_on": "site_readiness", "blocking": true},
-        {"key": "acclimation_complete", "type": "dependency", "depends_on": "core_material_acclimation", "blocking": true}
-      ],
-      "automated_tasks": ["assign_crews", "track_installation_and_alignment", "compile_daily_reports_and_photos", "track_issues"],
-      "quality_gates": ["timber_moisture_content", "ambient_rh_temp_log", "fixing_channel_alignment", "reveal_gap_3mm"],
-      "approver_role": "site_supervisor",
       "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [],
-      "recovery": {"on": "installation_issue", "action": "pause_zone_generate_issue_report", "report_type": "issue", "state": "on_hold", "note": "Mandate Engineering review."},
+      "recovery": {"on": "site_not_ready", "action": "generate_punch_list_notify_client", "state": "on_hold", "note": "No crew mobilises before this is approved. A failed inspection is a client conversation with a revised date, not a reason to start anyway."},
       "is_active": true
     },
     {
-      "order": 15,
-      "key": "final_qc",
-      "name": "Final Quality Inspection",
+      "order": 8,
+      "key": "installation",
+      "name": "Installation",
+      "phase_ref": "core_material_acclimation",
+      "entry_gates": [
+        {"key": "site_readiness_cleared", "type": "dependency", "depends_on": "site_readiness", "blocking": true}
+      ],
+      "automated_tasks": ["verify_timber_moisture", "install_and_align", "compile_daily_log"],
+      "quality_gates": ["timber_moisture_content", "ambient_rh_temp_log"],
+      "approver_role": "project_manager",
+      "co_approver_roles": [],
+      "conditional_approvers": [],
+      "integrations": [],
+      "recovery": {"on": "installation_issue", "action": "pause_zone_generate_issue_report", "report_type": "issue", "state": "on_hold", "note": "G5. Channel alignment and 3mm reveal are no longer install gates — they are assessed on the finished surface at Stage 9 as snags."},
+      "is_active": true
+    },
+    {
+      "order": 9,
+      "key": "final_inspection_handover",
+      "name": "Final Inspection & Client Handover",
       "phase_ref": null,
       "entry_gates": [
         {"key": "installation_completed", "type": "dependency", "depends_on": "installation", "blocking": true}
       ],
-      "automated_tasks": ["generate_checklist", "compare_to_drawings_via_photos", "validate_tolerances", "generate_qa_report"],
-      "quality_gates": [],
-      "approver_role": "project_manager",
-      "co_approver_roles": ["qc", "client"],
-      "conditional_approvers": [],
-      "integrations": [],
-      "recovery": {"on": "inspection_failure", "action": "generate_capa_assign_rework", "report_type": "capa", "target": "final_qc", "state": "rejected", "note": "Repeat inspection."},
-      "is_active": true
-    },
-    {
-      "order": 16,
-      "key": "client_handover",
-      "name": "Client Handover",
-      "phase_ref": null,
-      "entry_gates": [
-        {"key": "qa_report_approved", "type": "dependency", "depends_on": "final_qc", "blocking": true}
-      ],
-      "automated_tasks": ["generate_completion_certificate", "generate_warranty", "generate_manuals", "generate_as_built_drawings", "generate_final_invoice", "archive_documents"],
-      "quality_gates": [],
+      "automated_tasks": ["snag_inspection", "close_snags", "generate_handover_pack", "generate_final_invoice"],
+      "quality_gates": ["fixing_channel_alignment", "reveal_gap_3mm"],
       "approver_role": "project_director",
-      "co_approver_roles": ["client"],
+      "co_approver_roles": [],
       "conditional_approvers": [],
       "integrations": [{"module": "finance", "action": "issue_final_invoice"}],
-      "recovery": {"on": "none", "action": "close_project", "state": "approved", "note": "Terminal state — end of state machine."},
+      "recovery": {"on": "inspection_failure", "action": "generate_capa_assign_rework", "report_type": "capa", "target": "final_inspection_handover", "state": "rejected", "note": "Snags closed before handover; an open snag does not proceed without written client acceptance. Terminal state on approve — handover pack built automatically."},
       "is_active": true
     }
   ]

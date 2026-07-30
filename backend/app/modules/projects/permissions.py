@@ -28,6 +28,11 @@ GATE_TYPES = ["document", "dependency", "measurement", "inspection", "budget", "
 REPORT_TYPES = ["missing_information", "issue", "change", "ncr", "capa", "rfi", "qa", "na"]
 OPEN_REPORT_STATUSES = ["open", "in_progress"]
 
+# v2.0 SOP §9: at Stage 9 an open snag (a `na` report) blocks the handover unless
+# a written client acceptance is recorded. Kept distinct from `issue` so a
+# transient automated-validation report never counts as an outstanding snag.
+SNAG_REPORT_TYPES = ["na"]
+
 PROJECT_STATUSES = ["active", "on_hold", "completed", "archived", "cancelled"]
 
 # §3.7 deliverable kinds.
@@ -36,20 +41,17 @@ DELIVERABLE_KINDS = ["shop_drawing", "bom", "scan", "photo", "report", "certific
 # §4: a stage's document gate IS the document's identity — the gate already says
 # what is required, so evidence attached at a gate never asks for a kind. This
 # maps each seeded document gate to the kind it stores as; anything unmapped
-# stores as a generic `report`. `bom_present` must stay `bom` — Stage 8 finds the
-# BOM by kind to reserve stock through Inventory.
+# stores as a generic `report`. `bom_present` must stay `bom` — Stage 5 finds the
+# BOM by kind to reserve stock through Inventory (v2.0 workflow).
 GATE_DOCUMENT_KINDS = {
-    "quotation_approved": "certificate",
-    "contract_signed": "certificate",
-    "client_info_present": "report",
-    "scope_present": "report",
-    "initial_drawings_present": "shop_drawing",
-    "architectural_drawings": "shop_drawing",
-    "design_package": "shop_drawing",
-    "material_specs": "report",
-    "client_requirements": "report",
+    # Stage 1 · Project Initiation — the 3 required entry documents
+    "loi_or_po": "certificate",
+    "scope_boq_approved": "report",
+    "site_access_confirmed": "report",
+    # Stage 4 · Measurement Verification
     "shop_drawings_present": "shop_drawing",
     "raw_site_data_present": "scan",
+    # Stage 5 · Material Procurement (G2)
     "bom_present": "bom",
 }
 DEFAULT_GATE_DOCUMENT_KIND = "report"
@@ -58,12 +60,11 @@ DEFAULT_GATE_DOCUMENT_KIND = "report"
 COST_TYPES = ["labor", "material", "subcontractor", "machine"]
 
 FIRST_STAGE_ORDER = 1
-LAST_STAGE_ORDER = 16
+LAST_STAGE_ORDER = 9  # v2.0 workflow: 9-stage machine (was 16)
 
-# §9: `client` is a position resolved through the approver map like any other,
-# but it is only ever exercised through scoped client-portal access — never by
-# granting a client contact full `projects` access (acceptance #9).
-CLIENT_APPROVER_ROLE = "client"
+# v2.0 Stage 9 · Final Inspection & Client Handover — the terminal stage whose
+# automated validation enforces snag closure (SOP §9).
+HANDOVER_STAGE_KEY = "final_inspection_handover"
 
 # The recovery `on` → report type the engine raises when a stage is rejected
 # (§5.5, acceptance #5). A stage's own recovery block overrides this.

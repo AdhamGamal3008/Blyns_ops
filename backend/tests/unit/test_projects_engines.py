@@ -135,7 +135,7 @@ def test_next_status_ladder():
     # clean evaluation → workable
     assert next_status(_evaluation(), "pending") == "in_progress"
     # missing docs → waiting; incomplete predecessor outranks it (§4)
-    assert next_status(_evaluation(waiting=["doc:contract_signed"]), "pending") == "waiting"
+    assert next_status(_evaluation(waiting=["doc:loi_or_po"]), "pending") == "waiting"
     assert next_status(
         _evaluation(waiting=["doc:x"], blocked=["stage:3"]), "in_progress"
     ) == "blocked"

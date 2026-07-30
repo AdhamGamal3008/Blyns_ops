@@ -61,13 +61,13 @@ async def test_onboarding_creates_seeded_tenant_db(engine_db):
     assert "test_tenant_acme1" in dbs_after
 
     t = engine_db.tenant("test_tenant_acme1")
-    # the EXISTING projects seed ran: 16 stage definitions + gates etc.
-    assert await t.stage_definitions.count_documents({}) == 16
+    # the EXISTING projects seed ran: v2.0 9-stage machine + gates etc.
+    assert await t.stage_definitions.count_documents({}) == 9
     assert await t.gate_rules.count_documents({}) == 8
-    assert await t.report_types.count_documents({}) == 7
-    assert await t.approver_role_map.count_documents({}) == 16
+    assert await t.report_types.count_documents({}) == 8
+    assert await t.approver_role_map.count_documents({}) == 6
     # other module seeds
-    assert await t.roles.count_documents({}) == 5          # 4 defaults + client_contact
+    assert await t.roles.count_documents({}) == 4          # Owner/Manager/Member/Viewer
     assert await t.pipelines.count_documents({"key": "default"}) == 1
     assert await t.warehouses.count_documents({"code": "WH1"}) == 1
     assert await t.accounts.count_documents({}) == 8       # starter chart
@@ -140,8 +140,8 @@ async def test_failed_job_resumes_idempotently(engine_db, monkeypatch):
     assert result.company["seats_used"] == 1  # not double-incremented
 
     t = engine_db.tenant("test_tenant_acme4")
-    assert await t.stage_definitions.count_documents({}) == 16  # not 32
-    assert await t.roles.count_documents({}) == 5
+    assert await t.stage_definitions.count_documents({}) == 9  # not 18
+    assert await t.roles.count_documents({}) == 4
     assert await t.accounts.count_documents({}) == 8
     assert await t.users.count_documents({}) == 1
 
@@ -158,7 +158,7 @@ async def test_teardown_drops_only_target_tenant(engine_db):
     assert "test_tenant_acme5" not in dbs      # target dropped
     assert "test_tenant_acme6" in dbs          # neighbor intact
     other = engine_db.tenant("test_tenant_acme6")
-    assert await other.stage_definitions.count_documents({}) == 16
+    assert await other.stage_definitions.count_documents({}) == 9
 
     # control plane intact; company suspended, not removed (soft teardown)
     company5 = await engine_db.control.companies.find_one({"slug": "acme5"})

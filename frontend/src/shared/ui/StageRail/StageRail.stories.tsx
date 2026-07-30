@@ -1,24 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { StageRail, type RailStage, type StageState } from "./StageRail";
 
-// The real 16-stage machine from stage_definitions.json.
-const NAMES: [string, string, string][] = [
-  ["lead_conversion", "Lead Conversion", "project_director"],
-  ["requirements_collection", "Requirements Collection", "design_manager"],
-  ["site_survey", "Site Survey", "engineering_manager"],
-  ["concept_design", "Concept Design", "design_manager"],
-  ["material_selection", "Material Selection", "procurement"],
-  ["shop_drawings", "Shop Drawings", "engineering"],
-  ["site_measurement_verification", "Site Measurement Verification", "engineering"],
+// The real v2.0 9-stage machine from stage_definitions.json (Stage 2 has no
+// approver — it auto-advances).
+const NAMES: [string, string, string | null][] = [
+  ["project_initiation", "Project Initiation", "project_director"],
+  ["site_survey", "Site Survey & Technical Assessment", null],
+  ["design_package", "Design Package", "design_manager"],
+  ["measurement_verification", "Measurement Verification & Design Freeze", "engineering"],
   ["material_procurement", "Material Procurement", "procurement_manager"],
-  ["factory_production", "Factory Production", "production_supervisor"],
-  ["factory_qc", "Factory Quality Control", "qc_manager"],
-  ["packing_protection", "Packing & Protection", "warehouse_manager"],
-  ["delivery_planning", "Delivery Planning", "logistics"],
+  ["factory_release", "Factory Release", "production_manager"],
   ["site_readiness", "Site Readiness Inspection", "project_manager"],
-  ["installation", "Installation", "site_supervisor"],
-  ["final_qc", "Final Quality Inspection", "project_manager"],
-  ["client_handover", "Client Handover", "project_director"],
+  ["installation", "Installation", "project_manager"],
+  ["final_inspection_handover", "Final Inspection & Client Handover", "project_director"],
 ];
 
 function build(
@@ -56,10 +50,10 @@ export const AwaitingGate: Story = {};
 /** Oxblood flags a rejected stage; ochre flags a blocking gate. */
 export const RejectedAndBlocked: Story = {
   args: {
-    currentOrder: 9,
-    stages: build(9, {
-      9: { status: "rejected", blockingReason: "Veneer batch failed grain match" },
-      10: { status: "blocked", blockingReason: "Awaiting QC re-inspection" },
+    currentOrder: 4,
+    stages: build(4, {
+      4: { status: "rejected", blockingReason: "Veneer batch failed grain match" },
+      5: { status: "blocked", blockingReason: "Awaiting supplier lead time" },
     }),
   },
 };

@@ -1,5 +1,5 @@
 // Project Management portfolio (docs/modules/PROJECT_MANAGEMENT.md §12). The
-// list is the entry point; a row opens the 16-stage detail view.
+// list is the entry point; a row opens the stage-gate detail view.
 
 import { FolderKanban, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -29,6 +29,7 @@ export function ProjectsPage() {
   const navigate = useNavigate();
   const canWrite = (me.role.permissions["projects"] ?? 0) >= 3;
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [stageCount, setStageCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
 
@@ -39,6 +40,11 @@ export function ProjectsPage() {
   }, []);
 
   useEffect(load, [load]);
+  // the machine's length is data, not a constant — derive the "X/N" denominator
+  useEffect(() => {
+    api<{ order: number }[]>("/projects/config/stages")
+      .then((r) => setStageCount(r.data.length)).catch(() => setStageCount(null));
+  }, []);
 
   const columns: DataTableColumn<Project>[] = [
     {
@@ -59,7 +65,9 @@ export function ProjectsPage() {
       header: "Stage",
       sortable: true,
       accessor: (p) =>
-        `${p.current_stage_order ? `${p.current_stage_order}/16 · ` : ""}${humanize(p.current_stage_key)}`,
+        `${p.current_stage_order
+          ? `${p.current_stage_order}${stageCount ? `/${stageCount}` : ""} · `
+          : ""}${humanize(p.current_stage_key)}`,
       sortValue: (p) => p.current_stage_order ?? 0,
     },
     {
@@ -119,7 +127,7 @@ export function ProjectsPage() {
             title="No projects yet"
             description={
               canWrite
-                ? "Create one to start the 16-stage machine."
+                ? "Create one to start the stage-gate machine."
                 : "Projects appear here once a manager creates them."
             }
             action={canWrite && <Button onClick={() => setCreating(true)}>New project</Button>}
@@ -192,7 +200,7 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
       open={props.open}
       onOpenChange={(o) => !o && props.onDone(null)}
       title="New project"
-      description="Enters the machine at Stage 1 (Lead Conversion), waiting on its onboarding documents."
+      description="Enters the machine at Stage 1 (Project Initiation), waiting on its onboarding documents."
       onSubmit={submit}
       error={error}
       errorTitle="Could not create the project"

@@ -32,14 +32,17 @@ import styles from "./StagePanel.module.css";
 
 const isHttp = (s?: string | null) => !!s && /^https?:\/\//i.test(s);
 
+const HANDOVER_STAGE_KEY = "final_inspection_handover";
+
 export function StagePanel(props: {
   projectId: string;
   order: number;
   canWrite: boolean;
   canApprove: boolean;
+  canWaive: boolean;
   onChanged: () => void;
 }) {
-  const { projectId, order, canWrite, canApprove } = props;
+  const { projectId, order, canWrite, canApprove, canWaive } = props;
   const [detail, setDetail] = useState<StageDetail | null>(null);
   const [gateRules, setGateRules] = useState<Record<string, GateRule>>({});
   const [error, setError] = useState<unknown>(null);
@@ -47,6 +50,8 @@ export function StagePanel(props: {
   const [busy, setBusy] = useState(false);
   const [validation, setValidation] = useState<ValidationCheck[] | null>(null);
   const [logging, setLogging] = useState<GateRule | null>(null);
+  const [waiving, setWaiving] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [attaching, setAttaching] = useState<EntryGate | null>(null);
 
@@ -122,6 +127,10 @@ export function StagePanel(props: {
   const supplied = new Set(instance.documents_supplied ?? []);
   const status = instance.status;
   const checks = validation ?? approval?.auto_validation?.checks;
+  // v2.0 Stage 2 · Site Survey has no approver — it advances on submit.
+  const autoAdvance = definition.auto_advance || definition.approver_role == null;
+  const isHandover = definition.key === HANDOVER_STAGE_KEY;
+  const checklistDone = new Set(instance.checklist_done ?? []);
 
   // Requirements the user clears by "supplying" the gate key (§6 document
   // check). Two kinds share the one supply endpoint: `document` entry gates,
@@ -163,7 +172,11 @@ export function StagePanel(props: {
         title={`Stage ${definition.order} · ${definition.name}`}
         description={
           <>
-            Approver <b>{humanize(definition.approver_role ?? "—")}</b>
+            {autoAdvance ? (
+              <b>Auto-advances on completion · no approval required</b>
+            ) : (
+              <>Approver <b>{humanize(definition.approver_role ?? "—")}</b></>
+            )}
             {definition.co_approver_roles?.length
               ? ` · co-approver ${definition.co_approver_roles.map(humanize).join(", ")}` : ""}
             {instance.recovery_loops > 0 && ` · ↻ ${instance.recovery_loops} recovery loop(s)`}
@@ -226,18 +239,53 @@ export function StagePanel(props: {
           <Section title="Quality gates">
             {definition.quality_gates.map((key) => {
               const result = detail.gate_results.filter((r) => r.gate_key === key).at(-1);
+              const blocking = gateRules[key]?.blocking !== false;
+              const passing = !!result?.passed;
               return (
-                <ItemRow key={key} label={humanize(key)}>
-                  {result
-                    ? (
-                      <Badge tone={result.severe ? "danger" : result.passed ? "success" : "warning"}>
-                        {result.severe ? "severe" : result.passed ? "passed" : "failed"}
-                      </Badge>
-                    )
-                    : <Badge tone="neutral">no result</Badge>}
+                <ItemRow key={key} label={humanize(key)}
+                  hint={result?.waived ? `waived · ${result.reason ?? ""}` : undefined}>
+                  {result?.waived
+                    ? <Badge tone="info">waived</Badge>
+                    : result
+                      ? (
+                        <Badge tone={result.severe ? "danger" : result.passed ? "success" : "warning"}>
+                          {result.severe ? "severe" : result.passed ? "passed" : "failed"}
+                        </Badge>
+                      )
+                      : <Badge tone="neutral">no result</Badge>}
                   {canWrite && gateRules[key] && (
                     <Button variant="ghost" size="compact" disabled={busy}
                       onClick={() => setLogging(gateRules[key])}>Log result</Button>
+                  )}
+                  {/* SOP §3: only the project_director may waive a hard gate */}
+                  {canWaive && blocking && !passing && (
+                    <Button variant="ghost" size="compact" disabled={busy}
+                      onClick={() => setWaiving(key)}>Waive</Button>
+                  )}
+                </ItemRow>
+              );
+            })}
+          </Section>
+        )}
+
+        {/* v2.0 Stage 6 · Factory Release checklist (§5-C): all four sections
+            must be complete before the single release approval */}
+        {(definition.release_checklist?.length ?? 0) > 0 && (
+          <Section title="Release checklist">
+            {definition.release_checklist!.map((section) => {
+              const done = checklistDone.has(section);
+              return (
+                <ItemRow key={section} label={humanize(section)}>
+                  <Badge tone={done ? "success" : "neutral"}>
+                    {done ? "complete" : "pending"}
+                  </Badge>
+                  {canWrite && (
+                    <Button variant="ghost" size="compact" disabled={busy}
+                      onClick={() => act(() => api(
+                        `/projects/${projectId}/stages/${order}/checklist/${section}`,
+                        { method: "POST", body: { complete: !done } }))}>
+                      {done ? "Reopen" : "Mark complete"}
+                    </Button>
                   )}
                 </ItemRow>
               );
@@ -286,7 +334,15 @@ export function StagePanel(props: {
 
         <Row>
           {canWrite && ["in_progress", "waiting", "blocked", "validation", "rejected"].includes(status) && (
-            <Button disabled={busy} onClick={submit}>Submit for approval</Button>
+            <Button disabled={busy} onClick={submit}>
+              {autoAdvance ? "Complete stage" : "Submit for approval"}
+            </Button>
+          )}
+          {/* SOP §9: on the handover stage, a written client acceptance lets an
+              open snag proceed to handover */}
+          {isHandover && canWrite && status !== "approved" && (
+            <Button variant="secondary" disabled={busy}
+              onClick={() => setAccepting(true)}>Record client acceptance</Button>
           )}
           {status === "pending_approval" && canApprove && (
             <>
@@ -313,6 +369,12 @@ export function StagePanel(props: {
         <AttachModal projectId={projectId} order={order} gate={attaching}
           onDone={(ok) => { setAttaching(null); if (ok) refresh(); }} />
       )}
+      {waiving && (
+        <WaiveModal projectId={projectId} order={order} gateKey={waiving}
+          onDone={(ok) => { setWaiving(null); if (ok) refresh(); }} />
+      )}
+      <ClientAcceptanceModal open={accepting} projectId={projectId}
+        onDone={(ok) => { setAccepting(false); if (ok) refresh(); }} />
       <RejectModal open={rejecting} projectId={projectId} order={order}
         onDone={(ok) => { setRejecting(false); if (ok) refresh(); }} />
     </Card>
@@ -561,6 +623,95 @@ function GateResultModal(props: {
         </Stack>
       </form>
     </Modal>
+  );
+}
+
+/** SOP §3 — a director's written waiver of a hard gate. Recorded as a passing
+ *  gate result and surfaced in the Stage-9 handover defence file. */
+function WaiveModal(props: {
+  projectId: string; order: number; gateKey: string; onDone: (ok: boolean) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api(
+        `/projects/${props.projectId}/stages/${props.order}/gates/${props.gateKey}/waive`,
+        { method: "POST", body: { reason } },
+      );
+      props.onDone(true);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Waive ${humanize(props.gateKey)}`}
+      description="A director's written waiver clears this hard gate. It is recorded on the project and rides in the handover defence file."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not waive the gate"
+      busy={busy}
+      submitLabel="Waive gate"
+    >
+      <Field label="Reason" required>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} required
+          placeholder="Why this hard gate is being waived" />
+      </Field>
+    </FormModal>
+  );
+}
+
+/** SOP §9 — a written client acceptance so an open snag does not block the
+ *  Stage-9 handover. The snag stays on record; the acceptance is stored too. */
+function ClientAcceptanceModal(props: {
+  open: boolean; projectId: string; onDone: (ok: boolean) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/projects/${props.projectId}/client-acceptance`, {
+        method: "POST", body: { note },
+      });
+      props.onDone(true);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormModal
+      open={props.open}
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title="Record client acceptance"
+      description="A written client acceptance lets the handover proceed with an open snag (SOP §9). The snag stays on record."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not record the acceptance"
+      busy={busy}
+      submitLabel="Record acceptance"
+    >
+      <Field label="What the client accepted" required>
+        <Input value={note} onChange={(e) => setNote(e.target.value)} required
+          placeholder="e.g. Client accepts the 4mm reveal at the door head" />
+      </Field>
+    </FormModal>
   );
 }
 

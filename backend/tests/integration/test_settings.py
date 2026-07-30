@@ -229,20 +229,20 @@ async def test_security_modules_and_approver_map(client_client):
     mods = {m["module"]: m["enabled"] for m in res.json()["data"]}
     assert mods["projects"] is True and len(mods) == 6
 
-    # approver map seeded by the projects seed; client_contact role exists
+    # approver map seeded by the projects seed: v2.0's six approver positions,
+    # every one mapping to the owner by default (no `client` position in v2.0)
     res = await client_client.get("/api/v1/settings/approver-roles")
     entries = {e["approver_role"]: e for e in res.json()["data"]}
-    assert len(entries) == 16
-    assert entries["client"]["client_roles"] == ["client_contact"]
-    roles = await client_client.get("/api/v1/settings/roles")
-    assert "client_contact" in {r["name"] for r in roles.json()["data"]}
+    assert len(entries) == 6
+    assert entries["project_director"]["client_roles"] == ["owner"]
+    assert "client" not in entries
 
     # PATCH one mapping; unknown role rejected
-    res = await client_client.patch("/api/v1/settings/approver-roles/qc_manager",
+    res = await client_client.patch("/api/v1/settings/approver-roles/procurement_manager",
                                     json={"client_roles": ["Manager"]})
     assert res.status_code == 200
     assert res.json()["data"]["client_roles"] == ["Manager"]
-    res = await client_client.patch("/api/v1/settings/approver-roles/qc_manager",
+    res = await client_client.patch("/api/v1/settings/approver-roles/procurement_manager",
                                     json={"client_roles": ["ghost-role"]})
     assert res.status_code == 422
 

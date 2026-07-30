@@ -21,7 +21,7 @@ export const Default: Story = {
           <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <p style={body}>Stage 6 of 16 — awaiting client approval on the veneer selection.</p>
+          <p style={body}>Stage 6 of 9 — factory release awaiting the production sign-off.</p>
         </TabsContent>
         <TabsContent value="costs">
           <p style={body}>Budget consumed: 64%. Two purchase orders pending finance sign-off.</p>

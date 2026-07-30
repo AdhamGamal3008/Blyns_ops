@@ -19,7 +19,7 @@ export const Basic: Story = {
         actions={<Badgeish />}
       />
       <p style={{ color: "var(--text-muted)", margin: 0 }}>
-        Stage 6 of 16 — awaiting client approval on the veneer selection.
+        Stage 6 of 9 — factory release awaiting the production sign-off.
       </p>
       <CardFooter>
         <Button variant="ghost" size="compact">

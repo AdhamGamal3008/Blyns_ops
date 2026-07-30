@@ -27,11 +27,14 @@ from app.core.errors import (
 from app.modules.projects import engines
 from app.modules.projects import repository as repo
 from app.modules.projects.models import (
+    ChecklistMark,
+    ClientAcceptanceCreate,
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
     GateDocumentAttach,
     GateResultCreate,
+    GateWaive,
     JobCostCreate,
     ProjectCreate,
     ProjectPatch,
@@ -183,6 +186,7 @@ async def _enter_stage(
         "gate_results": [],
         "task_results": [],
         "documents_supplied": [],
+        "checklist_done": [],
         "approval_id": None,
         "recovery_loops": 0,
         "blocking_reason": None,
@@ -441,28 +445,177 @@ async def record_gate_result(
     assert instance is not None
     engine_result = await engines.run_decision_engine(db, project, definition, instance)
 
-    # a severe breach halts the project, not just the stage (§8, acceptance #3)
+    rolled_to: str | None = None
     if severe:
-        await repo.update(db, repo.PROJECTS, project["_id"], {"status": "on_hold"})
+        recovery = definition.get("recovery") or {}
+        report_type = (
+            (rule.get("severe_threshold") or {}).get("report_type")
+            or recovery.get("report_type")
+            or ("change" if recovery.get("action") == "return_to_stage" else "issue")
+        )
         await _open_report(
-            principal, project,
-            report_type=(rule.get("severe_threshold") or {}).get("report_type")
-            or (definition.get("recovery") or {}).get("report_type") or "issue",
+            principal, project, report_type=report_type,
             title=f"Severe {gate_key} breach at {definition['name']}",
             details={"gate": gate_key, "explanation": explanation,
                      "readings": payload.readings},
             stage_instance_id=instance["_id"],
         )
+        target_key = recovery.get("target")
+        if recovery.get("action") == "return_to_stage" and target_key:
+            # v2.0 §4-C: a severe hard-gate breach returns the project to an
+            # earlier stage for redesign, automatically — never a verbal pass.
+            await _rollback_to(principal, project, definition, target_key, explanation)
+            rolled_to = target_key
+        else:
+            # v1.0 semantics: a severe breach halts the whole project (§8).
+            await repo.update(db, repo.PROJECTS, project["_id"], {"status": "on_hold"})
 
     await _log(principal, "gate.passed" if passed else "gate.failed",
                {"type": "project", "id": project_id, "label": project["name"]},
                {"stage": definition["key"], "gate": gate_key,
                 "passed": passed, "severe": severe, "explanation": explanation})
+    final_instance = await repo.stage_instance(db, project["_id"], order)
     return {
         "result": result,
-        "instance": engine_result["instance"],
-        "project_status": "on_hold" if severe else project["status"],
+        "instance": final_instance or engine_result["instance"],
+        "project_status": (
+            "active" if rolled_to else "on_hold" if severe else project["status"]
+        ),
+        "rolled_back_to": rolled_to,
     }
+
+
+async def waive_gate(
+    principal: ClientPrincipal, project_id: str, order: int,
+    gate_key: str, payload: GateWaive,
+) -> dict:
+    """SOP §3 — a hard gate may be waived, in writing, **only** by the
+    `project_director`. Modelled as a passing gate result with provenance
+    (`waived:true`, reason, waived_by): because `evaluate_stage` treats any
+    passing gate result as satisfied, the waiver clears the gate with no engine
+    change, and the record surfaces in the Stage-9 technical defence file."""
+    project = await _project(principal, project_id)
+    definition = await _definition(principal, order)
+    db = principal.tenant_db
+    instance = await repo.stage_instance(db, project["_id"], order)
+    if instance is None:
+        raise DomainError(TENANT_NOT_FOUND, f"Stage {order} not reached.", 404)
+
+    rule = await repo.gate_rule(db, gate_key)
+    if rule is None:
+        raise DomainError(TENANT_NOT_FOUND, f"Gate '{gate_key}' is not defined.", 404)
+    if not rule.get("blocking", True):
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"Gate '{gate_key}' is not a blocking gate — there is nothing to waive.",
+            http_status=422,
+        )
+    attach = rule.get("attach_to_stages") or []
+    if attach and definition["key"] not in attach:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"Gate '{gate_key}' does not attach to stage '{definition['key']}'.",
+            http_status=422,
+        )
+
+    # director-only: the caller must hold the `project_director` position — plain
+    # `projects` WRITE is not enough (SOP §3).
+    allowed = await engines.may_approve(
+        db, "project_director", str(principal.user["_id"]),
+        principal.role.get("name", ""),
+    )
+    if not allowed:
+        raise DomainError(
+            PERMISSION_DENIED,
+            "Only the project_director may waive a hard gate.",
+            http_status=403,
+        )
+
+    result = await repo.insert(db, repo.GATE_RESULTS, {
+        "stage_instance_id": instance["_id"],
+        "project_id": project["_id"],
+        "gate_key": gate_key,
+        "type": rule.get("type"),
+        "captured_by": str(principal.user["_id"]),
+        "captured_at": _now(),
+        "readings": [],
+        "checklist_results": [],
+        "threshold": rule.get("threshold"),
+        "passed": True,
+        "severe": False,
+        "waived": True,
+        "reason": payload.reason,
+        "waived_by": str(principal.user["_id"]),
+        "explanation": f"Gate waived by project_director: {payload.reason}",
+        "notes": None,
+    })
+
+    instance = await repo.stage_instance(db, project["_id"], order)
+    assert instance is not None
+    engine_result = await engines.run_decision_engine(db, project, definition, instance)
+    await _log(principal, "gate.waived",
+               {"type": "project", "id": project_id, "label": project["name"]},
+               {"stage": definition["key"], "gate": gate_key,
+                "reason": payload.reason})
+    return {"result": result, "instance": engine_result["instance"]}
+
+
+async def mark_checklist_section(
+    principal: ClientPrincipal, project_id: str, order: int,
+    section: str, payload: ChecklistMark,
+) -> dict:
+    """v2.0 Stage 6 · Factory Release (§5-C): mark one release-checklist section
+    complete (or reopen it). `run_auto_validation` blocks release until every
+    seeded section is complete."""
+    project = await _project(principal, project_id)
+    definition = await _definition(principal, order)
+    db = principal.tenant_db
+    instance = await repo.stage_instance(db, project["_id"], order)
+    if instance is None:
+        raise DomainError(TENANT_NOT_FOUND, f"Stage {order} not reached.", 404)
+
+    sections = definition.get("release_checklist") or []
+    if section not in sections:
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"Stage '{definition['key']}' has no release-checklist section '{section}'.",
+            http_status=422,
+        )
+
+    done = set(instance.get("checklist_done") or [])
+    if payload.complete:
+        done.add(section)
+    else:
+        done.discard(section)
+    await repo.set_stage_fields(db, instance["_id"], {"checklist_done": sorted(done)})
+    instance = await repo.stage_instance(db, project["_id"], order)
+    await _log(principal, "stage.checklist_marked",
+               {"type": "project", "id": project_id, "label": project["name"]},
+               {"stage": definition["key"], "section": section,
+                "complete": payload.complete})
+    return instance  # type: ignore[return-value]
+
+
+async def record_client_acceptance(
+    principal: ClientPrincipal, project_id: str, payload: ClientAcceptanceCreate
+) -> dict:
+    """v2.0 Stage 9 (SOP §9): record a written client acceptance so the handover
+    may proceed with an open snag. Stored on the project with who/when."""
+    project = await _project(principal, project_id)
+    acceptance = {
+        "note": payload.note,
+        "by": str(principal.user["_id"]),
+        "at": _now(),
+    }
+    updated = await repo.update(
+        principal.tenant_db, repo.PROJECTS, project["_id"],
+        {"client_acceptance": acceptance},
+    )
+    assert updated is not None
+    await _log(principal, "project.client_acceptance",
+               {"type": "project", "id": project_id, "label": project["name"]},
+               {"note": payload.note})
+    return updated
 
 
 async def run_task(
@@ -481,8 +634,10 @@ async def run_task(
         )
     result = await engines.run_decision_engine(db, project, definition, instance)
 
-    # §6.2: a stage starved of documents raises a Missing Information report
-    if result["evaluation"]["waiting_on"] and definition["key"] == "requirements_collection":
+    # §6.2: a stage starved of documents raises a Missing Information report.
+    # v2.0: entry documents live on Stage 1 (project_initiation), so that is the
+    # stage whose starvation raises the report (report_types → project_initiation).
+    if result["evaluation"]["waiting_on"] and definition["key"] == "project_initiation":
         await _open_report(
             principal, project, report_type="missing_information",
             title=f"Missing information at {definition['name']}",
@@ -557,6 +712,17 @@ async def submit_stage(
             "instance": engine_result["instance"], "report": report,
         }
 
+    # v2.0 §4-A: an auto-advancing stage (no approver_role) advances on completion
+    # rather than parking in pending_approval for a manager decision.
+    if definition.get("auto_advance") or definition.get("approver_role") is None:
+        await _log(principal, "stage.auto_advanced",
+                   {"type": "project", "id": project_id, "label": project["name"]},
+                   {"stage": definition["key"], "validation": "passed", "note": note})
+        result = await _finalize_stage(
+            principal, project, definition, instance, decision_by="system",
+        )
+        return {"validation": validation, "auto_advanced": True, **result}
+
     await db[repo.APPROVALS].update_one(
         {"_id": approval["_id"]}, {"$set": {"state": "manager_review"}}
     )
@@ -574,29 +740,11 @@ async def submit_stage(
 async def _assert_may_approve(
     principal: ClientPrincipal, definition: dict
 ) -> None:
-    """§9 + acceptance #9.
-
-    Two separate rules:
-      * the caller must hold the stage's approver_role, and
-      * a `client` position is only exercised through scoped client-portal
-        access — a full-module user must not stand in for the client.
-    """
+    """§9: the caller must hold the stage's approver_role (resolved through the
+    Settings-editable approver map). `projects` WRITE alone never suffices."""
     db = principal.tenant_db
     approver_role = definition.get("approver_role") or ""
     role_name = principal.role.get("name", "")
-
-    # A stage routed to the `client` position is signed off only through scoped
-    # client-portal access. Keyed off the seeded `is_client_portal` role flag —
-    # NOT the role name — so a full-module user can never stand in for the client
-    # (acceptance #9), and renaming the client-contact role can't break it.
-    if engines.is_client_approval(definition) and approver_role == "client":
-        if not principal.role.get("is_client_portal"):
-            raise DomainError(
-                PERMISSION_DENIED,
-                f"Stage '{definition['key']}' is a client approval; it can only be "
-                "made through scoped client-portal access.",
-                http_status=403,
-            )
 
     allowed = await engines.may_approve(
         db, approver_role, str(principal.user["_id"]), role_name
@@ -607,6 +755,69 @@ async def _assert_may_approve(
             f"Approving this stage requires the '{approver_role}' position.",
             http_status=403,
         )
+
+
+async def _finalize_stage(
+    principal: ClientPrincipal, project: dict, definition: dict, instance: dict,
+    *, decision_by: str, comment: str | None = None,
+) -> dict:
+    """Mark a stage approved and move the project on — the shared tail of a
+    manager approval (§5.4) and an auto-advancing stage (v2.0 Stage 2, §4-A).
+
+    §1: integrations run HERE, before anything is marked approved, so a failing
+    side effect (e.g. Inventory INSUFFICIENT_STOCK at Stage 5) raises and leaves
+    the stage recoverable rather than approved-with-no-effect. `decision_by ==
+    "system"` marks the auto-advance path.
+    """
+    db = principal.tenant_db
+    order = int(definition["order"])
+    auto = decision_by == "system"
+    integration = await _run_integrations(principal, project, definition)
+
+    approval = await repo.open_approval(db, instance["_id"])
+    if approval is not None:
+        await db[repo.APPROVALS].update_one(
+            {"_id": approval["_id"]},
+            {"$set": {"state": "approved", "decision": {
+                "by": decision_by, "at": _now(), "comment": comment,
+            }}},
+        )
+    await repo.set_stage_fields(db, instance["_id"], {"status": "approved"})
+
+    history = list(project.get("stage_history") or [])
+    history.append({
+        "order": order, "key": definition["key"],
+        "entered_at": instance.get("entered_at"), "exited_at": _now(),
+        "result": "auto_advanced" if auto else "approved",
+    })
+
+    fields: dict[str, Any] = {"stage_history": history}
+    if order >= LAST_STAGE_ORDER:
+        fields.update({"status": "completed", "completed_at": _now()})
+        await repo.update(db, repo.PROJECTS, project["_id"], fields)
+        await _log(principal, "project.completed",
+                   {"type": "project", "id": str(project["_id"]), "label": project["name"]},
+                   {"code": project["code"]})
+        return {
+            "stage": "approved", "project_status": "completed",
+            "handover": integration.get("handover"), "next_stage": None,
+            "integration": integration,
+        }
+
+    next_def = await _definition(principal, order + 1)
+    fields.update({
+        "current_stage_order": next_def["order"],
+        "current_stage_key": next_def["key"],
+    })
+    updated = await repo.update(db, repo.PROJECTS, project["_id"], fields)
+    assert updated is not None
+    next_instance = await _enter_stage(principal, updated, next_def)
+    return {
+        "stage": "approved", "project_status": updated["status"],
+        "integration": integration,
+        "next_stage": {"order": next_def["order"], "key": next_def["key"],
+                       "status": next_instance["status"]},
+    }
 
 
 async def approve_stage(
@@ -637,58 +848,49 @@ async def approve_stage(
             details={"failed": [c for c in validation["checks"] if not c["passed"]]},
         )
 
-    # §1: run the stage's integrations while it is STILL awaiting the decision.
-    # A failing integration (e.g. Inventory's INSUFFICIENT_STOCK at Stage 8)
-    # raises here, leaving the stage `pending_approval` and recoverable — never
-    # a stage marked `approved` whose side effects never happened.
-    integration = await _run_integrations(principal, project, definition)
-
-    approval = await repo.open_approval(db, instance["_id"])
-    if approval is not None:
-        await db[repo.APPROVALS].update_one(
-            {"_id": approval["_id"]},
-            {"$set": {"state": "approved", "decision": {
-                "by": str(principal.user["_id"]), "at": _now(), "comment": comment,
-            }}},
-        )
-    await repo.set_stage_fields(db, instance["_id"], {"status": "approved"})
-
-    history = list(project.get("stage_history") or [])
-    history.append({
-        "order": order, "key": definition["key"],
-        "entered_at": instance.get("entered_at"), "exited_at": _now(),
-        "result": "approved",
-    })
     await _log(principal, "stage.approved",
                {"type": "project", "id": project_id, "label": project["name"]},
                {"stage": definition["key"], "order": order, "comment": comment})
+    return await _finalize_stage(
+        principal, project, definition, instance,
+        decision_by=str(principal.user["_id"]), comment=comment,
+    )
 
-    fields: dict[str, Any] = {"stage_history": history}
-    if order >= LAST_STAGE_ORDER:
-        fields.update({"status": "completed", "completed_at": _now()})
-        await repo.update(db, repo.PROJECTS, project["_id"], fields)
-        await _log(principal, "project.completed",
-                   {"type": "project", "id": project_id, "label": project["name"]},
-                   {"code": project["code"]})
-        return {
-            "stage": "approved", "project_status": "completed",
-            "handover": integration.get("handover"), "next_stage": None,
-        }
 
-    next_def = await _definition(principal, order + 1)
-    fields.update({
-        "current_stage_order": next_def["order"],
-        "current_stage_key": next_def["key"],
-    })
-    updated = await repo.update(db, repo.PROJECTS, project["_id"], fields)
-    assert updated is not None
-    next_instance = await _enter_stage(principal, updated, next_def)
-    return {
-        "stage": "approved", "project_status": updated["status"],
-        "integration": integration,
-        "next_stage": {"order": next_def["order"], "key": next_def["key"],
-                       "status": next_instance["status"]},
-    }
+async def _rollback_to(
+    principal: ClientPrincipal, project: dict, definition: dict,
+    target_key: str, reason: str | None,
+) -> None:
+    """Return the project to an earlier stage (v2.0 §4-C): the current stage is
+    abandoned (`rejected`), the target stage is reopened and re-evaluated, and the
+    project is taken off any hold. Callers own the recovery report. Used by both a
+    severe hard-gate breach (auto) and a return_to_stage rejection (manual)."""
+    db = principal.tenant_db
+    order = int(definition["order"])
+    current = await repo.stage_instance(db, project["_id"], order)
+    if current is not None:
+        await repo.set_stage_fields(db, current["_id"], {
+            "status": "rejected", "blocking_reason": reason,
+        })
+    target_def = await repo.stage_def_by_key(db, target_key)
+    if target_def is not None:
+        await repo.update(db, repo.PROJECTS, project["_id"], {
+            "status": "active",
+            "current_stage_order": target_def["order"],
+            "current_stage_key": target_def["key"],
+        })
+        reopened = await repo.get(db, repo.PROJECTS, project["_id"])
+        target_instance = await repo.stage_instance(db, project["_id"], target_def["order"])
+        if reopened is not None and target_instance is not None:
+            await repo.set_stage_fields(db, target_instance["_id"], {
+                "status": "in_progress", "blocking_reason": None,
+            })
+            target_instance = await repo.stage_instance(db, project["_id"], target_def["order"])
+            assert target_instance is not None
+            await engines.run_decision_engine(db, reopened, target_def, target_instance)
+    await _log(principal, "stage.rolled_back",
+               {"type": "project", "id": str(project["_id"]), "label": project["name"]},
+               {"from": definition["key"], "to": target_key, "reason": reason})
 
 
 async def reject_stage(
@@ -735,21 +937,34 @@ async def reject_stage(
         )
 
     loops = await engines.bump_recovery(db, instance["_id"])
-    # the rejection reopens the stage; the recovery block may hold it instead
+
+    # v2.0 §4-C: a recovery may return the project to an EARLIER stage (a severe
+    # G1 deviation at Stage 4 → back to Stage 3 for redesign) instead of holding
+    # or reopening the current stage.
+    target_key = recovery.get("target")
+    target_def = (
+        await repo.stage_def_by_key(db, target_key)
+        if recovery.get("action") == "return_to_stage" and target_key else None
+    )
+    rollback = target_def is not None and int(target_def["order"]) < order
     hold = recovery.get("state") == "on_hold"
-    await repo.set_stage_fields(db, instance["_id"], {
-        "status": "on_hold" if hold else "rejected",
-        "blocking_reason": comment,
-    })
-    if hold:
+
+    if rollback:
+        assert target_def is not None
+        await _rollback_to(principal, project, definition, target_def["key"], comment)
+    elif hold:
+        await repo.set_stage_fields(db, instance["_id"], {
+            "status": "on_hold", "blocking_reason": comment,
+        })
         await repo.update(db, repo.PROJECTS, project["_id"], {"status": "on_hold"})
     else:
-        instance = await repo.stage_instance(db, project["_id"], order)
-        assert instance is not None
-        await repo.set_stage_fields(db, instance["_id"], {"status": "in_progress"})
-        instance = await repo.stage_instance(db, project["_id"], order)
-        assert instance is not None
-        await engines.run_decision_engine(db, project, definition, instance)
+        # the rejection reopens the same stage for a mandatory resubmission loop
+        await repo.set_stage_fields(db, instance["_id"], {
+            "status": "in_progress", "blocking_reason": comment,
+        })
+        reopened_instance = await repo.stage_instance(db, project["_id"], order)
+        assert reopened_instance is not None
+        await engines.run_decision_engine(db, project, definition, reopened_instance)
 
     await _log(principal, "stage.rejected",
                {"type": "project", "id": project_id, "label": project["name"]},
@@ -770,9 +985,9 @@ async def _run_integrations(
     did — no hidden side effects (INVENTORY.md §5).
     """
     key = definition["key"]
-    if key == "material_procurement":
+    if key == "material_procurement":  # Stage 5 (G2)
         return {"reservations": await _reserve_stock(principal, project)}
-    if key == "client_handover":
+    if key == "final_inspection_handover":  # Stage 9 (terminal)
         return {"handover": await _build_handover(principal, project)}
     return {}
 
@@ -875,16 +1090,31 @@ async def _build_handover(principal: ClientPrincipal, project: dict) -> dict:
 
     db = principal.tenant_db
     actor = str(principal.user["_id"])
+    defence_title = "Gate Records G1–G5 (Technical Defence File)"
+
+    # SOP §3/§9: any director-waived hard gate is recorded in the defence file
+    # alongside the measured readings — a waiver must never be silent.
+    waivers = [
+        {"gate_key": w["gate_key"], "reason": w.get("reason"),
+         "waived_by": w.get("waived_by"), "at": w.get("captured_at")}
+        for w in await repo.waived_gate_results(db, project["_id"])
+    ]
+
     pack: list[dict] = []
     for kind, title in (
         ("certificate", "Completion Certificate"),
         ("certificate", "Warranty"),
         ("report", "Operation & Maintenance Manuals"),
         ("shop_drawing", "As-built Drawings"),
+        # SOP §9: the technical defence file — the hard-gate readings that back
+        # the warranty (G1 deviation, G3 concrete RH, G4 flatness, G5 timber MC)
+        # plus any recorded gate waivers.
+        ("report", defence_title),
     ):
+        is_defence = title == defence_title
         doc = await repo.insert(db, repo.DELIVERABLES, {
             "project_id": project["_id"],
-            "stage_key": "client_handover",
+            "stage_key": "final_inspection_handover",
             "kind": kind,
             "title": title,
             "current_version": 1,
@@ -893,10 +1123,14 @@ async def _build_handover(principal: ClientPrincipal, project: dict) -> dict:
                           "author_id": actor, "at": _now(), "note": "handover pack"}],
             "classification": "auto",
             "ocr_text": None,
+            "gate_waivers": waivers if is_defence else [],
             "immutable_audit": [{"action": "created", "by": actor, "at": _now()}],
             "created_by": actor,
         })
-        pack.append({"id": str(doc["_id"]), "kind": kind, "title": title})
+        entry: dict[str, Any] = {"id": str(doc["_id"]), "kind": kind, "title": title}
+        if is_defence:
+            entry["gate_waivers"] = waivers
+        pack.append(entry)
 
     # final invoice for whatever is not yet billed
     invoice: dict | None = None
@@ -920,8 +1154,9 @@ async def _build_handover(principal: ClientPrincipal, project: dict) -> dict:
 
     await _log(principal, "project.handover",
                {"type": "project", "id": str(project["_id"]), "label": project["name"]},
-               {"documents": len(pack), "final_invoice": bool(invoice)})
-    return {"documents": pack, "final_invoice": invoice}
+               {"documents": len(pack), "final_invoice": bool(invoice),
+                "gate_waivers": len(waivers)})
+    return {"documents": pack, "final_invoice": invoice, "gate_waivers": waivers}
 
 
 # --- deliverables (§3.7) -----------------------------------------------------
