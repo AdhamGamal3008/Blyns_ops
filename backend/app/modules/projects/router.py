@@ -16,6 +16,7 @@ from app.modules.projects.models import (
     ApproveBody,
     ChecklistMark,
     ClientAcceptanceCreate,
+    DelegationCreate,
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
@@ -71,6 +72,28 @@ async def patch_gate_config(
 @router.get("/config/approver-roles")
 async def list_approver_config(principal: ClientPrincipal = Depends(_read)):
     return envelope(to_api(await service.list_approver_config(principal)))
+
+
+@router.get("/config/delegations")
+async def list_delegations(principal: ClientPrincipal = Depends(_read)):
+    return envelope(to_api(await service.list_delegations(principal)))
+
+
+@router.post("/config/delegations", status_code=201)
+async def create_delegation(
+    body: DelegationCreate, principal: ClientPrincipal = Depends(_write)
+):
+    """SOP §2 — delegate an approver position to a named deputy. Requires
+    `projects` WRITE; the service enforces that the caller natively holds the
+    position (or is the project_director)."""
+    return envelope(to_api(await service.create_delegation(principal, body)))
+
+
+@router.delete("/config/delegations/{delegation_id}")
+async def revoke_delegation(
+    delegation_id: str, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.revoke_delegation(principal, delegation_id)))
 
 
 # --- projects & portfolio ----------------------------------------------------

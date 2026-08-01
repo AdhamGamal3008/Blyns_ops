@@ -23,6 +23,7 @@ DELIVERABLES = "deliverables"
 REPORTS = "reports"
 JOB_COSTS = "job_costs"
 APPROVER_MAP = "approver_role_map"
+DELEGATIONS = "approver_delegations"
 PHASES = "foundational_phases"
 COUNTERS = "counters"
 
@@ -110,6 +111,32 @@ async def approver_map(db: AsyncIOMotorDatabase) -> list[dict]:
 
 async def approver_entry(db: AsyncIOMotorDatabase, role: str) -> dict | None:
     return await db[APPROVER_MAP].find_one({"approver_role": role})
+
+
+# --- approver delegations (SOP §2) -------------------------------------------
+
+async def list_delegations(db: AsyncIOMotorDatabase) -> list[dict]:
+    return [
+        d async for d in db[DELEGATIONS].find(_LIVE).sort([("created_at", -1)])
+    ]
+
+
+async def has_active_delegation(
+    db: AsyncIOMotorDatabase, approver_role: str, user_id: str,
+    now: datetime | None = None,
+) -> bool:
+    """True if a live, un-revoked delegation of `approver_role` names `user_id`
+    and the current time is inside its [starts_at, ends_at] window."""
+    moment = now or _now()
+    doc = await db[DELEGATIONS].find_one({
+        "approver_role": approver_role,
+        "delegate_user_id": user_id,
+        "revoked": False,
+        "starts_at": {"$lte": moment},
+        "ends_at": {"$gte": moment},
+        **_LIVE,
+    })
+    return doc is not None
 
 
 # --- stage instances ---------------------------------------------------------

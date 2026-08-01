@@ -50,6 +50,7 @@ async def _build_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
     await tenant_db.foundational_phases.create_index("key", unique=True)
     await tenant_db.report_types.create_index("type", unique=True)
     await tenant_db.approver_role_map.create_index("approver_role", unique=True)
+    await tenant_db.approver_delegations.create_index("approver_role")
 
     # Runtime collections (per PROJECT_MANAGEMENT.md section 13)
     await tenant_db.projects.create_index("status")

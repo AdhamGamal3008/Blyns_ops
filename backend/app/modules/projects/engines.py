@@ -245,18 +245,26 @@ async def resolve_approvers(
     return roles, users
 
 
-async def may_approve(
+async def holds_position(
     db: AsyncIOMotorDatabase, approver_role: str, user_id: str, role_name: str
 ) -> bool:
-    """§9: the caller must hold the stage's approver_role.
-
-    Membership is either an explicit user assignment or holding a client role
-    the position maps to.
-    """
+    """§9: the caller natively holds the position — an explicit user assignment
+    or a client role the position maps to. Excludes delegation, so it is the
+    right check for granting a delegation (a deputy cannot re-delegate)."""
     roles, users = await resolve_approvers(db, approver_role)
     if user_id in users:
         return True
     return role_name.lower() in roles
+
+
+async def may_approve(
+    db: AsyncIOMotorDatabase, approver_role: str, user_id: str, role_name: str
+) -> bool:
+    """§9 + SOP §2: the caller may approve if they natively hold the position OR
+    a named deputy holds an active written delegation of it."""
+    if await holds_position(db, approver_role, user_id, role_name):
+        return True
+    return await repo.has_active_delegation(db, approver_role, user_id)
 
 
 async def run_auto_validation(

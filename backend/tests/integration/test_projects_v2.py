@@ -14,12 +14,22 @@ from tests.integration.test_projects import (
     _create_project,
     _employee,
     _gate_result,
+    _iso,
     _machine_config,
     _passing_payload,
     _stage,
     _submit,
     _supply,
 )
+
+
+async def _deputy(client, client_client, slug, tag="deputy"):
+    """A Member employee (holds projects WRITE but no approver position) — the
+    natural delegate. Returns (auth headers, user_id)."""
+    headers = await _employee(client, client_client, slug, "Member", tag)
+    emps = (await client_client.get("/api/v1/settings/employees")).json()["data"]
+    uid = next(e["id"] for e in emps if e["email"] == f"{tag}@{slug}.com")
+    return headers, uid
 
 
 async def _waive(client_client, pid, order, gate_key, reason="Director waiver on file"):
@@ -300,3 +310,114 @@ async def test_stage9_written_client_acceptance_overrides_open_snag(client_clien
     reports = (await client_client.get(
         f"{BASE}/{pid}/reports", params={"type": "na"})).json()["data"]
     assert any(r["id"] == rid and r["status"] == "open" for r in reports)
+
+
+# --- approver delegation (SOP §2) --------------------------------------------
+
+async def _reach_stage3_pending(client_client, pid, stages, gates):
+    """Drive a project to Stage 3 (Design Package) and submit it for approval."""
+    for order in (1, 2):  # Stage 1, then the auto-advancing Stage 2
+        await _advance(client_client, pid, order, stages, gates)
+    await _submit(client_client, pid, 3)  # → pending_approval, approver design_manager
+
+
+async def test_delegated_deputy_may_approve_a_stage(client, client_client, onboarded_company):
+    """SOP §2: a named deputy holding an active written delegation of a position
+    may approve for it, though they do not natively hold it."""
+    slug = onboarded_company["slug"]
+    deputy_headers, deputy_id = await _deputy(client, client_client, slug)
+
+    # the Owner (holds every position) delegates design_manager to the deputy
+    res = await client_client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "design_manager", "delegate_user_id": deputy_id,
+        "reason": "Design manager on leave this week", "ends_at": _iso(7)})
+    assert res.status_code == 201, res.text
+    assert res.json()["data"]["revoked"] is False
+
+    # the delegation is listed
+    listed = (await client_client.get(f"{BASE}/config/delegations")).json()["data"]
+    assert any(d["delegate_user_id"] == deputy_id for d in listed)
+
+    project = await _create_project(client_client)
+    pid = project["id"]
+    stages, gates = await _machine_config(client_client)
+    await _reach_stage3_pending(client_client, pid, stages, gates)
+
+    # the deputy — a Member with no native design_manager position — approves it
+    res = await client.post(f"{BASE}/{pid}/stages/3/approve",
+                            json={"comment": "reviewed"}, headers=deputy_headers)
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["next_stage"]["order"] == 4
+
+
+async def test_delegation_guardrails(client, client_client, onboarded_company):
+    slug = onboarded_company["slug"]
+    deputy_headers, deputy_id = await _deputy(client, client_client, slug, "dep2")
+
+    # a Member holding no position (and not the director) cannot delegate
+    res = await client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "design_manager", "delegate_user_id": deputy_id,
+        "reason": "nope", "ends_at": _iso(3)}, headers=deputy_headers)
+    assert res.status_code == 403, res.text
+
+    # an unknown position is a 404
+    res = await client_client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "nobody", "delegate_user_id": deputy_id,
+        "reason": "x", "ends_at": _iso(3)})
+    assert res.status_code == 404
+
+    # no self-delegation
+    owner_id = (await client_client.get("/api/v1/auth/me")).json()["data"]["id"]
+    res = await client_client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "design_manager", "delegate_user_id": owner_id,
+        "reason": "x", "ends_at": _iso(3)})
+    assert res.status_code == 422
+
+
+async def test_revoked_delegation_no_longer_grants_approval(
+    client, client_client, onboarded_company
+):
+    slug = onboarded_company["slug"]
+    deputy_headers, deputy_id = await _deputy(client, client_client, slug, "dep3")
+
+    res = await client_client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "design_manager", "delegate_user_id": deputy_id,
+        "reason": "cover", "ends_at": _iso(7)})
+    did = res.json()["data"]["id"]
+
+    r = await client_client.delete(f"{BASE}/config/delegations/{did}")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["revoked"] is True
+
+    project = await _create_project(client_client)
+    pid = project["id"]
+    stages, gates = await _machine_config(client_client)
+    await _reach_stage3_pending(client_client, pid, stages, gates)
+
+    # the revoked delegation grants nothing — the deputy is refused
+    res = await client.post(f"{BASE}/{pid}/stages/3/approve", json={},
+                            headers=deputy_headers)
+    assert res.status_code == 403, res.text
+
+
+async def test_elapsed_delegation_window_grants_nothing(
+    client, client_client, onboarded_company
+):
+    """A delegation whose window has already closed does not grant approval."""
+    slug = onboarded_company["slug"]
+    deputy_headers, deputy_id = await _deputy(client, client_client, slug, "dep4")
+
+    # a historical window: it starts and ends in the past
+    res = await client_client.post(f"{BASE}/config/delegations", json={
+        "approver_role": "design_manager", "delegate_user_id": deputy_id,
+        "reason": "last week", "starts_at": _iso(-7), "ends_at": _iso(-1)})
+    assert res.status_code == 201, res.text
+
+    project = await _create_project(client_client)
+    pid = project["id"]
+    stages, gates = await _machine_config(client_client)
+    await _reach_stage3_pending(client_client, pid, stages, gates)
+
+    res = await client.post(f"{BASE}/{pid}/stages/3/approve", json={},
+                            headers=deputy_headers)
+    assert res.status_code == 403, res.text

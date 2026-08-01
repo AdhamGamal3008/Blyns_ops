@@ -2,14 +2,21 @@
 
 Domain-specific PM module for a **wall cladding, flooring, and customized
 furniture** company. It is **not** a generic task board. It runs each project as
-a **16-stage stage-gate state machine**: every stage has entry conditions,
-automated tasks, automated validation, mandatory human approval, physical-
-condition gates, and a defined recovery loop. RBAC resource: `projects`. Routes
-under `/api/v1/projects`. Tenant-bound.
+a **9-stage stage-gate state machine** (v2.0): every stage has entry conditions,
+automated tasks, automated validation, and — except the auto-advancing survey
+stage — a single mandatory human approval, plus physical-condition gates and a
+defined recovery loop. RBAC resource: `projects`. Routes under `/api/v1/projects`.
+Tenant-bound.
 
-> Source of truth for the domain logic is the client's design document
-> (Parts 1–4). This spec translates it into data models, engines, endpoints,
-> seed data, and acceptance criteria for the build.
+> **Business source of truth:** the "Bovali Studio — Project Delivery Workflow
+> v2.0" SOP at [`docs/modules/PROJECT_WORKFLOW_V2_SOP.md`](./PROJECT_WORKFLOW_V2_SOP.md).
+> This spec translates it into data models, engines, endpoints, seed data, and
+> acceptance criteria. The v1.0 16-stage machine this module replaced, and the
+> migration that got us here, are recorded in
+> [`docs/PROJECT_MANAGEMENT_V2_MIGRATION_PLAN.md`](../PROJECT_MANAGEMENT_V2_MIGRATION_PLAN.md).
+> The design keeps every v1.0 measurement; it changed only whether a check
+> *blocks* or is merely *logged*. "Nothing technical was deleted — checks that
+> used to block now log."
 
 ---
 
@@ -22,136 +29,156 @@ services:
 
 | Concern | Owner | PM interaction |
 |---|---|---|
-| Client / account record | **CRM** | Stage 1 links a project to a CRM account. |
-| BOM stock reservation, consumption, warehouses | **Inventory** | Stages 3, 8, 9 reserve/consume stock via Inventory movements. |
-| Purchase-order costs, budget vs. actual, invoicing, job costing ledger | **Finance** | Stages 8, 16 post commitments/invoices; PM sends labor + material actuals to Finance. |
-| Company calendar, roles, employees | **Settings** | Approver roles resolve against client roles. |
+| Client / account record | **CRM** | Stage 1 links a project to a CRM account (`crm_accounts`). |
+| BOM stock reservation, consumption, warehouses | **Inventory** | Stage 5 reserves BOM stock via an Inventory `issue` movement. |
+| Budget commitment vs. actual, invoicing, job-costing ledger | **Finance** | Stage 5 records the commitment; Stage 9 issues the final invoice; PM posts labor + material actuals as job costs. |
+| Company calendar, roles, employees | **Settings** | Approver positions resolve against tenant client roles/users. |
 | Cross-module activity feed & calendar | **Dashboard** | PM emits stage/approval/gate events. |
 
-Everything else in Part 4 (document control, engineering, manufacturing,
-logistics, installation, QA, client portal, analytics) lives **inside** this
-module. Where a Part 4 feature overlaps an ERP module (Procurement & Inventory,
-Financial Control), PM triggers that module; it does not re-implement it.
-
-**Build sequencing.** The state machine, gates, engines, deliverables, and
-reports have no external dependency and can be built first. The CRM/Inventory/
-Finance calls (Stages 1, 8, 9, 16) are made through those modules' **service
-interfaces** — define thin interfaces now and stub them if PM is built ahead of
-those modules, then wire the real services when they land. This keeps PM
-buildable early despite depending on CRM (7), Inventory (8), and Finance (9).
+Where a workflow area overlaps an ERP module (procurement/inventory, financial
+control), PM triggers that module through its service; it does not re-implement
+it. There is **no client-portal user type** in v2.0 (see §9) — client acceptance
+folds into Stage 9.
 
 ---
 
 ## 2. Core concepts
 
-- **Stage definition** — one of 16 seeded, editable templates describing a stage:
-  its prerequisites (entry gates), automated tasks, quality gates, approver role,
-  and recovery behavior.
-- **Project** — an instance moving through the 16 stages; holds `current_stage`
+- **Stage definition** — one of **9** seeded, editable templates describing a
+  stage: its prerequisites (entry gates), automated tasks, quality gates,
+  approver position, and recovery behavior. One stage (Site Survey) has **no
+  approver** and auto-advances on completion.
+- **Project** — an instance moving through the 9 stages; holds `current_stage_*`
   and a full stage history.
 - **Stage instance** — a project's occurrence of a stage, with its own status,
-  gate results, task results, and approval record.
+  gate results, task results, release-checklist progress, and approval record.
 - **Gate** — a condition that must pass to enter or leave a stage. Types:
   `document`, `dependency`, `measurement` (physical test with threshold),
-  `inspection` (checklist), `budget`, `availability`.
-- **Approval** — a Universal Approval Engine record routed to an approver role.
+  `inspection` (checklist), `budget`, `availability`. A gate rule is **blocking**
+  (it gates approval) or **non-blocking** (captured for the record only).
+- **Hard gate (G1–G5)** — the five blocking physical gates that carry the
+  warranty. A hard gate may be **waived** by the project director, in writing (§5).
+- **Approval** — a Universal Approval Engine record routed to an approver position.
+- **Delegation** — a written, time-boxed grant letting a named deputy approve for
+  a position they do not natively hold (§9).
 - **Deliverable / document** — versioned artifact (shop drawing, BOM, report,
-  scan, photo) with an immutable revision audit trail.
-- **Report** — typed exception artifact generated by the engines (see §7).
+  scan, photo, certificate) with an immutable revision audit trail.
+- **Report** — typed exception artifact generated by the engines (see §3.8). A
+  **snag** is a `na` report raised at Stage 9.
 
 ---
 
 ## 3. Data models
 
-### 3.1 StageDefinition (seeded template — control per tenant)
+### 3.1 StageDefinition (seeded template — editable per tenant)
 ```json
 {
-  "_id":"…","order":1,"key":"lead_conversion","name":"Lead Conversion & Project Creation",
+  "_id":"…","order":1,"key":"project_initiation","name":"Project Initiation",
   "phase_ref":"foundational_phase_or_null",
-  "entry_gates":[ {"key":"contract_signed","type":"document","blocking":true},
-                  {"key":"scope_present","type":"document","blocking":true} ],
-  "automated_tasks":["create_project_record","build_folder_hierarchy",
-                     "generate_timeline","assign_pm"],
+  "entry_gates":[ {"key":"loi_or_po","type":"document","blocking":true},
+                  {"key":"scope_boq_approved","type":"document","blocking":true},
+                  {"key":"site_access_confirmed","type":"document","blocking":true} ],
+  "automated_tasks":["create_project_record","assign_core_team",
+                     "log_client_requirements","confirm_commercial_terms"],
   "quality_gates":[],
+  "release_checklist":null,
+  "auto_advance":false,
   "approver_role":"project_director",
   "recovery":{ "on":"missing_docs","action":"hold_and_notify","target":"sales",
                "state":"waiting" },
   "is_active":true
 }
 ```
+Notable v2.0 fields: `auto_advance:true` with `approver_role:null` marks the
+auto-advancing Site Survey stage (Stage 2); a `return_to_stage` recovery
+(`{"action":"return_to_stage","target":"design_package"}`) rolls the project back
+to an earlier stage (Stage 4 → Stage 3); `release_checklist` (Stage 6) is the list
+of sections that must all complete before release.
 
 ### 3.2 Project
 ```json
 {
   "_id":"…","code":"PRJ-0001","name":"Tower A Lobby Cladding",
   "crm_account_id":"… | null","scope":"…",
-  "current_stage_order":1,"current_stage_key":"lead_conversion",
+  "current_stage_order":1,"current_stage_key":"project_initiation",
   "status":"active|on_hold|completed|archived|cancelled",
   "pm_id":"user…","team_ids":["…"],
   "milestone_schedule":[{"key":"…","name":"…","due_date":"…"}],
   "budget":{"planned":0,"committed":0,"actual":0,"currency":"USD"},
-  "stage_history":[{"order":1,"key":"lead_conversion","entered_at":"…",
-                    "exited_at":"…","result":"approved"}],
+  "client_acceptance":{"note":"…","by":"user…","at":"…"},
+  "stage_history":[{"order":1,"key":"project_initiation","entered_at":"…",
+                    "exited_at":"…","result":"approved|auto_advanced"}],
   "created_at":"…","updated_at":"…","created_by":"…","is_deleted":false
 }
 ```
+`client_acceptance` (optional) is a recorded written acceptance that lets Stage 9
+proceed with an open snag (§5).
 
 ### 3.3 StageInstance (one per project × stage reached)
 ```json
 {
-  "_id":"…","project_id":"…","stage_order":7,"stage_key":"site_measurement_verification",
+  "_id":"…","project_id":"…","stage_order":4,"stage_key":"measurement_verification",
   "status":"pending|waiting|blocked|in_progress|validation|pending_approval|approved|rejected|on_hold",
-  "entered_at":"…","gate_results":[
-      {"gate_key":"laser_scan_imported","type":"document","passed":true,"at":"…"},
-      {"gate_key":"deviation_within_tolerance","type":"measurement",
-       "measured":{"max_deviation_mm":2.0},"threshold":{"max_deviation_mm":3.0},
-       "passed":true}
-  ],
-  "task_results":[{"task":"import_laser_scans","status":"done"},
-                  {"task":"compare_against_drawings","status":"done"}],
+  "entered_at":"…",
+  "documents_supplied":["shop_drawings_present"],
+  "document_refs":[{"gate_key":"shop_drawings_present","deliverable_id":"…",
+                    "title":"…","source_type":"upload","file_ref":"…","by":"…","at":"…"}],
+  "checklist_done":[],
+  "task_results":[{"task":"compare_against_drawings","status":"done"}],
+  "waiting_on":[], "blocked_by":[],
   "approval_id":"… | null",
   "recovery_loops":0,
   "blocking_reason":null
 }
 ```
 
-### 3.4 Task (Automated Decision Engine unit)
-```json
-{ "_id":"…","stage_instance_id":"…","key":"detect_clashes","type":"automated|manual",
-  "status":"initiated|waiting|blocked|validating|passed|failed",
-  "owner_id":"…","waiting_on":["doc:shop_drawing"],"blocked_by":["stage:6"],
-  "issue_report_id":"… | null","created_at":"…" }
-```
+### 3.4 Automated tasks
+A stage's automated tasks are tracked as `task_results` embedded on the
+StageInstance (`{"task":"compare_against_drawings","status":"done|waiting"}`); the
+decision engine (§6) recomputes them from current state. A `pm_tasks` collection
+is indexed for future per-task tracking, but the v2.0 engine keeps task state on
+the instance rather than as separate task documents.
 
-### 3.5 Gate measurement / inspection result
-Physical testing records (Part 1). Persisted and evaluated against thresholds.
+### 3.5 Gate measurement / inspection result (incl. waiver)
+Physical testing records. Persisted and evaluated against thresholds; a caller
+never declares `passed` — the engine scores it.
 ```json
-{ "_id":"…","stage_instance_id":"…","gate_key":"timber_moisture_content",
+{ "_id":"…","stage_instance_id":"…","project_id":"…","gate_key":"timber_moisture_content",
   "type":"measurement","captured_by":"…","captured_at":"…",
   "readings":[{"location":"panel-A","value":7.5,"unit":"%"}],
-  "threshold":{"min":6,"max":9,"unit":"%"},"passed":true,"notes":"…" }
+  "threshold":{"min":6,"max":9,"unit":"%"},"passed":true,"severe":false,"notes":"…" }
+```
+A **waiver** is the same document with provenance and no reading:
+```json
+{ "gate_key":"deviation_within_tolerance","type":"measurement","passed":true,
+  "severe":false,"waived":true,"reason":"As-built within design intent per RFI-14",
+  "waived_by":"user…","captured_at":"…" }
 ```
 
 ### 3.6 Approval (Universal Approval Engine)
 ```json
 { "_id":"…","stage_instance_id":"…","project_id":"…",
-  "approver_role":"engineering_manager","assigned_to":"user… | null",
+  "approver_role":"engineering","assigned_to":"user… | null",
   "state":"draft|auto_validation|manager_review|approved|rejected",
   "auto_validation":{"passed":true,"checks":[{"key":"budget_ok","passed":true}]},
-  "decision":{"by":"user…","at":"…","comment":"…"},
+  "decision":{"by":"user… | system","at":"…","comment":"…"},
   "change_report_id":"… | null","created_at":"…" }
 ```
+`decision.by == "system"` marks the auto-advance of Stage 2 (no human approver).
 
 ### 3.7 Deliverable / Document (version-controlled)
 ```json
-{ "_id":"…","project_id":"…","stage_key":"shop_drawings","kind":"shop_drawing|bom|scan|photo|report|certificate",
+{ "_id":"…","project_id":"…","stage_key":"design_package","gate_key":"… | null",
+  "kind":"shop_drawing|bom|scan|photo|report|certificate",
   "title":"…","current_version":3,
-  "versions":[{"v":1,"file_ref":"…","author_id":"…","at":"…","note":"initial"},
-              {"v":2,"file_ref":"…","author_id":"…","at":"…","note":"clash fix"}],
-  "classification":"auto|manual","ocr_text":"… | null",
-  "immutable_audit":[{"action":"created","by":"…","at":"…"},
-                     {"action":"revised","by":"…","at":"…"}] }
+  "versions":[{"v":1,"source_type":"upload|url","file_ref":"…","file_id":"… | null",
+               "author_id":"…","at":"…","note":"initial"}],
+  "lines":[{"product_id":"…","qty":10}],
+  "classification":"auto|manual","ocr_text":"… | null","gate_waivers":[],
+  "immutable_audit":[{"action":"created","by":"…","at":"…"}] }
 ```
+The Stage-9 handover "Gate Records G1–G5 (Technical Defence File)" deliverable
+carries `gate_waivers` — the recorded waivers behind the warranty (§5).
 
 ### 3.8 Report (typed exception artifact)
 ```json
@@ -161,22 +188,34 @@ Physical testing records (Part 1). Persisted and evaluated against thresholds.
   "status":"open|in_progress|resolved|closed",
   "created_at":"…","resolved_at":null }
 ```
+A `na` report is a **snag** (Stage 9). `na` is kept distinct from `issue` so an
+automated-validation Issue Report never counts as an outstanding snag.
 
 ### 3.9 Job-cost capture (feeds Finance)
 ```json
-{ "_id":"…","project_id":"…","stage_key":"factory_production",
+{ "_id":"…","project_id":"…","stage_key":"factory_release",
   "cost_type":"labor|material|subcontractor|machine",
   "hours":0,"quantity":0,"unit_cost":0,"amount":0,
   "posted_to_finance_ref":"… | null","captured_at":"…" }
+```
+A **material** job cost draws the Stage-5 commitment down (to zero) as it converts
+to actual, so a reserved-then-consumed line is counted once.
+
+### 3.10 Approver delegation (SOP §2)
+```json
+{ "_id":"…","approver_role":"design_manager","delegate_user_id":"user…",
+  "granted_by":"user…","reason":"Design manager on leave this week",
+  "starts_at":"…","ends_at":"…","revoked":false,
+  "revoked_by":"… | null","revoked_at":"… | null","created_at":"…" }
 ```
 
 ---
 
 ## 4. State machine — stage lifecycle
 
-Each StageInstance moves through these states. Transitions are driven by the two
-engines (§5, §6). No stage advances to the next without an `approved` approval
-**and** all blocking gates passed.
+Each StageInstance moves through these states, driven by the two engines (§5, §6).
+No stage advances without an `approved` approval **and** all blocking gates passed
+— except the auto-advancing Site Survey stage, which advances on validation alone.
 
 ```
 pending
@@ -185,165 +224,196 @@ pending
 in_progress ──(missing required doc)──► waiting ──(doc supplied)──► in_progress
   │            ──(preceding stage incomplete)──► blocked ──(unblocked)──► in_progress
   ▼
-validation ──(auto checks fail)──► rejected(recovery loop) ──► in_progress
+validation ──(auto checks fail)──► in_progress (Issue Report, recovery loop)
   │ (auto checks pass)
+  ├─ auto-advance stage (Stage 2): mark approved by "system" ──► next stage
   ▼
-pending_approval ──(rejected)──► rejected(recovery loop) ──► in_progress
-  │ (approved)                      │
-  ▼                                 └─ increments recovery_loops, generates Report
-approved ──► next stage becomes in_progress
+pending_approval ──(rejected)──► in_progress | on_hold | rolled back to an earlier stage
+  │ (approved)                     └─ increments recovery_loops, generates a typed Report
+  ▼
+approved ──► next stage becomes in_progress   (Stage 9 approve ⇒ project completed)
 ```
 
-Special: `on_hold` is entered when a **severe** quality gate fails (e.g. Stage 7
-severe deviation halts fabrication; Stage 13 site-not-ready). It suspends the
-project until the recovery report is resolved.
+Special transitions:
+- **`on_hold`** — a rejection whose stage recovery is `on_hold` (Stage 7 site not
+  ready, Stage 8 installation issue) suspends the project until the recovery
+  report is resolved. Clearing the hold does **not** re-run the decision engine
+  (a still-latest breaching reading would otherwise snap it back).
+- **Rollback to an earlier stage** — a **severe** G1 deviation at Stage 4
+  (> 6 mm) automatically returns the project to Stage 3 (Design Package) the
+  moment it is recorded: the Stage-4 instance is `rejected`, Stage 3 reopens
+  `in_progress`, and the project comes off any hold. A manual reject on a
+  `return_to_stage` recovery takes the same path.
 
 ---
 
 ## 5. Universal Approval Engine
 
-Every stage passes through this before advancing (Part 3). Implement as a small
+Every approving stage passes through this before advancing. Implemented as a small
 service reused by all stages.
 
-1. **Draft** — deliverable/tasks prepared (`approval.state="draft"`).
-2. **Automated validation** — system checks constraints, budgets, compliance,
-   and that all blocking gates passed. Failure short-circuits to a generated
-   **Issue/Change Report** and returns the stage to `in_progress`.
-3. **Manager review** — routed to the stage's `approver_role`; resolve the actual
-   user(s) via Settings role mapping.
-4. **Approved** → stage `approved`, project transitions to next stage, activity
-   emitted.
-5. **Rejected** → generate a **Change Report**, assign an owner, increment
-   `recovery_loops`, and reopen the stage (mandatory resubmission loop).
+1. **Draft** — deliverables/tasks prepared (`approval.state="draft"`).
+2. **Automated validation** (`run_auto_validation`) — the system checks:
+   `documents_present`, `dependencies_complete`, `quality_gates_passed`,
+   `budget_ok`, and — where applicable — `release_checklist_complete` (Stage 6)
+   and `snags_closed` (Stage 9). A failure short-circuits to a generated **Issue
+   Report** and returns the stage to `in_progress`; it never reaches an approver.
+3. **Manager review** — routed to the stage's `approver_role`, resolved to real
+   users via the Settings approver map (§9).
+4. **Approved** → stage `approved`, project transitions to the next stage,
+   activity emitted. Integrations run **before** the stage is marked approved, so
+   a failing side effect (e.g. Inventory `INSUFFICIENT_STOCK` at Stage 5) leaves
+   the stage recoverable rather than approved-with-no-effect.
+5. **Rejected** → generate the stage's typed report, assign an owner, increment
+   `recovery_loops`, and reopen the stage (or hold / roll back per its recovery).
+
+**Auto-advancing stage (Stage 2).** Site Survey has `approver_role:null` and
+`auto_advance:true`. On `submit`, validation runs and — on pass — the stage is
+finalized immediately by `system` (no `pending_approval`, no human approval), an
+approval record is written for the audit trail, and the project advances. A
+direct `approve` call on this stage is refused (403).
+
+**Gate waiver (director-only).** A hard gate (G1–G5) may be waived in writing,
+**only** by a holder of the `project_director` position, with a mandatory reason.
+A waiver is recorded as a passing gate result (`waived:true`, `reason`,
+`waived_by`), so the engines clear the gate with no special-casing; the waiver is
+audited (`gate.waived`) and surfaced in the Stage-9 defence file.
+
+**Written client acceptance (Stage 9).** An open snag blocks the handover unless a
+written `client_acceptance` is recorded on the project; the snag then stays open
+on record, accepted rather than silently closed.
 
 Endpoints:
 ```
-POST /api/v1/projects/{id}/stages/{order}/submit          # draft -> auto validation
-POST /api/v1/projects/{id}/stages/{order}/approve         # approver only
-POST /api/v1/projects/{id}/stages/{order}/reject          # approver only (+comment)
+POST /api/v1/projects/{id}/stages/{order}/submit               # draft -> auto validation (auto-advances Stage 2)
+POST /api/v1/projects/{id}/stages/{order}/approve              # approver position (or delegate)
+POST /api/v1/projects/{id}/stages/{order}/reject               # approver position (+comment)
+POST /api/v1/projects/{id}/stages/{order}/gates/{gateKey}/waive   # project_director only
+POST /api/v1/projects/{id}/stages/{order}/checklist/{section}     # Stage 6 release checklist
+POST /api/v1/projects/{id}/client-acceptance                      # Stage 9 written acceptance
 ```
-Guard: submit needs `projects` WRITE; approve/reject need `projects` WRITE **and**
-the caller must hold the stage's `approver_role` (see §9).
+Guard: submit/waive/checklist/client-acceptance need `projects` WRITE; approve and
+reject need `projects` WRITE **and** the caller must hold the stage's approver
+position — natively or via an active delegation (§9). Waive additionally requires
+the `project_director` position.
 
 ---
 
 ## 6. Automated Decision Engine (task path)
 
-Each automated task inside a stage follows this rigid path (Part 3):
+The decision engine recomputes a stage's state from current documents,
+dependencies, and gate results. It is deterministic and idempotent — re-running is
+always safe.
 
-1. **Task initiation.**
-2. **Document check** — required docs present? If no → task `waiting`, owner
-   notified, generate `missing_information` report if a whole stage is starved.
-3. **Dependency check** — preceding tasks/stages complete? If no → task
-   `blocked`, system records the blocking dependency in `blocked_by`.
-4. **Automated validation** — run rule checks.
-   - **Pass** → route to Manager Approval (hands off to §5).
-   - **Fail** → generate an **Issue Report**, assign owner, track resolution,
-     then **revalidate**.
-
-The engine is deterministic and idempotent: re-running a task recomputes state
-from current documents/dependencies, so retries are safe.
-
----
-
-## 7. The 16 stages (seed data)
-
-Seed these as `StageDefinition` docs in order. Approver roles and fallbacks come
-straight from the design document; encode faithfully.
-
-| # | key | Name | Entry prerequisites | Key automated tasks | Approver role | Recovery |
-|---|-----|------|---------------------|---------------------|---------------|----------|
-| 1 | lead_conversion | Lead Conversion & Project Creation | Approved quotation, signed contract, client info, scope, initial drawings | create record & ID, build folders, generate timeline/milestones, assign PM | project_director | Missing docs → `waiting`, notify Sales, block scheduling |
-| 2 | requirements_collection | Requirements Collection | Architectural drawings, design package, material specs, client requirements | verify completeness, detect missing/conflicting drawings, build requirements checklist | design_manager | Missing info → Missing Information Report, request docs, repeat |
-| 3 | site_survey | Site Survey | Project approval | schedule survey, assign surveyor, collect measurements/scans/photos, generate report | engineering_manager | Discrepancy → flag out-of-tolerance, return to Design |
-| 4 | concept_design | Concept Design | Completed site survey | generate design version, track revisions, compare to scope, estimate material/budget | client + design_manager | Rejection → record comments, generate V2, loop |
-| 5 | material_selection | Material Selection | Approved concept | validate compatibility, check availability/lead time/warranty/budget, suggest alternatives | client + procurement | Unavailable → search approved alternatives, request approval, update specs |
-| 6 | shop_drawings | Shop Drawings | Approved materials & concept | generate production drawings + BOM, detect clashes, check tolerances, version control | engineering (+ client conditional) | Rejection → highlight issues, route to Engineering, new revision |
-| 7 | site_measurement_verification | Site Measurement Verification | Shop drawings, raw site data | import laser scans, compare to drawings, detect deviations, update dims, recalc quantities | engineering | Severe deviation → halt fabrication (`on_hold`), update drawings, repeat |
-| 8 | material_procurement | Material Procurement | Verified shop drawings, BOM | generate POs, reserve inventory, track lead times, monitor deliveries, predict delays | procurement_manager (+ finance if over budget) | Supplier delay → alternatives, split procurement, adjust schedule, notify PM |
-| 9 | factory_production | Factory Production | Materials received | create work orders, allocate machines/labor, track progress, record labor hours, monitor KPIs | production_supervisor | Machine failure → reschedule, reallocate machines, notify PM |
-| 10 | factory_qc | Factory Quality Control | Completed fabrication | generate checklists, verify dims/surfaces/finishes, approve packaging, capture defects | qc_manager | QC failure → NCR, assign rework, repeat QC |
-| 11 | packing_protection | Packing & Protection | Approved finished goods | choose packing type, generate labels + loading sequence, track packaged items | warehouse_manager | Damage → repackage, secondary QC |
-| 12 | delivery_planning | Delivery Planning | Packaged goods ready | optimize schedule, assign vehicle, generate routing + delivery docs | logistics | Vehicle unavailable → replacement, update ETA, notify client |
-| 13 | site_readiness | Site Readiness Inspection | Approaching delivery date | check civil/electrical/HVAC/painting, verify access/storage/safety | site_engineer + project_manager | Site not ready → punch list, notify contractor, reschedule (`on_hold`) |
-| 14 | installation | Installation | Cleared site readiness | assign crews, track install + alignment, daily reports + photos, track issues | site_supervisor | Install issue → pause zone, Issue Report, mandate Engineering review |
-| 15 | final_qc | Final Quality Inspection | Completed installation | generate checklist, compare to drawings via photos, validate tolerances, QA report | qc + project_manager + client | Failure → CAPA, assign rework, repeat inspection |
-| 16 | client_handover | Client Handover | Approved QA report | generate Completion Certificate, Warranty, Manuals, As-builts, Final Invoice, archive | client + project_director | Project closed — end of state machine |
+1. **Document check** — required blocking `document` gates present? If not → the
+   stage sits `waiting` (`waiting_on` lists the missing docs). A stage starved of
+   its entry documents raises a `missing_information` report when its verification
+   task runs — in v2.0 this is Stage 1 (`project_initiation`).
+2. **Dependency check** — every preceding stage `approved`? If not → `blocked`
+   (`blocked_by` names the blocker).
+3. **Automated validation** — blocking quality gates must each have a passing
+   result. Failed quality gates keep the stage workable (they block approval at
+   submit, not the work itself); a **severe** reading drives the rollback/hold in
+   §4.
 
 ---
 
-## 8. Physical-condition gates (Part 1 → quality gates)
+## 7. The 9 stages (seed data)
 
-Attach these `measurement`/`inspection` gates to the stages noted. All are
-**blocking** — a fail sets/holds the stage and prevents approval. Thresholds are
-seeded defaults, editable per tenant in Settings.
+Seeded as `StageDefinition` docs in order (`stage_definitions.json`,
+`machine_version:2`). Keys are stable — tests, `GATE_DOCUMENT_KINDS`, and
+deep-links reference them.
 
-| Gate key | Attach to stage | Type | Threshold (default) | Effect on fail |
-|---|---|---|---|---|
-| timber_moisture_content | acclimation (pre-14) | measurement | MC 6%–9% | lock installation, log, notify |
-| ambient_rh_temp_log | acclimation (pre-14) | measurement | site-defined RH/temp window | require acclimation continuation |
-| subfloor_flatness | site_readiness (13) | measurement | ≤ 1/4" deviation over 10 ft | punch list, reschedule |
-| concrete_rh_astm_f2170 | site_readiness (13) | measurement | in-situ RH ≤ configured max | `on_hold`, block adhesive install |
-| fixing_channel_alignment | installation (14) | inspection | level/plumb within tolerance | pause zone, Issue Report |
-| reveal_gap_3mm | installation (14) | measurement | 3 mm reveal ± tolerance | rework, secondary check |
-| substrate_soundness | site_survey (3) / site_readiness (13) | inspection | pass/fail checklist | return to Design / punch list |
+| # | key | Name | Entry prerequisites | Approver | Recovery |
+|---|-----|------|---------------------|----------|----------|
+| 1 | project_initiation | Project Initiation | 3 documents: `loi_or_po`, `scope_boq_approved`, `site_access_confirmed` | project_director | Missing docs → `waiting`, notify Sales |
+| 2 | site_survey | Site Survey & Technical Assessment | Stage 1 approved | **none — auto-advances** | Incomplete survey → Issue Report |
+| 3 | design_package | Design Package | Stage 2 done | design_manager | Rejection → record comments, generate V2 |
+| 4 | measurement_verification | Measurement Verification & Design Freeze | `shop_drawings_present`, `raw_site_data_present` | engineering | **Severe G1 (>6 mm) → return to Stage 3** |
+| 5 | material_procurement | Material Procurement | Stage 4 frozen + `bom_present` (G2) | procurement_manager | Supplier delay → split procurement |
+| 6 | factory_release | Factory Release | Stage 5 (materials reserved) | production_manager | Release checklist (4 sections) must all complete |
+| 7 | site_readiness | Site Readiness Inspection | Stage 6 (goods released) | project_manager | Site not ready → `on_hold`, punch list |
+| 8 | installation | Installation | Stage 7 cleared | project_manager | Install issue → `on_hold`, Issue Report |
+| 9 | final_inspection_handover | Final Inspection & Client Handover | Stage 8 done | project_director | Inspection failure → CAPA; terminal on approve |
 
-> **Acclimation** is modeled as a controlled pre-installation gate window between
-> delivery (Stage 12) and installation (Stage 14). Represent it as gates on the
-> Stage 14 entry set plus a dated calendar event so the acclimation period is
-> visible and enforced.
-
----
-
-## 9. Approver roles & RBAC
-
-- Approver roles (`project_director`, `design_manager`, `engineering_manager`,
-  `procurement_manager`, `production_supervisor`, `qc_manager`,
-  `warehouse_manager`, `logistics`, `site_engineer`, `project_manager`,
-  `site_supervisor`, `client`) are **positions**, seeded as an editable mapping
-  in Settings that resolves each to one or more tenant client roles / users.
-- To approve/reject a stage a user needs `projects` WRITE **and** membership of
-  the stage's `approver_role`.
-- `client` approvals (Stages 4, 5, 6-conditional, 15, 16) are surfaced through
-  the **Client Portal** view (§10) and may be performed by a client-contact user
-  type with scoped, approval-only access.
+**v1.0 → v2.0 mapping** (16 → 9) is tabulated in the migration plan §2.
 
 ---
 
-## 10. Feature map (Part 4 → build targets)
+## 8. Physical-condition gates
 
-| Part 4 area | Where it is built |
+Attach these gate rules to the stages noted. Thresholds are seeded defaults,
+editable per tenant. The **five hard gates (G1–G5) are blocking** — a fail
+prevents approval, and only the project director may waive one. The other four are
+**logged, not blocking** (v2.0): they are captured in `gate_results` for the
+record and the defence file, but never gate a stage.
+
+| Gate key | Hard gate | Attach to stage | Type | Threshold (default) | Blocking |
+|---|---|---|---|---|---|
+| deviation_within_tolerance | **G1** | measurement_verification (4) | measurement | ≤ 3 mm (severe > 6 mm → return to Stage 3) | yes |
+| bom_present | **G2** | material_procurement (5) | document | BOM present (stores kind `bom`) | yes |
+| concrete_rh_astm_f2170 | **G3** | site_readiness (7) | measurement | in-situ RH ≤ 75% (ASTM F2170) | yes |
+| subfloor_flatness | **G4** | site_readiness (7) | measurement | ≤ 1/4" over 10 ft | yes |
+| timber_moisture_content | **G5** | installation (8) | measurement | MC 6%–9% | yes |
+| substrate_soundness | — | site_survey (2) / site_readiness (7) | inspection | pass/fail checklist | **no (logged)** |
+| ambient_rh_temp_log | — | installation (8) | measurement | site-defined window | **no (logged)** |
+| fixing_channel_alignment | — | final_inspection_handover (9) | inspection | level/plumb within tolerance | **no (logged)** |
+| reveal_gap_3mm | — | final_inspection_handover (9) | measurement | 3 mm reveal ± tolerance | **no (logged)** |
+
+> **G2** is a *document* entry gate, not a measurement rule; it is satisfied by
+> attaching a BOM document, and the reservable BOM (with product `lines`) is
+> matched newest-first so an empty BOM *document* never shadows the real one.
+> **Acclimation** (v1.0's separate gate) is folded into the Stage-8 G5 timber-MC
+> gate evidence plus the daily log — there is no separate acclimation entry gate.
+
+---
+
+## 9. Approver positions, RBAC & delegation
+
+- Six approver **positions** — `project_director`, `design_manager`,
+  `engineering`, `procurement_manager`, `production_manager`, `project_manager` —
+  are seeded as an editable Settings mapping that resolves each to one or more
+  tenant client roles / users (default `["owner"]`). Site Survey (Stage 2) has no
+  approver.
+- To approve/reject a stage a user needs `projects` WRITE **and** to hold the
+  stage's position (natively, or via an active delegation).
+- **No client-portal user type.** v2.0 has no `client` approver stage; client
+  acceptance folds into Stage 9 (`project_director`) plus the optional written
+  `client_acceptance` for open snags. The v1.0 `client_contact` role and
+  `is_client_portal` machinery were removed.
+- **Delegation (SOP §2).** A position holder (or the project director) may
+  delegate the position to a named deputy, in writing, for a defined period. An
+  active, un-revoked delegation whose window contains "now" lets the deputy
+  approve for that position. Guards: only a *native* holder (or the director) may
+  grant one (a deputy cannot re-delegate); no self-delegation; the deputy must be
+  a real tenant user. "Never delegate to the person who executed the work" is a
+  procedural rule, not machine-enforced. Grants and revocations are audited
+  (`delegation.granted` / `delegation.revoked`).
+
+---
+
+## 10. Feature map
+
+| Workflow area | Where it is built |
 |---|---|
-| Project Management (portfolio, milestones, critical path, resource alloc, Gantt/Kanban) | this module — portfolio list, milestone schedule, dependency graph across stages, resource assignment |
-| Document Management (versioning, approval workflows, OCR + classification, immutable audit) | this module — Deliverable model (§3.7) + Approval engine |
-| Design & Engineering (shop drawings, BOM, revision compare, clash/tolerance) | this module — Stages 6–7 deliverables + gate checks |
-| Procurement & Inventory (PO gen, supplier perf, reservation/consumption, lead-time) | **Inventory** (stock) + this module (PO/supplier docs at Stage 8) |
-| Manufacturing (work orders, machine/labor scheduling, progress, checkpoints) | this module — Stages 9–10 |
-| Logistics (packing/labels, routing, vehicle, PoD) | this module — Stages 11–12 |
-| Installation (crew scheduling, daily reports, photo docs, RFI/issues) | this module — Stage 14 + Report model |
-| Quality Management (checklists, NCR, CAPA, QA cert) | this module — Stages 10 & 15 + Report model |
-| Financial Control (budget vs actual, job costing, change orders, invoice milestones) | **Finance** (ledger/invoices) + this module (JobCost capture §3.9, change orders as Change Reports) |
-| Client Portal (status dashboards, approvals, milestone acceptance, handover docs) | this module (approval-only client access) + Dashboard |
-| Advanced Automation & Analytics (risk/delay prediction, optimization, NL query, exec summaries) | this module — see §11; all custom, no third-party AI service |
+| Portfolio, milestones, timeline/board | this module — portfolio list, milestone schedule, Gantt/Kanban |
+| Document management (versioning, immutable audit, uploads/URLs) | this module — Deliverable model (§3.7) |
+| Design & engineering (shop drawings, BOM, measurement freeze) | this module — Stages 3–4 deliverables + gates |
+| Procurement & inventory (BOM reservation, commitment) | **Inventory** + **Finance** via Stage 5 |
+| Factory release (production / QC / packing / delivery checklist) | this module — Stage 6 release checklist |
+| Site readiness & installation (physical gates, daily log) | this module — Stages 7–8 + gate results |
+| Quality (NCR, CAPA, snags, QA) | this module — Report model + Stage-9 snag closure |
+| Financial control (budget vs actual, job costing, final invoice) | **Finance** + this module (JobCost §3.9, Stage-9 invoice) |
+| Client acceptance & handover pack | this module — Stage 9 (`client_acceptance`, defence file) |
 
 ---
 
 ## 11. Analytics & automation (custom only)
 
-No third-party AI/ML service. Implement analytics as in-house, explainable logic:
-- **Delay/schedule risk:** compare planned vs. actual stage durations + open
-  blocking gates/reports to flag at-risk projects (rule-based scoring).
-- **Procurement risk:** lead-time vs. required-by-date from Stage 8 data.
-- **Resource optimization:** surface over-allocated crews/machines from Stage 9
-  assignments.
-- **Notifications/reminders:** driven by gate deadlines, approvals pending, and
-  calendar events.
-- **Executive summaries:** aggregate stage status, budget rollup, open reports
-  per project into a dashboard payload.
-- **NL query (optional, later):** if desired, this is the only place the platform
-  might call the Anthropic API from an artifact per the API-in-artifacts guidance
-  — keep it optional and behind a settings flag; the core system stays fully
-  custom.
+No third-party AI/ML service; analytics stay in-house and explainable — delay/
+schedule risk from planned-vs-actual stage durations and open blocking
+gates/reports, procurement risk from Stage-5 lead times, rule-based notifications
+from gate deadlines and pending approvals, and aggregate executive summaries.
 
 ---
 
@@ -363,78 +433,104 @@ POST                     /api/v1/projects/{id}/stages/{order}/submit
 POST                     /api/v1/projects/{id}/stages/{order}/approve
 POST                     /api/v1/projects/{id}/stages/{order}/reject
 POST                     /api/v1/projects/{id}/stages/{order}/gates/{gateKey}/result   # log measurement/inspection
+POST                     /api/v1/projects/{id}/stages/{order}/gates/{gateKey}/waive    # project_director only
+POST                     /api/v1/projects/{id}/stages/{order}/checklist/{section}      # Stage 6 release checklist
 POST                     /api/v1/projects/{id}/stages/{order}/tasks/{taskKey}/run       # re-run decision engine
+POST                     /api/v1/projects/{id}/client-acceptance                        # Stage 9 written acceptance
 
-# deliverables & reports
+# documents & their gates
 GET/POST                 /api/v1/projects/{id}/deliverables
+POST                     /api/v1/projects/{id}/deliverables/files                       # upload (GridFS)
+GET                      /api/v1/projects/{id}/deliverables/{did}/download
 POST                     /api/v1/projects/{id}/deliverables/{did}/revisions
-GET/POST                 /api/v1/projects/{id}/reports          # NCR/CAPA/RFI/Issue/Change/MissingInfo/QA
+POST                     /api/v1/projects/{id}/stages/{order}/documents/{gateKey}         # reference a deliverable at a gate
+POST                     /api/v1/projects/{id}/stages/{order}/documents/{gateKey}/attach  # upload/URL + satisfy the gate
+
+# reports & job costing
+GET/POST                 /api/v1/projects/{id}/reports          # NCR/CAPA/RFI/Issue/Change/MissingInfo/QA/snag(na)
 PATCH                    /api/v1/projects/{id}/reports/{rid}     # progress/resolve
+GET/POST                 /api/v1/projects/{id}/job-costs
 
-# job costing (feeds Finance)
-POST                     /api/v1/projects/{id}/job-costs
-
-# stage-definition & gate configuration (Settings-adjacent, projects WRITE)
+# configuration (projects READ to view, WRITE to change)
 GET/PATCH                /api/v1/projects/config/stages
 GET/PATCH                /api/v1/projects/config/gates
 GET/PATCH                /api/v1/projects/config/approver-roles
+GET/POST                 /api/v1/projects/config/delegations
+DELETE                   /api/v1/projects/config/delegations/{id}   # revoke
 ```
 Guarded: READ for GET; WRITE for mutations; approve/reject additionally require
-the stage's approver role.
+the stage's approver position (native or delegated); waive requires the
+`project_director` position.
 
 ---
 
 ## 13. Seed (`modules/projects/seed.py`)
 
-Idempotent. On tenant provisioning:
-- Insert the 16 `StageDefinition` docs from §7 (upsert by `key`).
-- Insert default `quality_gate` rules from §8 with thresholds.
-- Insert the report-type registry and the approver-role→client-role mapping
-  defaults.
-- Indexes:
-  - `projects.status`, `projects.current_stage_order`, `projects.pm_id`,
-    `projects.crm_account_id`
-  - `stage_instances (project_id, stage_order)` (unique), `stage_instances.status`
-  - `tasks.stage_instance_id`, `tasks.status`
-  - `gate_results.stage_instance_id`
-  - `approvals.stage_instance_id`, `approvals.state`
-  - `deliverables (project_id, kind)`, `reports (project_id, type, status)`
-  - `job_costs.project_id`
+Idempotent and **version-aware**. `stage_definitions.json` carries
+`machine_version:2`. On seed:
+- The applied version is read from `pm_meta.state_machine` (a tenant with
+  definitions but no marker is treated as version 1).
+- If the tenant is on an older version, the **definition** collections
+  (`stage_definitions`, `gate_rules`, `report_types`, `approver_role_map`,
+  `foundational_phases`) are reset (`delete_many` then re-insert) — this defuses
+  the unique-`order`-index collision a naive `$setOnInsert` re-seed would hit, and
+  removes superseded stages/roles/gates. Runtime collections (`projects`,
+  `stage_instances`, `gate_results`, `approvals`, …) are never touched. In-flight
+  projects are **not** remapped; the migration strategy (D1) is reset +
+  re-provision the demo tenant.
+- Then the 9 stage definitions, 8 gate rules (the four blocking measurement gates
+  G1/G3/G4/G5 + the four demoted non-blocking checks; G2 `bom_present` is a stage
+  document gate, not a gate rule), 8 report types, and the 6-position approver map
+  are upserted, and `pm_meta.state_machine.machine_version` is stamped.
+- Indexes include the definition/runtime collections plus
+  `approver_delegations.approver_role`.
 
 ---
 
 ## 14. Calendar & activity contribution
 
-- **Calendar** (`/calendar`): milestone dates, stage target dates, delivery date
-  (Stage 12), acclimation window, and gate deadlines → event types
-  `milestone`, `stage_due`, `delivery`, `acclimation`, `gate_due`.
+- **Calendar** (`/calendar`): milestone dates, stage target dates, delivery date,
+  acclimation window, and gate deadlines → event types `milestone`, `stage_due`,
+  `delivery`, `acclimation`, `gate_due`.
 - **Activity** (`activity_log`): every transition and engine event —
-  `project.created`, `stage.entered`, `stage.submitted`, `stage.approved`,
-  `stage.rejected`, `gate.passed`, `gate.failed`, `report.opened`,
-  `report.resolved`, `deliverable.revised`.
+  `project.created`, `stage.entered`, `stage.submitted`, `stage.auto_advanced`,
+  `stage.approved`, `stage.rejected`, `stage.rolled_back`, `stage.checklist_marked`,
+  `gate.passed`, `gate.failed`, `gate.waived`, `report.opened`, `report.resolved`,
+  `deliverable.created`, `deliverable.revised`, `project.stock_reserved`,
+  `project.client_acceptance`, `project.handover`, `project.completed`,
+  `delegation.granted`, `delegation.revoked`.
 
 ---
 
 ## 15. Acceptance criteria
 
-- A project cannot leave a stage until: all blocking entry/quality gates pass,
-  the Automated Decision Engine validation passes, and an approver holding the
-  stage's role approves. Any one failing keeps the project in the stage.
-- Missing required documents put the stage in `waiting` and notify the owner;
-  incomplete predecessors put it in `blocked` with the blocker identified.
-- A severe deviation at Stage 7 sets the project `on_hold` and blocks fabrication
-  until drawings are updated and verification repeats.
-- Physical gates enforce thresholds: e.g. installation cannot be approved while
-  timber MC is outside 6–9% or concrete RH exceeds the configured ASTM F2170
-  limit.
-- Rejections generate the correct typed report (Missing Info / Issue / Change /
-  NCR / CAPA / RFI / QA), assign an owner, increment `recovery_loops`, and reopen
-  the stage.
+- A project runs **9 stages**; **Stage 2 auto-advances** with no approver; the
+  other eight each need their single position's approval. A project cannot leave
+  an approving stage until all blocking entry/quality gates pass, automated
+  validation passes, and a holder of the stage's position approves.
+- Exactly **six approver positions**; nobody else can advance a stage — except a
+  named deputy holding an **active delegation** of the position.
+- Exactly **five blocking hard gates (G1–G5)**; the four demoted checks are
+  captured but never block.
+- A **hard gate is waivable only by the `project_director`**, with a recorded
+  reason; the waiver is audited and appears in the Stage-9 handover defence file.
+- A **severe G1 deviation (> 6 mm) returns the project to Stage 3** automatically —
+  not a verbal pass, not a silent hold.
+- Missing required documents put a stage in `waiting`; incomplete predecessors put
+  it in `blocked`. A rejection generates the correct typed report, assigns an
+  owner, increments `recovery_loops`, and reopens/holds/rolls back per the stage's
+  recovery.
+- Physical gates enforce thresholds: installation cannot be approved while timber
+  MC is outside 6–9%, nor site readiness while concrete RH exceeds the configured
+  ASTM F2170 limit or the subfloor is out of flatness.
+- **Stage 5** reserves BOM stock via Inventory (G2) and commits budget via Finance;
+  a material job cost converts commitment → actual without double-counting.
+- **Stage 6** release is blocked until all four checklist sections are complete.
+- **Stage 9** handover is blocked while a snag (`na` report) is open, unless a
+  written `client_acceptance` is recorded; it produces the handover pack
+  (completion certificate, warranty, manuals, as-builts, **Gate Records G1–G5
+  defence file**) and the final invoice, then closes the state machine.
 - Deliverables keep every revision with an immutable audit trail; no version is
   overwritten or deleted.
-- Stage 8 reserves stock via the Inventory module and records commitments via
-  Finance; Stage 9 labor/material actuals post as job costs to Finance.
-- Stage 16 produces the handover pack (certificate, warranty, manuals, as-builts,
-  final invoice) and closes the state machine.
-- Client-role approvals (Stages 4, 5, 15, 16) are performable only through scoped
-  client-portal access, never full module access.
+- There is **no client-portal access path**; client acceptance is the Stage-9
+  written record.

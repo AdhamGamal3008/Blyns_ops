@@ -29,6 +29,7 @@ from app.modules.projects import repository as repo
 from app.modules.projects.models import (
     ChecklistMark,
     ClientAcceptanceCreate,
+    DelegationCreate,
     DeliverableCreate,
     DocumentSupply,
     GateConfigPatch,
@@ -1706,3 +1707,101 @@ async def patch_gate_config(
 
 async def list_approver_config(principal: ClientPrincipal) -> list[dict]:
     return await repo.approver_map(principal.tenant_db)
+
+
+# --- approver delegation (SOP §2) --------------------------------------------
+
+async def list_delegations(principal: ClientPrincipal) -> list[dict]:
+    return await repo.list_delegations(principal.tenant_db)
+
+
+async def create_delegation(
+    principal: ClientPrincipal, payload: DelegationCreate
+) -> dict:
+    """SOP §2: an approver delegates their position to a named deputy, in
+    writing, for a defined period — recorded and audited.
+
+    Guardrails: only a *native* holder of the position (or the project_director)
+    may grant it — a deputy cannot re-delegate; no self-delegation; the deputy
+    must be a real tenant user. The "never to the person who executed the work"
+    rule is procedural and is not machine-enforced here."""
+    db = principal.tenant_db
+    actor = str(principal.user["_id"])
+    role_name = principal.role.get("name", "")
+
+    if await repo.approver_entry(db, payload.approver_role) is None:
+        raise DomainError(
+            TENANT_NOT_FOUND,
+            f"Approver position '{payload.approver_role}' is not defined.", 404,
+        )
+
+    holds = await engines.holds_position(db, payload.approver_role, actor, role_name)
+    is_director = await engines.holds_position(db, "project_director", actor, role_name)
+    if not (holds or is_director):
+        raise DomainError(
+            PERMISSION_DENIED,
+            f"Only a holder of '{payload.approver_role}' (or the project_director) "
+            "may delegate it.", 403,
+        )
+
+    if payload.delegate_user_id == actor:
+        raise DomainError(
+            VALIDATION_ERROR, "An approver cannot delegate to themselves.", 422
+        )
+    if await db.users.find_one({"_id": _oid(payload.delegate_user_id, "User")}) is None:
+        raise DomainError(TENANT_NOT_FOUND, "Delegate user not found.", 404)
+
+    starts = payload.starts_at or _now()
+    if payload.ends_at <= starts:
+        raise DomainError(
+            VALIDATION_ERROR, "The delegation must end after it starts.", 422
+        )
+
+    doc = await repo.insert(db, repo.DELEGATIONS, {
+        "approver_role": payload.approver_role,
+        "delegate_user_id": payload.delegate_user_id,
+        "granted_by": actor,
+        "reason": payload.reason,
+        "starts_at": starts,
+        "ends_at": payload.ends_at,
+        "revoked": False,
+    })
+    await _log(principal, "delegation.granted",
+               {"type": "delegation", "id": str(doc["_id"]),
+                "label": payload.approver_role},
+               {"approver_role": payload.approver_role,
+                "delegate_user_id": payload.delegate_user_id,
+                "ends_at": payload.ends_at.isoformat()})
+    return doc
+
+
+async def revoke_delegation(
+    principal: ClientPrincipal, delegation_id: str
+) -> dict:
+    """Revoke a delegation early (SOP §2). Same guard as granting it."""
+    db = principal.tenant_db
+    actor = str(principal.user["_id"])
+    role_name = principal.role.get("name", "")
+    oid = _oid(delegation_id, "Delegation")
+    delegation = await repo.get(db, repo.DELEGATIONS, oid)
+    if delegation is None:
+        raise DomainError(TENANT_NOT_FOUND, "Delegation not found.", 404)
+
+    holds = await engines.holds_position(db, delegation["approver_role"], actor, role_name)
+    is_director = await engines.holds_position(db, "project_director", actor, role_name)
+    if not (holds or is_director):
+        raise DomainError(
+            PERMISSION_DENIED,
+            "Only a holder of the position (or the project_director) may revoke "
+            "this delegation.", 403,
+        )
+
+    updated = await repo.update(db, repo.DELEGATIONS, oid, {
+        "revoked": True, "revoked_by": actor, "revoked_at": _now(),
+    })
+    assert updated is not None
+    await _log(principal, "delegation.revoked",
+               {"type": "delegation", "id": delegation_id,
+                "label": delegation["approver_role"]},
+               {"approver_role": delegation["approver_role"]})
+    return updated

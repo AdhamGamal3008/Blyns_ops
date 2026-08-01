@@ -131,6 +131,24 @@ class GateWaive(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class DelegationCreate(BaseModel):
+    """SOP §2 — an approver delegates their position to a named deputy, in
+    writing, for a defined period. `starts_at` defaults to now; `ends_at` is
+    required and must be after the start."""
+
+    approver_role: str = Field(min_length=1)
+    delegate_user_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    starts_at: datetime | None = None
+    ends_at: datetime
+
+    @model_validator(mode="after")
+    def _window_is_valid(self) -> DelegationCreate:
+        if self.starts_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("ends_at must be after starts_at")
+        return self
+
+
 class ChecklistMark(BaseModel):
     """v2.0 Stage 6 · Factory Release — mark one of the four release-checklist
     sections complete (or reopen it). All four must be complete before release."""
