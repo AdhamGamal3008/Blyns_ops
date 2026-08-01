@@ -44,6 +44,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         # Rate-limit collections (accounting + enforcement) need their indexes
         # before the middleware writes to them (docs/ARCHITECTURE.md §6). Both
         # create_index calls are idempotent, so every worker can run them.
+        from app.control_plane.ip_access.repository import ensure_ip_rule_indexes
         from app.core.rate_limit import (
             ensure_bucket_indexes,
             ensure_enforcement_indexes,
@@ -52,6 +53,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         try:
             await ensure_bucket_indexes(db.control)
             await ensure_enforcement_indexes(db.control)
+            await ensure_ip_rule_indexes(db.control)
         except Exception:  # index setup must not stop the app from serving
             pass
 

@@ -16,6 +16,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Country geo-blocking (docs/IP_ACCESS_CONTROL_PLAN.md P3). Optional: the app
+# runs without it — country rules are simply inert until the reader + a
+# self-hosted .mmdb dataset are present. `maxminddb` is the open-source pure
+# reader for the MaxMind DB format (GeoLite2 Country / DB-IP Lite).
+geoip = [
+    "maxminddb>=2.6",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",

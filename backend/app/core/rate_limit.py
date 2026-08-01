@@ -27,6 +27,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
+from app.core.client_ip import client_ip
 from app.core.config import Settings
 from app.core.config import settings as default_settings
 from app.core.errors import RATE_LIMITED, error_body
@@ -205,10 +206,10 @@ class RateLimitMiddleware:
         request = Request(scope)
         limited = False
         if self.cfg.rate_limit_enabled:
-            client_ip = request.client.host if request.client else "unknown"
+            ip = client_ip(request, self.cfg.ip_trusted_proxies)
             window_sec = self.cfg.rate_limit_window_sec
             window = int(time.time()) // window_sec
-            count = await self._store().incr(client_ip, window)
+            count = await self._store().incr(ip, window)
             limited = count > self.cfg.rate_limit_max_requests
 
         await _record(request, limited)

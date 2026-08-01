@@ -44,6 +44,21 @@ class Settings(BaseSettings):
     rate_limit_window_sec: int = 60
     rate_limit_max_requests: int = 120
 
+    # IP access control (docs/IP_ACCESS_CONTROL_PLAN.md): a platform-wide
+    # allow/deny + country filter enforced in middleware, ahead of the rate
+    # limiter. `ip_filter_enabled` is the break-glass KILL SWITCH — set it false
+    # to bypass all IP filtering (e.g. if a bad rule locks out the admin portal).
+    # `ip_trusted_proxies` lists proxy IPs/CIDRs whose `X-Forwarded-For` may be
+    # trusted to carry the real client IP; empty (default) trusts none and uses
+    # the socket peer, so a forwarded header can never spoof the client IP.
+    ip_filter_enabled: bool = True
+    ip_trusted_proxies: list[str] = []
+    # Path to a self-hosted MaxMind-format country database (.mmdb; GeoLite2
+    # Country or DB-IP Lite). Unset (default) → country rules are inert and the
+    # resolver returns None, so geo-blocking simply does nothing until ops
+    # provisions the dataset. Never an external API call.
+    ip_geoip_db_path: str | None = None
+
     # Project document uploads (docs/modules/PROJECT_MANAGEMENT.md §3.7): files
     # are stored self-hosted in the tenant DB via GridFS; this caps a single upload.
     max_upload_mb: int = 25
