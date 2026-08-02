@@ -69,3 +69,20 @@ class IpRulePatch(BaseModel):
 
     enabled: bool | None = None
     reason: str | None = None
+
+
+class IpTestRequest(BaseModel):
+    """`POST /ip-rules/test` body — the lockout-preventer. A valid IP is required
+    so the verdict is meaningful (a typo would otherwise read as 'unresolved')."""
+
+    ip: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_ip(self) -> IpTestRequest:
+        text = self.ip.strip()
+        try:
+            ipaddress.ip_address(text)
+        except ValueError as exc:
+            raise ValueError("ip must be a valid IPv4 or IPv6 address") from exc
+        self.ip = text
+        return self

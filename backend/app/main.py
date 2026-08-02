@@ -14,6 +14,7 @@ from importlib.metadata import PackageNotFoundError, version
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.control_plane.ip_access.middleware import IPAccessMiddleware
 from app.core.config import Settings, validate_for_production
 from app.core.config import settings as default_settings
 from app.core.db import close_db_manager, get_db_manager, init_db_manager
@@ -90,9 +91,11 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
 
-    # Middleware wraps outermost-first. Rate limiting fronts everything (reject
-    # floods before any work), then CORS, then the access log closest to the
-    # app so it records the true handler status.
+    # Middleware wraps outermost-first — the LAST add_middleware call is the
+    # outermost wrapper and runs first per request. The IP access filter fronts
+    # even the rate limiter, so a blocked IP is rejected before it can consume a
+    # rate-limit slot; then rate limiting (reject floods before any work), CORS,
+    # and the access log closest to the app so it records the true handler status.
     app.add_middleware(AccessLogMiddleware, cfg=cfg)
     app.add_middleware(CORSMiddleware,
                        allow_origins=cfg.cors_origins,
@@ -100,6 +103,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
                        allow_methods=["*"],
                        allow_headers=["*"])
     app.add_middleware(RateLimitMiddleware, cfg=cfg)
+    app.add_middleware(IPAccessMiddleware, cfg=cfg)
 
     @app.get("/health")
     async def health():
@@ -126,6 +130,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     from app.auth.client_auth import router as client_auth_router
     from app.control_plane.admin_users.router import router as admin_users_router
     from app.control_plane.companies.router import router as companies_router
+    from app.control_plane.ip_access.router import router as ip_rules_router
     from app.control_plane.metrics.router import router as metrics_router
     from app.modules.crm.router import router as crm_router
     from app.modules.dashboard.router import router as dashboard_router
@@ -138,6 +143,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(client_auth_router)
     app.include_router(companies_router)
     app.include_router(admin_users_router)
+    app.include_router(ip_rules_router)
     app.include_router(metrics_router)
     app.include_router(dashboard_router)
     app.include_router(settings_router)

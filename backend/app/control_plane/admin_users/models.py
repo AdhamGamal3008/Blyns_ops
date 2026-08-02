@@ -9,10 +9,12 @@ from datetime import UTC, datetime
 
 from app.shared.enums import Level
 
-# Admin resources (docs/AUTH_RBAC.md §2).
+# Admin resources (docs/AUTH_RBAC.md §2). `ip_rules` is the platform-wide IP
+# access control panel (docs/IP_ACCESS_CONTROL_PLAN.md §2-F) — distinct from
+# `security_policy`, which is a company's per-tenant lockout policy.
 ADMIN_RESOURCES = [
     "companies", "seats", "admin_users", "admin_roles",
-    "dashboard", "provisioning", "security_policy",
+    "dashboard", "provisioning", "security_policy", "ip_rules",
 ]
 
 

@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # the socket peer, so a forwarded header can never spoof the client IP.
     ip_filter_enabled: bool = True
     ip_trusted_proxies: list[str] = []
+    # In-process TTL (seconds) for the compiled ruleset the middleware evaluates.
+    # An admin write invalidates THIS worker's copy at once; other workers pick up
+    # the change within this window — so it's the cross-worker propagation delay.
+    ip_rule_cache_ttl_sec: float = 10.0
     # Path to a self-hosted MaxMind-format country database (.mmdb; GeoLite2
     # Country or DB-IP Lite). Unset (default) → country rules are inert and the
     # resolver returns None, so geo-blocking simply does nothing until ops

@@ -30,12 +30,13 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin-dashboard"])
 async def _rates_panel(control) -> dict:
     """Requests/min + 429s from rate_limit_buckets (§4.2)."""
     since = datetime.now(UTC).replace(second=0, microsecond=0) - timedelta(minutes=1)
-    platform = {"requests": 0, "rate_limited": 0}
+    platform = {"requests": 0, "rate_limited": 0, "ip_blocked": 0}
     async for b in control.rate_limit_buckets.find(
         {"scope": "platform", "minute": {"$gte": since}}
     ):
         platform["requests"] += b.get("requests", 0)
         platform["rate_limited"] += b.get("rate_limited", 0)
+        platform["ip_blocked"] += b.get("ip_blocked", 0)
 
     top_tenants = [doc async for doc in control.rate_limit_buckets.aggregate([
         {"$match": {"scope": "tenant", "minute": {"$gte": since}}},
@@ -47,6 +48,7 @@ async def _rates_panel(control) -> dict:
     return {
         "requests_last_min": platform["requests"],
         "rate_limited_last_min": platform["rate_limited"],
+        "ip_blocked_last_min": platform["ip_blocked"],
         "top_tenants": [
             {"tenant": t["_id"], "requests": t["requests"],
              "share_pct": round(100 * t["requests"] / total_tenant_requests, 1)}

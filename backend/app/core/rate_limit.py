@@ -143,14 +143,14 @@ def _tenant_from_auth_header(request: Request) -> str | None:
         return None
 
 
-async def _record(request: Request, rate_limited: bool) -> None:
-    """Increment platform + tenant minute buckets. Fire-safe."""
+async def _bump_buckets(request: Request, inc: dict[str, int]) -> None:
+    """Increment the platform + (token-attributed) tenant minute buckets by `inc`.
+    Fire-safe: accounting must never break a request."""
     try:
         from app.core.db import get_db_manager
 
         control = get_db_manager().control
         minute = datetime.now(UTC).replace(second=0, microsecond=0)
-        inc = {"requests": 1, "rate_limited": 1 if rate_limited else 0}
         await control.rate_limit_buckets.update_one(
             {"scope": "platform", "key": "platform", "minute": minute},
             {"$inc": inc}, upsert=True,
@@ -165,12 +165,24 @@ async def _record(request: Request, rate_limited: bool) -> None:
         pass  # accounting must never break a request
 
 
+async def _record(request: Request, rate_limited: bool) -> None:
+    """Rate-limiter accounting: every request that reaches the limiter, plus 429s."""
+    await _bump_buckets(request, {"requests": 1, "rate_limited": 1 if rate_limited else 0})
+
+
+async def record_ip_block(request: Request) -> None:
+    """IP-filter accounting (docs/IP_ACCESS_CONTROL_PLAN.md §2-C). A blocked request
+    is short-circuited before the rate limiter, so count it here — as a request AND
+    a block — into the same buckets the admin dashboard reads."""
+    await _bump_buckets(request, {"requests": 1, "ip_blocked": 1})
+
+
 async def ensure_bucket_indexes(control_db) -> None:
     coll = control_db.rate_limit_buckets
     await _create_unique_index(
         coll, [("scope", 1), ("key", 1), ("minute", 1)],
         key_fields=("scope", "key", "minute"),
-        sum_fields=("requests", "rate_limited"),
+        sum_fields=("requests", "rate_limited", "ip_blocked"),
     )
     await coll.create_index("minute", expireAfterSeconds=BUCKET_TTL_SEC)
 

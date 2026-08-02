@@ -298,13 +298,88 @@ limiter too. Getting this wrong means matching the proxy's IP for every user.
   - Tests: `tests/unit/test_ip_geoip.py` (iso extraction + fallback, fail-open on
     missing lib/file/errors, and the geo→matcher bridge). ruff + mypy clean.
 
+- **P4 — enforcement middleware (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+  - `app/control_plane/ip_access/middleware.py`: `IPAccessMiddleware` wires the
+    P1–P3 pieces per request — `client_ip` (P1) → `RuleCache.get()` (P2) →
+    `GeoIpResolver.country(ip)` (P3) → `decide(...)`. On deny returns a generic
+    **403 `IP_BLOCKED`** ("Access denied.") that never names the matched rule.
+    Honours the `ip_filter_enabled` **kill switch** (bypass, no rule load / geo /
+    accounting) and **fails open** (allow + loud log) on any internal error. The
+    Mongo-backed `RuleCache` (loader = `enabled_rules(control)`) and the geo
+    resolver are built lazily on first request (DB manager only exists post-
+    lifespan, same as the rate limiter's Mongo store) and are injectable for tests.
+  - **Realm scope = client + admin (D3, already locked).** The §7.4 "decide realm"
+    note was stale — mounted **platform-wide** (fronts every route incl. `/health`),
+    mirroring the rate limiter. Break-glass is therefore mandatory: the kill switch
+    ships here; the bootstrap admin allowlist seed is P6.
+  - **Ordering:** `main.py` adds it as the **last** `add_middleware` call → outermost
+    → runs first, ahead of `RateLimitMiddleware`, so a blocked IP is rejected before
+    it can consume a rate-limit slot.
+  - **Accounting:** `rate_limit.py` refactored — shared `_bump_buckets(request, inc)`
+    core; new `record_ip_block(request)` increments `{requests, ip_blocked}` in the
+    same `rate_limit_buckets` (a blocked request never reaches the limiter, so it's
+    counted once here). `ip_blocked` added to the index self-heal `sum_fields`, and
+    surfaced as `ip_blocked_last_min` in the dashboard rates panel
+    (`metrics/router.py`). Fire-safe — accounting never breaks a request.
+  - **Config:** `ip_rule_cache_ttl_sec` (`ERP_IP_RULE_CACHE_TTL_SEC`, default 10) —
+    the cross-worker rule-propagation delay; `.env.example` documents it +
+    `ERP_IP_GEOIP_DB_PATH`. `errors.py` gains the `IP_BLOCKED` code. `conftest.py`
+    defaults `ERP_IP_FILTER_ENABLED=false` (tests opt in per-case), mirroring the
+    rate-limit-off test default so existing full-app tests are untouched.
+  - Tests: `tests/unit/test_ip_access_middleware.py` (deny→403, allowlist wins,
+    kill switch skips load, disabled-rule inert, fail-open on loader error, country
+    geo-deny, trusted-proxy XFF, non-http passthrough, block accounted) +
+    `tests/integration/test_ip_access_middleware.py` (real deny rule → `/health`
+    403, non-matching IP 200, `ip_blocked` bucket written, kill switch bypasses).
+    **ruff + mypy clean; P4 unit+integration green.** See the TEST-ENV note below.
+
+  - **TEST-ENV note (applies to P4 + P5).** Every test in the suite passes, but NOT
+    in one full run *on this machine*: the session-scoped ephemeral `mongod` gets
+    OOM-killed ~70% through a ~13–14-min full run, after which every remaining test
+    fails with `ServerSelectionTimeoutError: Connection refused` regardless of what
+    it asserts. Two full runs failed identically (380/28 then 379/36), the dead-DB
+    cascade hitting the alphabetical tail (rate_limit_store, rbac_matrix, settings,
+    suggestions, quick_actions, tenant_context). **Re-running every failing module in
+    isolation with a fresh `mongod` → all green** (57/57), incl. `test_rate_limit_store`
+    which exercises the changed `ensure_bucket_indexes`. So: no code regression —
+    a machine memory limit on a long single run. To get one green pass, run the suite
+    in batches (each pytest invocation starts its own `mongod`) or on a roomier host.
+
+- **P5 — admin API (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+  - New admin RBAC resource **`ip_rules`** in `admin_users/models.py` `ADMIN_RESOURCES`
+    (distinct from `security_policy`, which is a company's per-tenant lockout policy).
+    Super Admin auto-gets WRITE; Operator/Auditor/Observer get NONE — so the RBAC
+    gate is real. ⚠️ **Ops:** `seed_admin_roles` uses `$setOnInsert`, so an *existing*
+    control DB won't gain `ip_rules` on already-seeded roles — re-seed or grant it
+    via the roles API (a fresh seed / the local demo includes it).
+  - `app/control_plane/ip_access/service.py` + `router.py`: control realm,
+    `require_admin("ip_rules", …)`, prefix `/api/v1/admin/ip-rules`, mounted in
+    `main.py`. `GET` (READ, filter by kind/match_type/enabled, paginated) · `POST`
+    (WRITE, 201; duplicate identity → **409 `IP_RULE_EXISTS`**; bad value → 422 from
+    the model) · `PATCH /{id}` (WRITE, toggle/reason) · `DELETE /{id}` (WRITE, soft) ·
+    `POST /test` (READ, the lockout-preventer — validates the IP, compiles the CURRENT
+    enabled rules **fresh** (cache-independent) + geo, returns allowed/reason/matched
+    rule). Every write is audited (`ip_rule.created|updated|deleted`).
+  - **Shared cache wired (the P4↔P5 seam):** new `app/control_plane/ip_access/runtime.py`
+    holds the process-wide `RuleCache` + geo resolver singletons (`get_rule_cache`,
+    `get_geo_resolver`, `invalidate_rule_cache`, `reset_runtime`). The P4 middleware
+    now reads these (injection still wins for unit tests); every service write calls
+    `invalidate_rule_cache()`, so a new rule is enforced immediately on this worker
+    (other workers refresh within the TTL). `errors.py` gains `IP_RULE_EXISTS`.
+  - Tests: `tests/integration/test_ip_access_admin.py` (CRUD round-trip, duplicate 409,
+    malformed→422, audit rows, IP-tester verdicts incl. allowlist-wins + invalid-IP
+    422, `ip_rules` RBAC gate via an Operator, and write→shared-cache invalidation).
+    The P4 `filtered_app` fixture now `reset_runtime()`s. ruff + mypy clean; P5 slice +
+    admin-realm/app-boot slice green (92 tests). Full clean-machine suite: see §7.3 note.
+
 ## 7.4 Remaining
-- **P4 (next) — enforcement middleware.** `IPAccessMiddleware` mounted OUTSIDE the
-  rate limiter (blocked IPs rejected before consuming a rate-limit slot): resolve
-  client IP (P1 helper) → `RuleCache.get()` (P2) → resolve country (P3) →
-  `decide(...)`; on deny return **403** generic `IP_BLOCKED` (never reveal which
-  rule). Honour the `ip_filter_enabled` kill switch; fail-open on any internal
-  error; feed the same accounting signal as the rate limiter. Decide realm scope
-  (client vs admin — D-realm). *Prove:* integration tests — denied IP → 403,
-  allowlist beats deny, kill switch bypasses, disabled/absent rules allow.
-- Then P5 → P8 per §4, in order.
+- **P6 (next) — seed.** Config-driven, **production-only** country denylist (D6 —
+  ships empty until compliance supplies ISO codes; base it on a config value / seed
+  file, `source:"seed"`, enabled) **plus the bootstrap admin/office allowlist** (D3
+  break-glass — known admin IPs seeded so a bad rule can't lock every admin out).
+  Local/test seed adds none. Wire into the control-plane seed path
+  (`scripts/seed_control_plane.py`), audited/attributed as `source:"seed"`. *Prove:*
+  a fresh prod-config seed yields the rules; a local/test seed adds none.
+- Then P7 (admin UI: two lists + add form + IP checker + "would block you" warning)
+  → P8 (harden: break-glass runbook in `docs/`, update `ARCHITECTURE.md` §6 +
+  `ADMIN_PORTAL.md`, full suites green) per §4, in order.
