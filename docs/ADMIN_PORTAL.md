@@ -165,11 +165,39 @@ GET    /admin/admin-roles        (+ POST/PATCH/DELETE)
 GET    /admin/dashboard
 POST   /admin/metrics/collect     (manual snapshot trigger)
 GET    /admin/audit-log
+
+GET    /admin/ip-rules            (list/filter/paginate)
+POST   /admin/ip-rules            (create; 409 IP_RULE_EXISTS on duplicate)
+PATCH  /admin/ip-rules/{id}       (enable/disable, edit reason)
+DELETE /admin/ip-rules/{id}       (soft delete)
+POST   /admin/ip-rules/test       ({ip} → allowed/reason/matched_rule verdict)
+GET    /admin/ip-rules/whoami     (server-perceived caller IP + country)
 ```
 
 ---
 
-## 6. Acceptance criteria
+## 6. IP access control
+
+Platform-wide allow/deny + country geo-blocking, managed here and enforced in
+middleware ahead of the rate limiter (design: `docs/IP_ACCESS_CONTROL_PLAN.md`;
+break-glass: `docs/IP_ACCESS_RUNBOOK.md`). Gated on the **`ip_rules`** admin
+resource (a new entry in `ADMIN_RESOURCES`): list/tester are READ, all writes are
+WRITE; every write is audited (`ip_rule.created|updated|deleted`).
+
+Panel (`/admin/ip-rules`):
+- Two lists — **Denylist** and **Allowlist** (allowlist always wins over any deny).
+- Add-rule form — Deny/Allow × `ip`/`cidr`/`country`, value, reason, enabled. A
+  **"this would block your current IP" warning** (from `GET /admin/ip-rules/whoami`)
+  fires before you save a deny matching your own address.
+- IP checker — `POST /admin/ip-rules/test` renders the live verdict + matched rule.
+
+Rules live in the control DB (`ip_access_rules`), platform-wide, not per tenant.
+Production seeds a config-driven country denylist (ships empty — a compliance
+decision) + a bootstrap admin allowlist; local/test seed nothing.
+
+---
+
+## 7. Acceptance criteria
 
 - Onboarding produces an active company with a seeded tenant DB and a working
   Owner login using the temp password (forced reset on first login).
@@ -179,3 +207,6 @@ GET    /admin/audit-log
 - Dashboard renders host/storage/rate/activity panels from snapshots + live host
   stats with no external service.
 - Every admin write appears in `admin_audit_log` with actor, action, target.
+- A denied IP gets a generic `403 IP_BLOCKED`; an allowlisted IP always passes even
+  under a matching deny; the `ERP_IP_FILTER_ENABLED=false` kill switch bypasses the
+  filter; a bad ruleset/geo load fails open (allows). Non-`ip_rules` admins are 403.

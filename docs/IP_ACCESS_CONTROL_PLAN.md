@@ -298,7 +298,7 @@ limiter too. Getting this wrong means matching the proxy's IP for every user.
   - Tests: `tests/unit/test_ip_geoip.py` (iso extraction + fallback, fail-open on
     missing lib/file/errors, and the geo→matcher bridge). ruff + mypy clean.
 
-- **P4 — enforcement middleware (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+- **P4 — enforcement middleware (DONE 2026-08-02, committed `c38665b` with P5, not pushed).**
   - `app/control_plane/ip_access/middleware.py`: `IPAccessMiddleware` wires the
     P1–P3 pieces per request — `client_ip` (P1) → `RuleCache.get()` (P2) →
     `GeoIpResolver.country(ip)` (P3) → `decide(...)`. On deny returns a generic
@@ -345,7 +345,7 @@ limiter too. Getting this wrong means matching the proxy's IP for every user.
     a machine memory limit on a long single run. To get one green pass, run the suite
     in batches (each pytest invocation starts its own `mongod`) or on a roomier host.
 
-- **P5 — admin API (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+- **P5 — admin API (DONE 2026-08-02, committed `c38665b` with P4, not pushed).**
   - New admin RBAC resource **`ip_rules`** in `admin_users/models.py` `ADMIN_RESOURCES`
     (distinct from `security_policy`, which is a company's per-tenant lockout policy).
     Super Admin auto-gets WRITE; Operator/Auditor/Observer get NONE — so the RBAC
@@ -372,14 +372,69 @@ limiter too. Getting this wrong means matching the proxy's IP for every user.
     The P4 `filtered_app` fixture now `reset_runtime()`s. ruff + mypy clean; P5 slice +
     admin-realm/app-boot slice green (92 tests). Full clean-machine suite: see §7.3 note.
 
-## 7.4 Remaining
-- **P6 (next) — seed.** Config-driven, **production-only** country denylist (D6 —
-  ships empty until compliance supplies ISO codes; base it on a config value / seed
-  file, `source:"seed"`, enabled) **plus the bootstrap admin/office allowlist** (D3
-  break-glass — known admin IPs seeded so a bad rule can't lock every admin out).
-  Local/test seed adds none. Wire into the control-plane seed path
-  (`scripts/seed_control_plane.py`), audited/attributed as `source:"seed"`. *Prove:*
-  a fresh prod-config seed yields the rules; a local/test seed adds none.
-- Then P7 (admin UI: two lists + add form + IP checker + "would block you" warning)
-  → P8 (harden: break-glass runbook in `docs/`, update `ARCHITECTURE.md` §6 +
-  `ADMIN_PORTAL.md`, full suites green) per §4, in order.
+- **P6 — seed (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+  - `app/control_plane/ip_access/seed.py`: `seed_ip_access_rules(control, cfg)` seeds
+    the configured country denylist + bootstrap admin/office allowlist as
+    `source:"seed"`, `created_by:"system:seed"`, enabled — **only when
+    `cfg.env == "production"`** (local/test seed nothing). Idempotent: upsert on
+    identity (kind+match_type+value) with `$setOnInsert`, so re-seeding never
+    duplicates and never clobbers an operator's later edit/disable/delete (verified).
+    Values run through `normalize_value`; a malformed entry is skipped, never fatal.
+  - Config knobs `ip_seed_deny_countries` / `ip_seed_allow_ips` (`ERP_IP_SEED_*`,
+    JSON lists, **both ship empty** — D6: which countries is a compliance decision,
+    nothing baked in). `.env.example` documents them.
+  - Wired into `scripts/seed_control_plane.py` (adds `ensure_ip_rule_indexes` +
+    `seed_ip_access_rules`, prints a one-line summary). Not run against a live DB here
+    (it targets `settings.mongo_uri`); ruff + mypy validate the wiring.
+  - Tests: `tests/integration/test_ip_access_seed.py` (prod seeds denylist+allowlist
+    with canonicalized values, idempotent re-seed, non-prod seeds nothing, re-seed
+    respects an operator disable, malformed entries skipped). Whole IP-access feature
+    suite green together (54 tests); ruff + mypy clean.
+
+- **P7 — admin UI (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+  - `frontend/src/admin/IpRulesPage.tsx` (+ `.module.css`): the panel — two lists
+    (Denylist / Allowlist, split client-side by kind), each row with a live
+    enable/disable `Switch` (→ PATCH) and Delete (→ soft DELETE); an **add-rule
+    form** (`FormModal`: Deny/Allow + ip/cidr/country `NativeSelect` + value +
+    reason + enabled) that POSTs; and the **IP checker** (posts to `/ip-rules/test`,
+    renders the verdict + matched rule). Loads rules via `GET /admin/ip-rules`.
+  - **"Would block your current IP" guard:** a small backend endpoint
+    `GET /api/v1/admin/ip-rules/whoami` (added to `router.py`, `ip_rules` READ)
+    returns the server-perceived client IP + country; `frontend/src/admin/ipMatch.ts`
+    (`wouldBlockSelf` + IPv4 `ipv4InCidr`, pure) drives a warning banner in the add
+    form when a new *deny* rule would match the admin's own IP (exact IP, IPv4 CIDR,
+    or country; IPv6-CIDR containment intentionally not computed — a cautious
+    warning, not a hard block).
+  - Nav: `AdminShell.tsx` shows the "IP access" item only when the admin has
+    `ip_rules >= READ`; route added in `App.tsx`. Types in `shared/types.ts`
+    (`IpRule`, `IpTestResult`, `IpWhoami`).
+  - Tests: `src/__tests__/ipMatch.test.ts` (9) + `src/__tests__/IpRulesPage.test.tsx`
+    (6: lists render, toggle→PATCH, delete→DELETE, checker→/test verdict, add→POST,
+    self-block warning). **`tsc` clean; full frontend vitest green (149).** Backend
+    `whoami` covered in `test_ip_access_admin.py`; backend ip_access slice green (55),
+    ruff + mypy clean.
+
+- **P8 — harden & document (DONE 2026-08-02, on branch `ip-access-control`, uncommitted).**
+  - **Break-glass runbook** `docs/IP_ACCESS_RUNBOOK.md`: the "we're locked out" fast
+    path (kill switch + restart), escalation order (UI → env kill switch → edit the
+    control DB → seed a bootstrap allowlist), the diagnostic tools (IP tester +
+    `whoami`), the full `ERP_IP_*` config reference, geo-IP dataset ops (monthly
+    refresh), and the compliance-owned country list.
+  - `docs/ARCHITECTURE.md` §6 reworked into "Security middleware" (§6.1 rate limiting,
+    §6.2 IP access filter — order, precedence, fail-open, kill switch, both realms).
+  - `docs/ADMIN_PORTAL.md`: ip-rules endpoints added to the §5 API surface, a new
+    §6 "IP access control" (the `ip_rules` resource + panel), and §7 acceptance
+    criteria (deny→403, allowlist-wins, kill switch, fail-open, RBAC gate).
+  - **P8 is docs-only — no code changed** — so P4–P7 verification still stands
+    (frontend `tsc` + 149 vitest green; backend ip_access slice + admin/app-boot
+    slices green; ruff + mypy clean). Production hardening (kill switch, fail-open,
+    allowlist-wins, bootstrap seed) already shipped in P4–P6; nothing to add in code.
+  - Final full-suite verification: run in **two batches** (fresh `mongod` each) to
+    dodge the OOM caveat below.
+
+## 7.4 Remaining — FEATURE COMPLETE (P0–P8 done)
+- Nothing left to build. **Not yet committed:** P6 + P7 + P8 are on-disk only (last
+  commit `c38665b` = P4+P5). Suggested: one commit for P6 (seed), one for P7+P8
+  (admin UI + `whoami` + docs), or one combined — confirm before committing/pushing.
+- Before merge: a clean full-suite green (batched, per the §7.3 `mongod`-OOM note)
+  and a human test pass of the admin panel.

@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     # resolver returns None, so geo-blocking simply does nothing until ops
     # provisions the dataset. Never an external API call.
     ip_geoip_db_path: str | None = None
+    # IP access SEEDING (docs/IP_ACCESS_CONTROL_PLAN.md §2-G/§2-H, P6). Both seed
+    # `source:"seed"` rules — but ONLY in production (never geo-block or pre-fill
+    # local/test) — and both ship EMPTY. `ip_seed_deny_countries` is the country
+    # denylist (ISO 3166-1 alpha-2): WHICH countries is a compliance/legal
+    # decision (sanctions/embargo) the operator owns, so nothing is baked in.
+    # `ip_seed_allow_ips` bootstraps known admin/office IPs/CIDRs onto the
+    # allowlist (allowlist-always-wins) so a bad rule can't lock every admin out.
+    ip_seed_deny_countries: list[str] = []
+    ip_seed_allow_ips: list[str] = []
 
     # Project document uploads (docs/modules/PROJECT_MANAGEMENT.md §3.7): files
     # are stored self-hosted in the tenant DB via GridFS; this caps a single upload.

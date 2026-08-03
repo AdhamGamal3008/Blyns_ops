@@ -1,0 +1,28 @@
+.value {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.subtitle {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm, 0.875rem);
+}
+
+.titleRow {
+  align-items: center;
+}
+
+/* Align the Check button with the input, not its label. */
+.checkerRow {
+  align-items: flex-end;
+}
+
+.grow {
+  flex: 1;
+  min-inline-size: 0;
+}

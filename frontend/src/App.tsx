@@ -7,6 +7,7 @@ import {
 import { AdminLogin } from "./admin/AdminLogin";
 import { AdminShell } from "./admin/AdminShell";
 import { CompaniesPage } from "./admin/CompaniesPage";
+import { IpRulesPage } from "./admin/IpRulesPage";
 import { PlatformDashboard } from "./admin/PlatformDashboard";
 import { ClientLogin } from "./client/ClientLogin";
 import { ClientShell } from "./client/ClientShell";
@@ -62,6 +63,7 @@ export function App() {
         >
           <Route index element={<PlatformDashboard />} />
           <Route path="companies" element={<CompaniesPage />} />
+          <Route path="ip-rules" element={<IpRulesPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/app" replace />} />

@@ -147,9 +147,15 @@ Activity document:
 
 ---
 
-## 6. Rate limiting (`app/core/rate_limit.py`)
+## 6. Security middleware
 
-Custom, no external service. Two tiers:
+Custom, no external service. Two ASGI middlewares front every request. Middleware
+wraps outermost-first — the **last** `add_middleware` call runs first — so the order
+is: **IP access filter → rate limiter →** CORS → access log → app.
+
+### 6.1 Rate limiting (`app/core/rate_limit.py`)
+
+Two tiers:
 
 - **Global per-IP** middleware: fixed window (`rate_limit_window_sec`,
   `rate_limit_max_requests`). Backed by an in-process dict for `local`, and a
@@ -159,6 +165,24 @@ Custom, no external service. Two tiers:
   feed the admin dashboard "rate limits / activity" panel.
 
 Return `429` with `RATE_LIMITED` when exceeded. Emit `Retry-After`.
+
+### 6.2 IP access filter (`app/control_plane/ip_access/`)
+
+Platform-wide allow/deny + country geo-blocking, mounted **ahead of** the rate
+limiter so a blocked IP is rejected before it consumes a rate-limit slot. Per
+request: resolve the true client IP (trusted-proxy `X-Forwarded-For`,
+`app/core/client_ip.py`) → consult the in-process ruleset cache over the
+control-plane `ip_access_rules` collection → resolve the country from a self-hosted
+`.mmdb` (no external API) → `decide()`. Precedence: **allowlist always wins** → deny
+ip/cidr → deny country → default-allow. On deny: a generic `403 IP_BLOCKED` that
+never names the matched rule.
+
+Guards **both realms** (client + admin), so break-glass is mandatory: honours the
+`ERP_IP_FILTER_ENABLED` kill switch, **fails open** on any internal error, and a
+bootstrap admin allowlist can be seeded. Blocks are accounted into
+`rate_limit_buckets` (`ip_blocked`). Admin CRUD + the IP tester / `whoami` live
+under `/admin/ip-rules` (RBAC `ip_rules`). Design + operations:
+`docs/IP_ACCESS_CONTROL_PLAN.md`, `docs/IP_ACCESS_RUNBOOK.md`.
 
 ---
 

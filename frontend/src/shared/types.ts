@@ -147,6 +147,37 @@ export interface ActivityEntry {
   occurred_at: string;
 }
 
+/** A platform IP access rule (docs/IP_ACCESS_CONTROL_PLAN.md §2-A). */
+export interface IpRule {
+  id: string;
+  kind: "allow" | "deny";
+  match_type: "ip" | "cidr" | "country";
+  value: string;
+  reason: string | null;
+  enabled: boolean;
+  source: "seed" | "manual";
+  family: number | null;
+  created_at?: string;
+  created_by?: string | null;
+}
+
+/** `POST /admin/ip-rules/test` verdict — "would this IP be allowed, by which rule?" */
+export interface IpTestResult {
+  ip: string;
+  country: string | null;
+  allowed: boolean;
+  reason: string;
+  matched_rule:
+    | { id: string; kind: string; match_type: string; value: string }
+    | null;
+}
+
+/** `GET /admin/ip-rules/whoami` — the IP the server sees for the current admin. */
+export interface IpWhoami {
+  ip: string;
+  country: string | null;
+}
+
 export interface Company {
   id: string;
   name: string;

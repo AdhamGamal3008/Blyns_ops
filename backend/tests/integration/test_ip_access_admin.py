@@ -138,6 +138,14 @@ async def test_ip_tester_verdicts(admin_client):
     assert bad.status_code == 422
 
 
+async def test_whoami_reports_the_callers_ip(admin_client):
+    res = await admin_client.get(f"{BASE}/whoami")
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["ip"] == "127.0.0.1"   # ASGITransport's default socket peer
+    assert data["country"] is None     # no geo dataset provisioned in tests
+
+
 async def test_rbac_gate_blocks_non_privileged_admin(app, client, control_seeded):
     operator = await _authed_admin(app, client, control_seeded, "Operator")
     async with operator:
@@ -148,6 +156,7 @@ async def test_rbac_gate_blocks_non_privileged_admin(app, client, control_seeded
         assert created.json()["error"]["code"] == "PERMISSION_DENIED"
         assert (await operator.post(f"{BASE}/test",
                 json={"ip": "1.2.3.4"})).status_code == 403
+        assert (await operator.get(f"{BASE}/whoami")).status_code == 403
 
 
 async def test_create_invalidates_the_shared_cache(admin_client):

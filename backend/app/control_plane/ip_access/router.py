@@ -7,7 +7,7 @@ lives in the middleware (P4); this is the management surface.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.control_plane.ip_access import service
 from app.control_plane.ip_access.models import (
@@ -15,6 +15,9 @@ from app.control_plane.ip_access.models import (
     IpRulePatch,
     IpTestRequest,
 )
+from app.control_plane.ip_access.runtime import get_geo_resolver
+from app.core.client_ip import client_ip
+from app.core.config import settings
 from app.core.db import get_db_manager
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
@@ -60,6 +63,17 @@ async def test_ip(
     """"Would this IP be allowed, and by which rule?" — check BEFORE adding a rule
     that might block you (docs/IP_ACCESS_CONTROL_PLAN.md §2-H)."""
     return envelope(await service.test_ip(get_db_manager().control, body.ip))
+
+
+@router.get("/whoami")
+async def whoami(
+    request: Request,
+    admin: AdminPrincipal = Depends(require_admin("ip_rules", Level.READ)),
+):
+    """The IP (and country) the server sees for THIS admin — powers the add form's
+    "this would block your current IP" warning (docs/IP_ACCESS_CONTROL_PLAN.md §2-F)."""
+    ip = client_ip(request, settings.ip_trusted_proxies)
+    return envelope({"ip": ip, "country": get_geo_resolver(settings).country(ip)})
 
 
 @router.patch("/{rule_id}")

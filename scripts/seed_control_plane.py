@@ -19,6 +19,8 @@ from app.control_plane.admin_users.repository import (
     ensure_admin_indexes,
     seed_admin_roles,
 )
+from app.control_plane.ip_access.repository import ensure_ip_rule_indexes
+from app.control_plane.ip_access.seed import seed_ip_access_rules
 from app.core.audit import write_admin_audit
 from app.core.config import settings
 from app.core.db import close_db_manager, init_db_manager
@@ -33,8 +35,16 @@ async def main(email: str, name: str, password: str | None) -> None:
         await ensure_admin_indexes(control)
         await ensure_bucket_indexes(control)
         await ensure_enforcement_indexes(control)
+        await ensure_ip_rule_indexes(control)
         role_ids = await seed_admin_roles(control)
         print(f"admin roles : {', '.join(role_ids)}")
+
+        # Production-only IP access seed (country denylist + admin allowlist).
+        # Ships empty and no-ops outside production (docs/IP_ACCESS_CONTROL_PLAN.md P6).
+        seeded = await seed_ip_access_rules(control, settings)
+        summary = ", ".join(f"{r['kind']} {r['match_type']} {r['value']}" for r in seeded)
+        print(f"ip rules    : {len(seeded)} seeded ({settings.env})"
+              + (f" — {summary}" if summary else ""))
 
         generated = password is None
         password = password or secrets.token_urlsafe(12)
