@@ -99,3 +99,27 @@ async def test_role_edit_reevaluates_on_next_request(client, admin_client, contr
     })
     res = await client.get("/api/v1/admin/companies", headers=headers)
     assert res.status_code == 200  # same token, new permissions
+
+
+async def test_seed_backfills_new_resources_into_system_roles(control_seeded):
+    """A resource added to ADMIN_RESOURCES after a role was first seeded is
+    backfilled on re-seed (e.g. `ip_rules` reaching an already-seeded Super Admin),
+    without clobbering an operator's edited levels."""
+    from app.control_plane.admin_users.repository import seed_admin_roles
+    from app.core.db import get_db_manager
+
+    control = get_db_manager().control
+    original = await control.admin_roles.find_one({"name": "Super Admin"})
+    try:
+        # Simulate a Super Admin seeded before `ip_rules` existed, with one edited level.
+        await control.admin_roles.update_one(
+            {"name": "Super Admin"}, {"$set": {"permissions": {"companies": 2}}},
+        )
+        await seed_admin_roles(control)
+        role = await control.admin_roles.find_one({"name": "Super Admin"})
+        assert role["permissions"]["ip_rules"] == 3    # new resource backfilled to WRITE
+        assert role["permissions"]["companies"] == 2   # operator's edited level preserved
+    finally:
+        await control.admin_roles.update_one(
+            {"name": "Super Admin"}, {"$set": {"permissions": original["permissions"]}},
+        )

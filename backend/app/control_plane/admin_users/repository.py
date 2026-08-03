@@ -16,15 +16,29 @@ async def ensure_admin_indexes(control_db: AsyncIOMotorDatabase) -> None:
 
 
 async def seed_admin_roles(control_db: AsyncIOMotorDatabase) -> dict[str, ObjectId]:
-    """Upsert the default admin roles; return {name: role_id}. Idempotent —
-    $setOnInsert never clobbers later edits."""
+    """Upsert the default admin roles; return {name: role_id}. Idempotent.
+
+    `$setOnInsert` never clobbers an operator's later edits — but a resource ADDED to
+    `ADMIN_RESOURCES` after a role was first seeded would otherwise never reach an
+    already-seeded role (e.g. a new `ip_rules` never reaching an existing Super
+    Admin). So we also **backfill** any missing resource keys to the role's default
+    level, leaving existing (possibly-edited) levels untouched.
+    """
     ids: dict[str, ObjectId] = {}
     for role in default_admin_roles():
         await control_db.admin_roles.update_one(
             {"name": role["name"]}, {"$setOnInsert": role}, upsert=True
         )
-        doc = await control_db.admin_roles.find_one({"name": role["name"]}, {"_id": 1})
+        doc = await control_db.admin_roles.find_one({"name": role["name"]})
         assert doc is not None  # just upserted
+        current = doc.get("permissions") or {}
+        missing = {
+            f"permissions.{res}": level
+            for res, level in role["permissions"].items()
+            if res not in current
+        }
+        if missing:
+            await control_db.admin_roles.update_one({"_id": doc["_id"]}, {"$set": missing})
         ids[role["name"]] = doc["_id"]
     return ids
 
