@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,7 @@ from app.core.db import close_db_manager, get_db_manager, init_db_manager
 from app.core.errors import register_exception_handlers
 from app.core.logging import AccessLogMiddleware, configure_logging
 from app.core.rate_limit import RateLimitMiddleware
+from app.demo_gate import install_demo_gate, mount_built_frontend
 from app.shared.schemas import envelope
 
 try:
@@ -105,6 +107,12 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.add_middleware(RateLimitMiddleware, cfg=cfg)
     app.add_middleware(IPAccessMiddleware, cfg=cfg)
 
+    # Opt-in demo gate (docs/DEMO_SHARING_PLAN.md). Installed LAST ⇒ OUTERMOST, so
+    # an unauthenticated public request is rejected before IP filtering, rate
+    # limiting, CORS, or access logging run. No-op unless DEMO_GATE_ENABLED is set,
+    # so normal dev is byte-for-byte unchanged.
+    install_demo_gate(app)
+
     @app.get("/health")
     async def health():
         try:
@@ -151,6 +159,11 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(inventory_router)
     app.include_router(finance_router)
     app.include_router(projects_router)
+
+    # Opt-in: serve the production React build from the API origin (same-origin ⇒
+    # no CORS, works behind the tunnel). Greedy mount at "/" ⇒ MUST be last.
+    # No-op unless SERVE_FRONTEND is set (docs/DEMO_SHARING_PLAN.md).
+    mount_built_frontend(app, Path(__file__).resolve().parents[2] / "frontend" / "dist")
 
     return app
 
