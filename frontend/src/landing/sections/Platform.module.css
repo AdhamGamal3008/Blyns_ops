@@ -1,0 +1,96 @@
+.rows {
+  margin-top: clamp(var(--sp-7), 6vw, 80px);
+  display: grid;
+  gap: clamp(var(--sp-7), 6vw, 88px);
+}
+
+.row {
+  display: grid;
+  gap: var(--sp-6);
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .row {
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(var(--sp-7), 6vw, 96px);
+  }
+  /* Alternate the screenshot side on every other row. */
+  .row:nth-child(even) .copy {
+    order: 2;
+  }
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--gold-50);
+  color: var(--gold-700);
+}
+.num {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  color: var(--text-muted);
+  letter-spacing: var(--tracking-caps);
+}
+
+.name {
+  margin: var(--sp-4) 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(var(--step-4), 1.4rem + 2vw, var(--step-5));
+  line-height: var(--leading-tight);
+  color: var(--ink);
+}
+
+.body {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--step-1);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+/* --- Screenshot slot ------------------------------------------------------ */
+.shot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+.shotBar {
+  display: flex;
+  gap: 6px;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.shotBar i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  background: var(--n-200);
+}
+.shotLabel {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}

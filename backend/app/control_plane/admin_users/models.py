@@ -15,6 +15,7 @@ from app.shared.enums import Level
 ADMIN_RESOURCES = [
     "companies", "seats", "admin_users", "admin_roles",
     "dashboard", "provisioning", "security_policy", "ip_rules",
+    "leads",  # discovery-session bookings from the public landing page
 ]
 
 
@@ -44,8 +45,9 @@ def default_admin_roles() -> list[dict]:
         _role("Operator", {
             "companies": w, "seats": w, "security_policy": w,
             "dashboard": r, "provisioning": r,
+            "leads": w,  # operators work the discovery-booking pipeline
             # admin_users / admin_roles: NONE
         }),
-        _role("Auditor", {"dashboard": r, "companies": r}),
-        _role("Observer", {"dashboard": v}),
+        _role("Auditor", {"dashboard": r, "companies": r, "leads": r}),
+        _role("Observer", {"dashboard": v, "leads": v}),
     ]

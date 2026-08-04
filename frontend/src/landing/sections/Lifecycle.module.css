@@ -1,0 +1,88 @@
+.track {
+  list-style: none;
+  margin: clamp(var(--sp-7), 6vw, 80px) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.node {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-6);
+}
+/* Vertical connector (mobile): line drops from each dot to the next. */
+.node:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 30px;
+  left: 15px;
+  width: 2px;
+  height: calc(100% - 30px);
+  background: var(--border-strong);
+}
+
+.dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  border: 2px solid var(--champagne);
+  font-family: var(--font-display);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--gold-700);
+}
+
+.label {
+  padding-top: 5px;
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  color: var(--ink);
+}
+
+/* Horizontal timeline on desktop. */
+@media (min-width: 1024px) {
+  .track {
+    flex-direction: row;
+  }
+  .node {
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--sp-4);
+    padding-bottom: 0;
+  }
+  .node:not(:last-child)::after {
+    top: 15px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+  }
+  .label {
+    padding-top: 0;
+    font-size: var(--step-1);
+    max-width: 12ch;
+  }
+}
+
+.close {
+  margin: clamp(var(--sp-7), 6vw, 80px) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--step-3), 1.2rem + 2vw, var(--step-5));
+  line-height: var(--leading-tight);
+  color: var(--ink);
+  text-wrap: balance;
+}
+.close span {
+  color: var(--brand-600);
+}

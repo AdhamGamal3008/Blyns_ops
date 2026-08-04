@@ -1,0 +1,62 @@
+.headline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 460;
+  font-size: clamp(2.5rem, 1.4rem + 4.6vw, 4.25rem);
+  line-height: 1.02;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink);
+}
+.headlineSub {
+  display: block;
+  color: var(--champagne);
+}
+
+.pairs {
+  margin: clamp(var(--sp-7), 6vw, 80px) 0 0;
+  display: grid;
+  gap: 0;
+}
+.pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-5) 0;
+  border-top: 1px solid var(--border);
+}
+.pair:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.need {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 480;
+  font-size: clamp(var(--step-2), 1rem + 1.6vw, var(--step-4));
+  line-height: var(--leading-tight);
+  color: var(--ink);
+}
+.done {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(var(--step-2), 1rem + 1.6vw, var(--step-4));
+  color: var(--champagne);
+}
+
+.close {
+  margin: clamp(var(--sp-7), 6vw, 80px) 0 0;
+  max-width: 26ch;
+  font-family: var(--font-display);
+  font-size: clamp(var(--step-4), 1.4rem + 2.4vw, var(--step-6));
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink);
+  text-wrap: balance;
+}
+.close span {
+  color: var(--brand-600);
+}

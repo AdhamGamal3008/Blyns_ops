@@ -23,6 +23,7 @@ ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
 SEAT_LIMIT_REACHED = "SEAT_LIMIT_REACHED"
 PERMISSION_DENIED = "PERMISSION_DENIED"
 TENANT_NOT_FOUND = "TENANT_NOT_FOUND"
+NOT_FOUND = "NOT_FOUND"  # generic 404 for a missing control-plane/admin entity
 RATE_LIMITED = "RATE_LIMITED"
 IP_BLOCKED = "IP_BLOCKED"  # generic 403 from the IP access filter — reveals no rule
 IP_RULE_EXISTS = "IP_RULE_EXISTS"  # 409: a live rule with the same identity exists
