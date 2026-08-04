@@ -1,0 +1,16 @@
+.inner {
+  max-width: 62ch;
+}
+
+.evolve {
+  margin: clamp(var(--sp-6), 5vw, 56px) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(var(--step-3), 1.2rem + 2vw, var(--step-5));
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink);
+  text-wrap: balance;
+}
+.evolve span {
+  color: var(--brand-600);
+}

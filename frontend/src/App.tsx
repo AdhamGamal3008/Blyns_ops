@@ -19,6 +19,7 @@ import { InventoryPage } from "./client/inventory/InventoryPage";
 import { ProjectDetail } from "./client/projects/ProjectDetail";
 import { ProjectsPage } from "./client/projects/ProjectsPage";
 import { SettingsPage } from "./client/settings/SettingsPage";
+import { LandingPage } from "./landing/LandingPage";
 import { getTokens } from "./shared/api";
 
 function RequireClient(props: { children: React.ReactNode }) {
@@ -33,6 +34,9 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public marketing surface — its own route, no portal shell, no auth. */}
+        <Route path="/" element={<LandingPage />} />
+
         <Route path="/login" element={<ClientLogin />} />
         <Route
           path="/app"
@@ -66,7 +70,7 @@ export function App() {
           <Route path="ip-rules" element={<IpRulesPage />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/app" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

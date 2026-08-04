@@ -1,0 +1,65 @@
+.head {
+  max-width: 60ch;
+}
+
+.flow {
+  list-style: none;
+  margin: clamp(var(--sp-7), 6vw, 80px) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--sp-6);
+}
+@media (min-width: 860px) {
+  .flow {
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--sp-7);
+  }
+}
+
+.step {
+  position: relative;
+  padding-top: var(--sp-6);
+  border-top: 2px solid var(--border);
+}
+/* Champagne progress cap on each step's top rule. */
+.step::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 48px;
+  height: 2px;
+  background: var(--champagne);
+}
+/* Connector arrow between steps on desktop. */
+@media (min-width: 860px) {
+  .step:not(:last-child)::after {
+    content: "→";
+    position: absolute;
+    top: var(--sp-5);
+    right: calc(var(--sp-7) * -0.62);
+    color: var(--n-300);
+    font-size: var(--step-2);
+  }
+}
+
+.num {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  font-weight: 500;
+  color: var(--champagne);
+}
+
+.stepTitle {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--step-3);
+  color: var(--ink);
+}
+
+.stepBody {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}

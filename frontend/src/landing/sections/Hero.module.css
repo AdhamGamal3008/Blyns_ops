@@ -1,0 +1,142 @@
+.hero {
+  position: relative;
+  padding-block: clamp(var(--sp-8), 9vw, 128px);
+  /* Warm, barely-there wash from paper into a champagne-tinted top-right, echoing
+     the studio-template light. Pure CSS, no image. */
+  background:
+    radial-gradient(120% 90% at 100% 0%, var(--gold-50) 0%, transparent 55%),
+    var(--paper);
+  scroll-margin-top: 84px;
+}
+
+.grid {
+  display: grid;
+  gap: clamp(var(--sp-7), 6vw, 96px);
+  align-items: center;
+}
+@media (min-width: 960px) {
+  .grid {
+    grid-template-columns: 1.05fr 0.95fr;
+  }
+}
+
+.headline {
+  margin: 0;
+  max-width: 16ch;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 460;
+  font-size: clamp(2.5rem, 1.4rem + 4.6vw, 4.25rem);
+  line-height: 1.04;
+  letter-spacing: var(--tracking-tight);
+  color: var(--ink);
+  text-wrap: balance;
+}
+.headlineAccent {
+  color: var(--brand-600);
+}
+
+.support {
+  margin: var(--sp-6) 0 0;
+  max-width: 52ch;
+  font-size: var(--step-1);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+}
+
+.tenets {
+  list-style: none;
+  margin: var(--sp-6) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-6);
+}
+.tenets li {
+  position: relative;
+  padding-left: var(--sp-4);
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  color: var(--ink);
+}
+.tenets li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--champagne);
+}
+
+.actions {
+  margin-top: var(--sp-7);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+/* --- Blueprint visual ----------------------------------------------------- */
+.visual {
+  display: none;
+}
+@media (min-width: 960px) {
+  .visual {
+    display: block;
+  }
+}
+
+.blueprint {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--n-800);
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--champagne) 14%, transparent),
+      color-mix(in srgb, var(--champagne) 14%, transparent)) 0 0 / 40px 40px,
+    repeating-linear-gradient(0deg, transparent 0 39px,
+      color-mix(in srgb, var(--champagne) 22%, transparent) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px,
+      color-mix(in srgb, var(--champagne) 22%, transparent) 39px 40px),
+    var(--ink);
+  background-blend-mode: normal;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.blueprintTag {
+  position: absolute;
+  top: var(--sp-4);
+  left: var(--sp-4);
+  padding: 4px var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--champagne) 45%, transparent);
+  border-radius: var(--r-pill);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--champagne);
+}
+
+/* Blueprint → Workflow → Platform, centered in the panel. */
+.flow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-5);
+}
+.flow span {
+  font-family: var(--font-display);
+  font-size: var(--step-3);
+  color: var(--text-on-inverse);
+}
+.flow i {
+  width: 1px;
+  height: var(--sp-6);
+  background: linear-gradient(var(--champagne), transparent);
+}

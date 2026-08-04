@@ -47,6 +47,9 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
         # Rate-limit collections (accounting + enforcement) need their indexes
         # before the middleware writes to them (docs/ARCHITECTURE.md §6). Both
         # create_index calls are idempotent, so every worker can run them.
+        from app.control_plane.discovery_bookings.repository import (
+            ensure_discovery_booking_indexes,
+        )
         from app.control_plane.ip_access.repository import ensure_ip_rule_indexes
         from app.core.rate_limit import (
             ensure_bucket_indexes,
@@ -57,6 +60,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             await ensure_bucket_indexes(db.control)
             await ensure_enforcement_indexes(db.control)
             await ensure_ip_rule_indexes(db.control)
+            await ensure_discovery_booking_indexes(db.control)
         except Exception:  # index setup must not stop the app from serving
             pass
 
@@ -138,6 +142,12 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     from app.auth.client_auth import router as client_auth_router
     from app.control_plane.admin_users.router import router as admin_users_router
     from app.control_plane.companies.router import router as companies_router
+    from app.control_plane.discovery_bookings.router import (
+        public_router as discovery_public_router,
+    )
+    from app.control_plane.discovery_bookings.router import (
+        router as discovery_admin_router,
+    )
     from app.control_plane.ip_access.router import router as ip_rules_router
     from app.control_plane.metrics.router import router as metrics_router
     from app.modules.crm.router import router as crm_router
@@ -152,6 +162,8 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(companies_router)
     app.include_router(admin_users_router)
     app.include_router(ip_rules_router)
+    app.include_router(discovery_admin_router)
+    app.include_router(discovery_public_router)
     app.include_router(metrics_router)
     app.include_router(dashboard_router)
     app.include_router(settings_router)

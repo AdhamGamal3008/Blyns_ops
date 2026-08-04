@@ -1,0 +1,52 @@
+.list {
+  margin: clamp(var(--sp-7), 6vw, 72px) 0 0;
+  max-width: 70ch;
+}
+
+.item {
+  border-top: 1px solid var(--border);
+}
+.item:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  padding: var(--sp-5) 0;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(var(--step-1), 0.9rem + 0.8vw, var(--step-2));
+  color: var(--ink);
+}
+/* Hide the native disclosure triangle across engines. */
+.q::-webkit-details-marker {
+  display: none;
+}
+.q:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 4px;
+  border-radius: var(--r-sm);
+}
+
+.chevron {
+  flex: none;
+  color: var(--gold-700);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.item[open] .chevron {
+  transform: rotate(180deg);
+}
+
+.a {
+  margin: 0;
+  padding: 0 0 var(--sp-6);
+  max-width: 62ch;
+  color: var(--text-muted);
+  font-size: var(--step-1);
+  line-height: var(--leading-normal);
+}

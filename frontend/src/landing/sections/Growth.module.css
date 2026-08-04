@@ -1,0 +1,20 @@
+.grid {
+  display: grid;
+  gap: clamp(var(--sp-6), 5vw, 72px);
+  align-items: start;
+}
+@media (min-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.close {
+  margin: var(--sp-6) 0 0;
+  max-width: 40ch;
+  font-size: var(--step-1);
+  line-height: var(--leading-normal);
+  color: var(--text-muted);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border);
+}
