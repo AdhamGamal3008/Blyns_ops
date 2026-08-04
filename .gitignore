@@ -17,6 +17,8 @@ dist/
 .env
 .env.local
 .env.production
+.env.demo
+.demo-backend.log
 
 # OS / editor
 .DS_Store
