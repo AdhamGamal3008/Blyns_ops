@@ -1,0 +1,61 @@
+.form {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+@media (min-width: 520px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Honeypot: removed from the visual + a11y tree but still in the DOM for bots. */
+.hp {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--step--1);
+}
+
+.fineprint {
+  margin: 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+
+/* Confirmation state (replaces the form after a successful submit). */
+.done {
+  display: grid;
+  gap: var(--sp-3);
+  place-items: center;
+  text-align: center;
+  padding: var(--sp-8) var(--sp-4);
+}
+.doneTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: var(--step-3);
+  color: var(--ink);
+}
+.doneBody {
+  margin: 0;
+  max-width: 38ch;
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}

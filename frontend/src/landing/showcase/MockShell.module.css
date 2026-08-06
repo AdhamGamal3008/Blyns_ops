@@ -1,0 +1,127 @@
+/* Sized to the fixed design canvas (1160×725) it renders inside; ScreenFrame
+   scales the whole thing down to fit the marketing frame. */
+.shell {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: var(--leading-normal);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  padding: var(--sp-5);
+  background: var(--surface-inverse);
+  color: var(--text-on-inverse);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--oxblood);
+  color: var(--paper);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.brandName {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--paper);
+}
+.brandSub {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.navItem,
+.navItemActive {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  color: color-mix(in srgb, var(--paper) 72%, transparent);
+}
+.navItemActive {
+  background: color-mix(in srgb, var(--paper) 12%, transparent);
+  color: var(--paper);
+}
+
+.user {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--gold-600);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+}
+.userName {
+  color: var(--paper);
+  font-weight: 500;
+}
+.userRole {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  height: 60px;
+  flex: none;
+  padding-inline: var(--sp-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.search {
+  flex: 1;
+  max-width: 340px;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: var(--sp-6);
+  overflow: hidden;
+}

@@ -1,7 +1,8 @@
-// Final CTA — the invitation + the discovery-booking form. The form itself is
-// mounted here in Phase D; Phase B ships the framed slot it will occupy.
+// Final CTA — the invitation + the discovery-booking form (the page's one
+// functional feature).
 
 import shared from "../LandingPage.module.css";
+import { BookingForm } from "./BookingForm";
 import styles from "./FinalCta.module.css";
 
 export function FinalCta() {
@@ -26,7 +27,7 @@ export function FinalCta() {
 
         <div className={styles.formCard}>
           <p className={styles.formTitle}>Book a discovery session</p>
-          <div className={styles.slot}>Request form — Phase D</div>
+          <BookingForm />
         </div>
       </div>
     </section>

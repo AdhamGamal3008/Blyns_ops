@@ -6,6 +6,7 @@ import {
 } from "react-router-dom";
 import { AdminLogin } from "./admin/AdminLogin";
 import { AdminShell } from "./admin/AdminShell";
+import { BookingsPage } from "./admin/BookingsPage";
 import { CompaniesPage } from "./admin/CompaniesPage";
 import { IpRulesPage } from "./admin/IpRulesPage";
 import { PlatformDashboard } from "./admin/PlatformDashboard";
@@ -67,6 +68,7 @@ export function App() {
         >
           <Route index element={<PlatformDashboard />} />
           <Route path="companies" element={<CompaniesPage />} />
+          <Route path="discovery-bookings" element={<BookingsPage />} />
           <Route path="ip-rules" element={<IpRulesPage />} />
         </Route>
 
