@@ -94,3 +94,13 @@
   text-transform: uppercase;
   color: var(--text-muted);
 }
+
+/* Captured product screenshot — fills the frame below the window bar. */
+.shotImg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: cover;
+  object-position: top left;
+  display: block;
+}

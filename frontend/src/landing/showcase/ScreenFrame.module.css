@@ -1,0 +1,37 @@
+.frame {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.bar {
+  display: flex;
+  gap: 6px;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  background: var(--n-200);
+}
+
+.viewport {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+/* Fixed design-size canvas, scaled from the top-left so it fills the viewport. */
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}

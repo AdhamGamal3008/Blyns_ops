@@ -84,6 +84,34 @@ export interface AdminMe {
   role: RoleInfo;
 }
 
+export type DiscoveryBookingStatus = "new" | "contacted" | "scheduled" | "closed";
+
+export interface BookingNote {
+  author_id: string;
+  text: string;
+  at: string;
+}
+
+/** A discovery-session booking from the public landing page. Personal fields are
+ *  present at READ+ and absent when the admin only holds VIEW on `leads`. */
+export interface DiscoveryBooking {
+  id: string;
+  company: string;
+  industry: string;
+  status: DiscoveryBookingStatus;
+  created_at: string;
+  full_name?: string;
+  work_email?: string;
+  phone?: string | null;
+  company_size?: string | null;
+  preferred_at?: string | null;
+  message?: string | null;
+  source?: string;
+  source_ip?: string | null;
+  updated_at?: string;
+  notes?: BookingNote[];
+}
+
 export interface QuickAction {
   key: string;
   label: string;

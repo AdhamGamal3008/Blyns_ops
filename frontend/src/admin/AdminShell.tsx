@@ -1,4 +1,4 @@
-import { Building2, LayoutDashboard, LogOut, ShieldBan } from "lucide-react";
+import { Building2, Inbox, LayoutDashboard, LogOut, ShieldBan } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { adminLogout, adminMe } from "../shared/auth";
@@ -17,6 +17,15 @@ const BASE_NAV: ShellNavItem[] = [
   { key: "companies", label: "Companies", to: "/admin/companies", icon: <Building2 size={20} /> },
 ];
 
+// Discovery-session bookings from the landing page. VIEW (1) is the floor to open
+// the panel (its list is VIEW-gated), so hide it for admins with no `leads` grant.
+const LEADS_NAV: ShellNavItem = {
+  key: "leads",
+  label: "Discovery Sessions",
+  to: "/admin/discovery-bookings",
+  icon: <Inbox size={20} />,
+};
+
 // Level.READ (2) is the floor to open the IP access panel (its list is READ-gated),
 // so hide the nav entry for admins who couldn't use it anyway.
 const IP_RULES_NAV: ShellNavItem = {
@@ -27,8 +36,10 @@ const IP_RULES_NAV: ShellNavItem = {
 };
 
 function navFor(me: AdminMe): ShellNavItem[] {
-  const canSeeIpRules = (me.role.permissions.ip_rules ?? 0) >= 2;
-  return canSeeIpRules ? [...BASE_NAV, IP_RULES_NAV] : BASE_NAV;
+  const nav = [...BASE_NAV];
+  if ((me.role.permissions.leads ?? 0) >= 1) nav.push(LEADS_NAV);
+  if ((me.role.permissions.ip_rules ?? 0) >= 2) nav.push(IP_RULES_NAV);
+  return nav;
 }
 
 export function AdminShell() {
