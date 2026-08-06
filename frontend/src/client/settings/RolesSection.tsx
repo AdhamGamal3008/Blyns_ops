@@ -20,7 +20,7 @@ import {
   Row,
   Stack,
 } from "../../shared/ui";
-import { CLIENT_RESOURCES, LevelChip, RoleMatrix } from "./RoleMatrix";
+import { CLIENT_RESOURCES, LevelChip, resourceLabel, RoleMatrix } from "./RoleMatrix";
 import styles from "./RolesSection.module.css";
 
 interface Role {
@@ -86,7 +86,7 @@ export function RolesSection(props: { canWrite: boolean }) {
               <tr>
                 <th scope="col" className={styles.roleHead}>Role</th>
                 {CLIENT_RESOURCES.map((r) => (
-                  <th key={r} scope="col" className={styles.resHead}>{r}</th>
+                  <th key={r} scope="col" className={styles.resHead}>{resourceLabel(r)}</th>
                 ))}
                 {props.canWrite && (
                   <th scope="col" className={styles.actionHead}>
@@ -106,7 +106,7 @@ export function RolesSection(props: { canWrite: boolean }) {
                   </th>
                   {CLIENT_RESOURCES.map((r) => (
                     // data-label carries the column name into the mobile card layout
-                    <td key={r} className={styles.levelCell} data-label={r}>
+                    <td key={r} className={styles.levelCell} data-label={resourceLabel(r)}>
                       <LevelChip level={role.permissions[r] ?? 0} />
                     </td>
                   ))}
