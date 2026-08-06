@@ -1,0 +1,174 @@
+/* Bell trigger — matches the top bar's other icon buttons (hamburger/palette). */
+.trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.trigger:hover {
+  background: var(--surface-sunken);
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 1px;
+}
+
+/* Unread count, tucked into the bell's top-right. Ringed in the surface color so
+   it reads as a separate chip even against a busy hover state. */
+.count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-on-brand);
+  background: var(--brand-500);
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+}
+
+/* --- panel --- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 300px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--brand-600);
+  background: var(--brand-50);
+  border-radius: 999px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+.item:last-child {
+  border-bottom: none;
+}
+.message {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--step--1);
+  line-height: var(--leading-normal);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto; /* push dismiss to the far edge, opposite the CTA */
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
+}
+.dismiss:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+.dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring-edge);
+  outline-offset: 1px;
+}
+
+/* --- loading + empty --- */
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5) 0;
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-5) var(--sp-3);
+  text-align: center;
+}
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--success);
+  background: var(--success-bg);
+  border-radius: 999px;
+}
+.emptyText {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+
+/* Shell chrome is reached by thumb on a phone, so the bell meets 44px there. */
+@media (pointer: coarse), (max-width: 767px) {
+  .trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

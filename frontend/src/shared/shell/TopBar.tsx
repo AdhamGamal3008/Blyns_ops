@@ -1,4 +1,5 @@
 import { ChevronDown, LogOut, Menu, Search } from "lucide-react";
+import type { ReactNode } from "react";
 import { Avatar } from "../ui/Avatar/Avatar";
 import { Breadcrumb, type BreadcrumbItem } from "../ui/Breadcrumb/Breadcrumb";
 import {
@@ -19,6 +20,10 @@ export interface TopBarProps {
   onSignOut: () => void;
   onOpenPalette: () => void;
   onOpenDrawer: () => void;
+  /** Optional slot in the right cluster, before the user menu — e.g. a
+   *  reminders/notifications bell. Kept as a node so the design-system shell
+   *  stays router- and data-free; the app supplies the live control. */
+  notifications?: ReactNode;
 }
 
 function UserMenu({ user, onSignOut }: { user: ShellUser; onSignOut: () => void }) {
@@ -52,6 +57,7 @@ export function TopBar({
   onSignOut,
   onOpenPalette,
   onOpenDrawer,
+  notifications,
 }: TopBarProps) {
   return (
     <header className={styles.root}>
@@ -83,6 +89,7 @@ export function TopBar({
           <span className={styles.paletteLabel}>Search</span>
           <kbd className={styles.kbd}>⌘K</kbd>
         </button>
+        {notifications}
         <div className={styles.userMenu}>
           <UserMenu user={user} onSignOut={onSignOut} />
         </div>

@@ -17,6 +17,7 @@ import { clientLogout, clientMe } from "../shared/auth";
 import { AppShell, type CommandItem, RouteTransition, type ShellNavItem } from "../shared/shell";
 import type { ClientMe } from "../shared/types";
 import { Spinner } from "../shared/ui/Spinner/Spinner";
+import { RemindersMenu } from "./dashboard/RemindersMenu";
 
 const DASHBOARD: ShellNavItem = {
   key: "dashboard",
@@ -102,6 +103,7 @@ export function ClientShell() {
       breadcrumbs={[{ label: title }]}
       commands={commands}
       mobileTabs={nav.slice(0, 5)}
+      notifications={<RemindersMenu />}
     >
       <RouteTransition context={me} />
     </AppShell>

@@ -20,6 +20,8 @@ export interface AppShellProps {
   commands: CommandItem[];
   /** Bottom tab bar destinations for mobile (client app). */
   mobileTabs?: ShellNavItem[];
+  /** Optional top-bar slot before the user menu (e.g. a reminders bell). */
+  notifications?: ReactNode;
   children: ReactNode;
 }
 
@@ -32,6 +34,7 @@ export function AppShell({
   breadcrumbs,
   commands,
   mobileTabs,
+  notifications,
   children,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -92,6 +95,7 @@ export function AppShell({
           onSignOut={onSignOut}
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenDrawer={() => setDrawerOpen(true)}
+          notifications={notifications}
         />
         <main
           id="main-content"
