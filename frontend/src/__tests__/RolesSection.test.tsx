@@ -3,6 +3,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CLIENT_RESOURCES } from "../client/settings/RoleMatrix";
 import { RoleEditor, RolesSection } from "../client/settings/RolesSection";
 
 const okJson = (body: unknown) =>
@@ -57,8 +58,10 @@ describe("RolesSection", () => {
     const onDone = vi.fn();
     render(<RoleEditor role={null} onDone={onDone} />);
 
-    // 8 client resources × 4 levels of radios
-    expect(document.querySelectorAll('input[type="radio"]').length).toBe(8 * 4);
+    // one 4-way None/View/Read/Write radio group per client resource
+    expect(document.querySelectorAll('input[type="radio"]').length).toBe(
+      CLIENT_RESOURCES.length * 4,
+    );
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Estimator" } });
     // grant crm = Read (level index 2)

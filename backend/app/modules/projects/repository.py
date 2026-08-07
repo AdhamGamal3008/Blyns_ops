@@ -261,3 +261,180 @@ async def job_cost_totals(db: AsyncIOMotorDatabase, project_id: ObjectId) -> flo
     async for doc in db[JOB_COSTS].aggregate(agg):
         return float(doc["total"] or 0)
     return 0.0
+
+
+# --- analytics aggregations (docs/PROJECT_ANALYTICS_PLAN.md §2) ---------------
+# Read-only portfolio rollups. Every pipeline filters soft-deletes via _LIVE.
+# stage_instances carry no is_deleted (never soft-deleted), so _LIVE is a
+# harmless no-op there — but active projects are always _LIVE-filtered first.
+
+# A correlated $lookup that attaches each project's CURRENT stage instance as
+# `cur` (matched on project_id AND stage_order == the project's current order).
+_CURRENT_STAGE_LOOKUP: list[dict] = [
+    {"$lookup": {
+        "from": STAGE_INSTANCES,
+        "let": {"pid": "$_id", "ord": "$current_stage_order"},
+        "pipeline": [{"$match": {"$expr": {"$and": [
+            {"$eq": ["$project_id", "$$pid"]},
+            {"$eq": ["$stage_order", "$$ord"]},
+        ]}}}],
+        "as": "cur",
+    }},
+    {"$unwind": {"path": "$cur", "preserveNullAndEmptyArrays": True}},
+]
+
+
+async def analytics_status_counts(db: AsyncIOMotorDatabase) -> dict[str, int]:
+    agg: list[dict] = [
+        {"$match": _LIVE}, {"$group": {"_id": "$status", "n": {"$sum": 1}}},
+    ]
+    return {d["_id"]: int(d["n"]) async for d in db[PROJECTS].aggregate(agg)}
+
+
+async def analytics_stalled_count(
+    db: AsyncIOMotorDatabase, stalled: list[str], terminal: list[str]
+) -> int:
+    """Non-terminal projects that are `on_hold`, or whose current stage sits in a
+    stalled state (waiting/blocked/on_hold)."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "status": {"$nin": terminal}}},
+        *_CURRENT_STAGE_LOOKUP,
+        {"$match": {"$or": [
+            {"status": "on_hold"},
+            {"cur.status": {"$in": stalled}},
+        ]}},
+        {"$count": "n"},
+    ]
+    async for d in db[PROJECTS].aggregate(agg):
+        return int(d["n"])
+    return 0
+
+
+async def analytics_overdue_count(
+    db: AsyncIOMotorDatabase, now: datetime, exclude_statuses: list[str]
+) -> int:
+    return await db[PROJECTS].count_documents({
+        **_LIVE,
+        "status": {"$nin": exclude_statuses},
+        "schedule.delivery_date": {"$lt": now},
+    })
+
+
+async def analytics_open_report_count(
+    db: AsyncIOMotorDatabase, statuses: list[str]
+) -> int:
+    return await db[REPORTS].count_documents({**_LIVE, "status": {"$in": statuses}})
+
+
+async def analytics_budget_totals(db: AsyncIOMotorDatabase) -> dict[str, float]:
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$group": {
+            "_id": None,
+            "planned": {"$sum": "$budget.planned"},
+            "committed": {"$sum": "$budget.committed"},
+            "actual": {"$sum": "$budget.actual"},
+        }},
+    ]
+    async for d in db[PROJECTS].aggregate(agg):
+        return {k: float(d.get(k) or 0) for k in ("planned", "committed", "actual")}
+    return {"planned": 0.0, "committed": 0.0, "actual": 0.0}
+
+
+async def analytics_active_by_stage(db: AsyncIOMotorDatabase) -> dict[int, int]:
+    """Active project count keyed by current_stage_order."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "status": "active"}},
+        {"$group": {"_id": "$current_stage_order", "n": {"$sum": 1}}},
+    ]
+    return {
+        int(d["_id"]): int(d["n"])
+        async for d in db[PROJECTS].aggregate(agg) if d["_id"] is not None
+    }
+
+
+async def analytics_time_in_current_stage(
+    db: AsyncIOMotorDatabase, now: datetime
+) -> dict[int, dict]:
+    """Per current-stage-order: avg days active projects have sat in that stage
+    (now − entered_at) and how many. Keyed by stage_order."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "status": "active"}},
+        *_CURRENT_STAGE_LOOKUP,
+        {"$match": {"cur": {"$exists": True}}},
+        {"$group": {
+            "_id": "$cur.stage_order",
+            "avg_ms": {"$avg": {"$subtract": [now, "$cur.entered_at"]}},
+            "count": {"$sum": 1},
+        }},
+    ]
+    return {
+        int(d["_id"]): {
+            "avg_days": round(float(d["avg_ms"] or 0) / 86_400_000, 1),
+            "count": int(d["count"]),
+        }
+        async for d in db[PROJECTS].aggregate(agg) if d["_id"] is not None
+    }
+
+
+async def analytics_top_projects(
+    db: AsyncIOMotorDatabase, limit: int
+) -> list[dict]:
+    """Largest projects by planned budget — the ones where planned-vs-actual
+    adherence matters most."""
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$project": {
+            "_id": 0, "code": 1, "name": 1,
+            "planned": {"$ifNull": ["$budget.planned", 0]},
+            "actual": {"$ifNull": ["$budget.actual", 0]},
+        }},
+        {"$sort": {"planned": -1, "actual": -1}},
+        {"$limit": limit},
+    ]
+    return [d async for d in db[PROJECTS].aggregate(agg)]
+
+
+async def analytics_cost_by_type(db: AsyncIOMotorDatabase) -> dict[str, float]:
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$group": {"_id": "$cost_type", "amount": {"$sum": "$amount"}}},
+    ]
+    return {
+        d["_id"]: float(d["amount"] or 0)
+        async for d in db[JOB_COSTS].aggregate(agg) if d["_id"]
+    }
+
+
+async def analytics_exceptions_by_type_status(
+    db: AsyncIOMotorDatabase, statuses: list[str]
+) -> list[dict]:
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "status": {"$in": statuses}}},
+        {"$group": {
+            "_id": {"type": "$type", "status": "$status"}, "n": {"$sum": 1},
+        }},
+    ]
+    return [
+        {"type": d["_id"]["type"], "status": d["_id"]["status"], "n": int(d["n"])}
+        async for d in db[REPORTS].aggregate(agg)
+    ]
+
+
+async def analytics_monthly_counts(
+    db: AsyncIOMotorDatabase, date_field: str, since: datetime
+) -> dict[str, int]:
+    """Project counts bucketed by 'YYYY-MM' of `date_field` (created_at for
+    started, completed_at for completed), from `since` onward. Docs where the
+    field is null (e.g. not-yet-completed) drop out at the range match."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, date_field: {"$gte": since}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m", "date": f"${date_field}"}},
+            "n": {"$sum": 1},
+        }},
+    ]
+    return {
+        d["_id"]: int(d["n"])
+        async for d in db[PROJECTS].aggregate(agg) if d["_id"]
+    }

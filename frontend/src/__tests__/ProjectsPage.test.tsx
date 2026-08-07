@@ -21,22 +21,35 @@ const PROJECTS = {
   ],
 };
 
-function me(level: number): ClientMe {
+function me(level: number, analytics = 0): ClientMe {
   return {
     id: "u1", email: "o@acme.com", name: "Owner", must_reset_password: false,
     company: { slug: "acme", name: "Acme", enabled_modules: ["projects"] },
-    role: { id: "r1", name: "Owner", permissions: { projects: level } as never },
+    role: {
+      id: "r1", name: "Owner",
+      permissions: { projects: level, projects_analytics: analytics } as never,
+    },
   };
 }
 
 // the machine's length drives the "X/N" denominator — nine stages in v2.0
 const STAGES = { data: Array.from({ length: 9 }, (_, i) => ({ order: i + 1 })) };
 
+const ANALYTICS = {
+  data: {
+    kpis: {
+      active: 1, on_hold_blocked: 0, overdue: 0, open_exceptions: 0,
+      budget: { planned: 0, actual: 0, committed: 0, variance: 0, variance_pct: null },
+    },
+  },
+};
+
 function stubFetch() {
   const mock = vi.fn(async (url: string, _init?: RequestInit) => {
     const u = String(url);
     if (u.includes("/crm/accounts")) return okJson({ data: [] });
     if (u.includes("/projects/config/stages")) return okJson(STAGES);
+    if (u.includes("/projects/analytics")) return okJson(ANALYTICS);
     if (u.includes("/projects")) return okJson(PROJECTS);
     return okJson({ data: {} });
   });
@@ -44,11 +57,11 @@ function stubFetch() {
   return mock;
 }
 
-function renderPage(level: number) {
+function renderPage(level: number, analytics = 0) {
   return render(
     <MemoryRouter initialEntries={["/app/projects"]}>
       <Routes>
-        <Route element={<Provider level={level} />}>
+        <Route element={<Provider level={level} analytics={analytics} />}>
           <Route path="/app/projects" element={<ProjectsPage />} />
           <Route path="/app/projects/:id" element={<div>detail page</div>} />
         </Route>
@@ -56,8 +69,8 @@ function renderPage(level: number) {
     </MemoryRouter>,
   );
 }
-function Provider(props: { level: number }) {
-  return <Outlet context={me(props.level)} />;
+function Provider(props: { level: number; analytics: number }) {
+  return <Outlet context={me(props.level, props.analytics)} />;
 }
 
 const postCall = (mock: ReturnType<typeof stubFetch>) =>
@@ -77,6 +90,24 @@ describe("ProjectsPage", () => {
       expect(screen.getByText("Tower A Lobby Cladding")).toBeInTheDocument());
     expect(screen.getByText("PRJ-0001")).toBeInTheDocument();
     expect(screen.getByText(/3\/9 · Site survey/)).toBeInTheDocument();
+  });
+
+  it("shows an Analytics tab only when the role has analytics access", async () => {
+    stubFetch();
+    renderPage(3, 1); // projects WRITE + projects_analytics VIEW
+    await waitFor(() =>
+      expect(screen.getByText("Tower A Lobby Cladding")).toBeInTheDocument());
+    expect(screen.getByRole("tab", { name: "Portfolio" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Analytics" })).toBeInTheDocument();
+  });
+
+  it("hides the Analytics tab (no tabs at all) without analytics access", async () => {
+    stubFetch();
+    renderPage(3, 0);
+    await waitFor(() =>
+      expect(screen.getByText("Tower A Lobby Cladding")).toBeInTheDocument());
+    expect(screen.queryByRole("tab", { name: "Analytics" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Portfolio" })).not.toBeInTheDocument();
   });
 
   it("lets a WRITE user create a project", async () => {

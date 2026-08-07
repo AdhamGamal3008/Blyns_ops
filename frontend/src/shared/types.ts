@@ -122,6 +122,50 @@ export interface KpiSet {
   unpaid_invoices_total?: number;
 }
 
+// --- Projects Analytics (docs/PROJECT_ANALYTICS_PLAN.md) ---------------------
+// Role-tiered: the KPI row is always present; the chart blocks are present only
+// when the caller has READ on `projects_analytics` (absent, never null).
+
+export interface AnalyticsBudget {
+  planned: number;
+  actual: number;
+  committed: number;
+  variance: number;
+  variance_pct: number | null;
+}
+
+export interface AnalyticsKpis {
+  active: number;
+  on_hold_blocked: number;
+  overdue: number;
+  open_exceptions: number;
+  budget: AnalyticsBudget;
+}
+
+export interface StageCount { order: number; key: string; label: string; count: number }
+export interface StageTime {
+  order: number; key: string; label: string; avg_days: number; count: number;
+}
+export interface TopProject { code: string; name: string; planned: number; actual: number }
+export interface CostByType { cost_type: string; amount: number }
+export interface ExceptionRow {
+  type: string; open: number; in_progress: number; total: number;
+}
+export interface ThroughputPoint { month: string; started: number; completed: number }
+
+export interface ProjectAnalytics {
+  kpis: AnalyticsKpis;
+  by_stage?: StageCount[];
+  time_in_stage?: StageTime[];
+  budget?: {
+    portfolio: { planned: number; actual: number; committed: number };
+    top_projects: TopProject[];
+    cost_by_type: CostByType[];
+  };
+  exceptions?: ExceptionRow[];
+  throughput?: ThroughputPoint[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

@@ -21,13 +21,21 @@ import {
   Input,
   Select,
   Stack,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "../../shared/ui";
+import { ProjectsAnalytics } from "./ProjectsAnalytics";
 import { PROJECT_TONE, humanize, money, type Project } from "./types";
 
 export function ProjectsPage() {
   const me = useOutletContext<ClientMe>();
   const navigate = useNavigate();
   const canWrite = (me.role.permissions["projects"] ?? 0) >= 3;
+  // The Analytics tab appears only for roles granted the separate analytics
+  // resource (VIEW+); everyone else sees the portfolio exactly as before.
+  const canAnalytics = (me.role.permissions["projects_analytics"] ?? 0) >= 1;
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [stageCount, setStageCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -91,25 +99,8 @@ export function ProjectsPage() {
     },
   ];
 
-  return (
+  const portfolio = (
     <Stack>
-      <PageHeader
-        title="Projects"
-        description={
-          projects
-            ? `${projects.length} project${projects.length === 1 ? "" : "s"} in the stage-gate pipeline`
-            : "Portfolio of stage-gate projects"
-        }
-        actions={
-          canWrite && (
-            <Button onClick={() => setCreating(true)}>
-              <Plus size={16} aria-hidden="true" />
-              New project
-            </Button>
-          )
-        }
-      />
-
       {error != null && projects != null && (
         <Banner tone="danger" title="Could not refresh projects">
           {errorText(error)}
@@ -142,6 +133,42 @@ export function ProjectsPage() {
           onRowClick={(p) => navigate(`/app/projects/${p.id}`)}
         />
       </DataState>
+    </Stack>
+  );
+
+  return (
+    <Stack>
+      <PageHeader
+        title="Projects"
+        description={
+          projects
+            ? `${projects.length} project${projects.length === 1 ? "" : "s"} in the stage-gate pipeline`
+            : "Portfolio of stage-gate projects"
+        }
+        actions={
+          canWrite && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus size={16} aria-hidden="true" />
+              New project
+            </Button>
+          )
+        }
+      />
+
+      {canAnalytics ? (
+        <Tabs defaultValue="portfolio">
+          <TabsList>
+            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          </TabsList>
+          <TabsContent value="portfolio">{portfolio}</TabsContent>
+          <TabsContent value="analytics">
+            <ProjectsAnalytics />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        portfolio
+      )}
 
       <ProjectModal
         open={creating}
