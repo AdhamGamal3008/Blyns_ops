@@ -11,7 +11,8 @@ import styles from "./RoleMatrix.module.css";
 export const CLIENT_RESOURCES = [
   "dashboard", "calendar", "activity",
   "projects", "projects_analytics",
-  "crm", "inventory", "finance", "settings",
+  "crm", "crm_analytics",
+  "inventory", "finance", "settings",
 ];
 
 export const LEVELS = ["None", "View", "Read", "Write"];

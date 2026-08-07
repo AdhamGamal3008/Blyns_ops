@@ -380,18 +380,19 @@ async def test_csv_grants_are_validated(client_client):
 # READ = KPIs + all charts, NONE = no Analytics tab.
 
 
-async def test_new_tenant_seeds_projects_analytics_tiers(onboarded_company):
-    """Fresh provisioning grants analytics as management-only by default:
+async def test_new_tenant_seeds_analytics_tiers(onboarded_company):
+    """Every *_analytics resource seeds management-only by default:
     Owner WRITE, Manager READ, Member NONE, Viewer NONE."""
     tenant_db = get_db_manager().tenant(onboarded_company["company"]["db_name"])
-    levels = {
-        role["name"]: role["permissions"].get("projects_analytics")
+    roles = {
+        role["name"]: role["permissions"]
         for role in await tenant_db.roles.find({}).to_list(None)
     }
-    assert levels["Owner"] == 3    # WRITE (via all-resources map; sees everything)
-    assert levels["Manager"] == 2  # READ  → KPIs + all charts
-    assert levels["Member"] == 0   # NONE  → no Analytics tab
-    assert levels["Viewer"] == 0   # NONE  → no Analytics tab
+    for res in ("projects_analytics", "crm_analytics"):
+        assert roles["Owner"].get(res) == 3, res    # WRITE (all-resources map)
+        assert roles["Manager"].get(res) == 2, res   # READ → KPIs + charts
+        assert roles["Member"].get(res) == 0, res    # NONE → no Analytics tab
+        assert roles["Viewer"].get(res) == 0, res    # NONE → no Analytics tab
 
 
 async def test_seed_backfills_projects_analytics_into_tenant_roles(onboarded_company):

@@ -139,3 +139,86 @@ async def open_deal_value(db: AsyncIOMotorDatabase) -> float:
 
 async def count_by(db: AsyncIOMotorDatabase, coll: str, query: dict) -> int:
     return await db[coll].count_documents({**query, **_LIVE})
+
+
+# --- analytics aggregations (docs/PROJECT_ANALYTICS_PLAN.md §6-D, CRM) --------
+# Read-only rollups; every pipeline filters soft-deletes.
+
+async def analytics_deal_stage(db: AsyncIOMotorDatabase) -> dict[str, dict]:
+    """Deals grouped by stage → {stage: {count, amount}} (all six stages)."""
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$group": {"_id": "$stage", "count": {"$sum": 1}, "amount": {"$sum": "$amount"}}},
+    ]
+    return {
+        d["_id"]: {"count": int(d["count"]), "amount": float(d["amount"] or 0)}
+        async for d in db[DEALS].aggregate(agg) if d["_id"]
+    }
+
+
+async def analytics_weighted_pipeline(
+    db: AsyncIOMotorDatabase, open_stages: list[str]
+) -> float:
+    """Σ amount × probability for open deals — the probability-weighted forecast."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "stage": {"$in": open_stages}}},
+        {"$group": {"_id": None, "w": {"$sum": {"$multiply": [
+            {"$ifNull": ["$amount", 0]},
+            {"$divide": [{"$ifNull": ["$probability_pct", 0]}, 100]},
+        ]}}}},
+    ]
+    async for d in db[DEALS].aggregate(agg):
+        return float(d["w"] or 0)
+    return 0.0
+
+
+async def analytics_status_counts(
+    db: AsyncIOMotorDatabase, coll: str
+) -> dict[str, int]:
+    """Docs grouped by `status` (leads or accounts) → {status: count}."""
+    agg: list[dict] = [{"$match": _LIVE}, {"$group": {"_id": "$status", "n": {"$sum": 1}}}]
+    return {d["_id"]: int(d["n"]) async for d in db[coll].aggregate(agg) if d["_id"]}
+
+
+async def analytics_lead_sources(
+    db: AsyncIOMotorDatabase, limit: int
+) -> list[dict]:
+    """Leads grouped by source (biggest first); a missing source folds to Unknown."""
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$group": {"_id": {"$ifNull": ["$source", "Unknown"]}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1, "_id": 1}},
+        {"$limit": limit},
+    ]
+    return [
+        {"source": d["_id"] or "Unknown", "count": int(d["n"])}
+        async for d in db[LEADS].aggregate(agg)
+    ]
+
+
+async def analytics_top_open_deals(
+    db: AsyncIOMotorDatabase, open_stages: list[str], limit: int
+) -> list[dict]:
+    """Largest open opportunities by amount."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "stage": {"$in": open_stages}}},
+        {"$project": {"_id": 0, "title": 1, "stage": 1,
+                      "amount": {"$ifNull": ["$amount", 0]}}},
+        {"$sort": {"amount": -1}},
+        {"$limit": limit},
+    ]
+    return [d async for d in db[DEALS].aggregate(agg)]
+
+
+async def analytics_monthly_new(
+    db: AsyncIOMotorDatabase, coll: str, since: datetime
+) -> dict[str, int]:
+    """New docs in `coll` bucketed by 'YYYY-MM' of created_at, from `since` on."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "created_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m", "date": "$created_at"}},
+            "n": {"$sum": 1},
+        }},
+    ]
+    return {d["_id"]: int(d["n"]) async for d in db[coll].aggregate(agg) if d["_id"]}

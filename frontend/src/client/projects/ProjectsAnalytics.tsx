@@ -6,66 +6,14 @@
 // carries data). That means this component never needs to know the caller's level.
 
 import { AlarmClock, FileWarning, FolderKanban, PauseCircle, Wallet } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../shared/api";
 import type { ProjectAnalytics } from "../../shared/types";
+import { BarChart, DataState, Grid, KpiCard, Stack, TrendChart } from "../../shared/ui";
 import {
-  BarChart,
-  Card,
-  CardHeader,
-  DataState,
-  Grid,
-  KpiCard,
-  Stack,
-  TrendChart,
-} from "../../shared/ui";
-import styles from "./ProjectsAnalytics.module.css";
-import { humanize, money } from "./types";
-
-// Brand chart palette (see shared/ui/Chart): oxblood leads, gold is the highlight,
-// info/success round it out. Assigned to entities in a fixed order, never cycled.
-const INK = "var(--oxblood)";
-const GOLD = "var(--gold-600)";
-const INFO = "var(--info)";
-const GOOD = "var(--success)";
-
-const int = (n: number) => n.toLocaleString();
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-/** Compact currency for chart axes ($1.2k); full `money()` for tiles/tooltips. */
-const moneyShort = (n: number) =>
-  Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(Math.abs(n) % 1000 ? 1 : 0)}k` : `$${Math.round(n)}`;
-
-// Chart data is a bag of keyed numbers/strings; our typed rows satisfy that shape.
-type Rows = Array<Record<string, string | number>>;
-const rows = (x: readonly object[]) => x as unknown as Rows;
-
-function Legend({ items }: { items: { label: string; color: string }[] }) {
-  return (
-    <ul className={styles.legend}>
-      {items.map((it) => (
-        <li key={it.label}>
-          <span className={styles.swatch} style={{ background: it.color }} aria-hidden="true" />
-          {it.label}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ChartCard(props: {
-  title: string;
-  description?: string;
-  legend?: { label: string; color: string }[];
-  children: ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader title={props.title} description={props.description} />
-      {props.legend && <Legend items={props.legend} />}
-      {props.children}
-    </Card>
-  );
-}
+  ChartCard, GOLD, GOOD, INFO, INK, int, money, moneyShort, rows, sum,
+} from "../analytics/parts";
+import { humanize } from "./types";
 
 function budgetHint(b: ProjectAnalytics["kpis"]["budget"]): string {
   const side = b.variance <= 0 ? "under" : "over";

@@ -166,6 +166,32 @@ export interface ProjectAnalytics {
   throughput?: ThroughputPoint[];
 }
 
+// --- CRM Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) ---------------------
+
+export interface CrmKpis {
+  open_deals: number;
+  pipeline_value: number;
+  pipeline_weighted: number;
+  win_rate: number | null;
+  open_leads: number;
+  customers: number;
+}
+
+export interface CrmStageRow { stage: string; label: string; count: number; amount: number }
+export interface CrmLeadStatusRow { status: string; label: string; count: number }
+export interface CrmLeadSourceRow { source: string; count: number }
+export interface CrmTopDeal { title: string; amount: number; stage: string }
+export interface CrmInflowPoint { month: string; leads: number; deals: number }
+
+export interface CrmAnalytics {
+  kpis: CrmKpis;
+  pipeline_by_stage?: CrmStageRow[];
+  lead_status?: CrmLeadStatusRow[];
+  lead_sources?: CrmLeadSourceRow[];
+  top_deals?: CrmTopDeal[];
+  inflow?: CrmInflowPoint[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

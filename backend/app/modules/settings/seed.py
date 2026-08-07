@@ -25,7 +25,8 @@ from app.shared.enums import Level
 CLIENT_RESOURCES = [
     "dashboard", "calendar", "activity",
     "projects", "projects_analytics",
-    "crm", "inventory", "finance", "settings",
+    "crm", "crm_analytics",
+    "inventory", "finance", "settings",
 ]
 
 
@@ -60,6 +61,7 @@ def default_roles() -> list[dict]:
             "finance": r,                              # READ finance
             "settings": r,
             "projects_analytics": r,                   # full analytics oversight
+            "crm_analytics": r,
         }),
         _role("Member", {
             "dashboard": r, "calendar": r, "activity": r,
