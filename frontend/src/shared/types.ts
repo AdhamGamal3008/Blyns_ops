@@ -192,6 +192,31 @@ export interface CrmAnalytics {
   inflow?: CrmInflowPoint[];
 }
 
+// --- Inventory Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) ---------------
+
+export interface InventoryKpis {
+  active_skus: number;
+  stock_value: number;
+  low_stock: number;
+  out_of_stock: number;
+  categories: number;
+}
+
+export interface InvCategoryValue { category: string; value: number }
+export interface InvLowStockItem { sku: string; name: string; on_hand: number; reorder: number }
+export interface InvTopProduct { sku: string; name: string; value: number }
+export interface InvMovementPoint { month: string; received: number; issued: number }
+export interface InvStatusRow { status: string; count: number }
+
+export interface InventoryAnalytics {
+  kpis: InventoryKpis;
+  value_by_category?: InvCategoryValue[];
+  low_stock_items?: InvLowStockItem[];
+  top_products?: InvTopProduct[];
+  movements?: InvMovementPoint[];
+  stock_status?: InvStatusRow[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

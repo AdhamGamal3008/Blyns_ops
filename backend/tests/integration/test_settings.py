@@ -388,7 +388,7 @@ async def test_new_tenant_seeds_analytics_tiers(onboarded_company):
         role["name"]: role["permissions"]
         for role in await tenant_db.roles.find({}).to_list(None)
     }
-    for res in ("projects_analytics", "crm_analytics"):
+    for res in ("projects_analytics", "crm_analytics", "inventory_analytics"):
         assert roles["Owner"].get(res) == 3, res    # WRITE (all-resources map)
         assert roles["Manager"].get(res) == 2, res   # READ → KPIs + charts
         assert roles["Member"].get(res) == 0, res    # NONE → no Analytics tab

@@ -12,7 +12,8 @@ export const CLIENT_RESOURCES = [
   "dashboard", "calendar", "activity",
   "projects", "projects_analytics",
   "crm", "crm_analytics",
-  "inventory", "finance", "settings",
+  "inventory", "inventory_analytics",
+  "finance", "settings",
 ];
 
 export const LEVELS = ["None", "View", "Read", "Write"];
