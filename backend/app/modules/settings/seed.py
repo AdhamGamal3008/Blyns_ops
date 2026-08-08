@@ -27,7 +27,8 @@ CLIENT_RESOURCES = [
     "projects", "projects_analytics",
     "crm", "crm_analytics",
     "inventory", "inventory_analytics",
-    "finance", "settings",
+    "finance", "finance_analytics",
+    "settings",
 ]
 
 
@@ -64,6 +65,7 @@ def default_roles() -> list[dict]:
             "projects_analytics": r,                   # full analytics oversight
             "crm_analytics": r,
             "inventory_analytics": r,
+            "finance_analytics": r,
         }),
         _role("Member", {
             "dashboard": r, "calendar": r, "activity": r,

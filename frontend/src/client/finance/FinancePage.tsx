@@ -9,6 +9,7 @@ import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 import { BillsSection } from "./BillsSection";
 import { ChartSection } from "./ChartSection";
+import { FinanceAnalytics } from "./FinanceAnalytics";
 import { InvoicesSection } from "./InvoicesSection";
 import { ReportsSection } from "./ReportsSection";
 
@@ -16,6 +17,7 @@ export function FinancePage() {
   const me = useOutletContext<ClientMe>();
   const { pathname } = useLocation();
   const canWrite = (me.role.permissions["finance"] ?? 0) >= 3;
+  const canAnalytics = (me.role.permissions["finance_analytics"] ?? 0) >= 1;
   const csv = (entity: string) => csvGrants(me, "finance", entity);
 
   // Dashboard quick actions deep-link to /app/finance/<section>[/new]: pick the
@@ -38,6 +40,7 @@ export function FinancePage() {
           <TabsTrigger value="bills">Bills</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="chart">Chart of accounts</TabsTrigger>
+          {canAnalytics && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="invoices">
@@ -52,6 +55,9 @@ export function FinancePage() {
         <TabsContent value="chart">
           <ChartSection canWrite={canWrite} csv={csv("accounts")} />
         </TabsContent>
+        {canAnalytics && (
+          <TabsContent value="analytics"><FinanceAnalytics /></TabsContent>
+        )}
       </Tabs>
     </Stack>
   );

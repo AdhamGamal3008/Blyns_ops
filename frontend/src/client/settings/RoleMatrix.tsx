@@ -13,7 +13,8 @@ export const CLIENT_RESOURCES = [
   "projects", "projects_analytics",
   "crm", "crm_analytics",
   "inventory", "inventory_analytics",
-  "finance", "settings",
+  "finance", "finance_analytics",
+  "settings",
 ];
 
 export const LEVELS = ["None", "View", "Read", "Write"];

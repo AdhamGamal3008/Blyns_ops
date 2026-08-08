@@ -139,3 +139,38 @@ async def entries_for_doc(db: AsyncIOMotorDatabase, doc_id: str) -> list[dict]:
         d async for d in db[JOURNAL].find({"source.doc_id": doc_id, **_LIVE})
         .sort([("created_at", 1)])
     ]
+
+
+# --- analytics aggregations (docs/PROJECT_ANALYTICS_PLAN.md §6-D, Finance) ----
+# Read-only rollups over invoices/bills. AR/AP outstanding + aging reuse
+# aging_rows (open docs with a positive outstanding balance).
+
+async def analytics_status_totals(
+    db: AsyncIOMotorDatabase, coll: str
+) -> dict[str, dict]:
+    """Invoices or bills grouped by status → {status: {count, total}}."""
+    agg: list[dict] = [
+        {"$match": _LIVE},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}, "total": {"$sum": "$total"}}},
+    ]
+    return {
+        d["_id"]: {"count": int(d["count"]), "total": float(d["total"] or 0)}
+        async for d in db[coll].aggregate(agg) if d["_id"]
+    }
+
+
+async def analytics_monthly_totals(
+    db: AsyncIOMotorDatabase, coll: str, statuses: list[str], since: datetime
+) -> dict[str, float]:
+    """Σ total per 'YYYY-MM' of issue_date, over the given statuses, from `since`."""
+    agg: list[dict] = [
+        {"$match": {**_LIVE, "status": {"$in": statuses}, "issue_date": {"$gte": since}}},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m", "date": "$issue_date"}},
+            "total": {"$sum": "$total"},
+        }},
+    ]
+    return {
+        d["_id"]: float(d["total"] or 0)
+        async for d in db[coll].aggregate(agg) if d["_id"]
+    }

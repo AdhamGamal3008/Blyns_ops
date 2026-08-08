@@ -217,6 +217,30 @@ export interface InventoryAnalytics {
   stock_status?: InvStatusRow[];
 }
 
+// --- Finance Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) -----------------
+
+export interface FinanceKpis {
+  revenue: number;
+  expenses: number;
+  ar_outstanding: number;
+  ap_outstanding: number;
+  overdue_ar: number;
+}
+
+export interface FinStatusRow { status: string; amount: number; count: number }
+export interface FinAgingRow { bucket: string; amount: number }
+export interface FinOverdueRow { number: string; outstanding: number; days: number }
+export interface FinCashflowPoint { month: string; revenue: number; expenses: number }
+
+export interface FinanceAnalytics {
+  kpis: FinanceKpis;
+  invoices_by_status?: FinStatusRow[];
+  bills_by_status?: FinStatusRow[];
+  ar_aging?: FinAgingRow[];
+  top_overdue?: FinOverdueRow[];
+  cashflow?: FinCashflowPoint[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

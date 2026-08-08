@@ -13,7 +13,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from app.modules.finance import service
+from app.modules.finance import analytics, service
 from app.modules.finance.csv_schema import ENTITIES as CSV_ENTITIES
 from app.modules.finance.models import (
     AccountCreate,
@@ -35,6 +35,16 @@ router = APIRouter(prefix="/api/v1/finance", tags=["client-finance"])
 
 _read = require("finance", Level.READ)
 _write = require("finance", Level.WRITE)
+# Analytics is a separate resource (management-only by default): VIEW = KPI row,
+# READ = KPIs + charts. The service tiers the body; the guard is the floor.
+_analytics = require("finance_analytics", Level.VIEW)
+
+
+# --- analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) -------------------------
+
+@router.get("/analytics")
+async def analytics_overview(principal: ClientPrincipal = Depends(_analytics)):
+    return envelope(to_api(await analytics.overview(principal)))
 
 
 # --- chart of accounts -------------------------------------------------------
