@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.modules.inventory import service
+from app.modules.inventory import analytics, service
 from app.modules.inventory.csv_schema import ENTITIES as CSV_ENTITIES
 from app.modules.inventory.models import (
     MovementCreate,
@@ -28,6 +28,16 @@ router = APIRouter(prefix="/api/v1/inventory", tags=["client-inventory"])
 
 _read = require("inventory", Level.READ)
 _write = require("inventory", Level.WRITE)
+# Analytics is a separate resource (management-only by default): VIEW = KPI row,
+# READ = KPIs + charts. The service tiers the body; the guard is the floor.
+_analytics = require("inventory_analytics", Level.VIEW)
+
+
+# --- analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) -------------------------
+
+@router.get("/analytics")
+async def analytics_overview(principal: ClientPrincipal = Depends(_analytics)):
+    return envelope(to_api(await analytics.overview(principal)))
 
 
 # --- products ----------------------------------------------------------------

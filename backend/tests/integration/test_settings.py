@@ -372,3 +372,46 @@ async def test_csv_grants_are_validated(client_client):
         "csv_access": {"export": ["inventory:stock-levels"]},
     })
     assert res.status_code == 201, res.text
+
+
+# --- Analytics RBAC (docs/PROJECT_ANALYTICS_PLAN.md §3, Phase A) ---------------
+# `projects_analytics` is a dedicated client resource so analytics can be granted
+# without granting the project data itself, in two tiers: VIEW = headline KPI row,
+# READ = KPIs + all charts, NONE = no Analytics tab.
+
+
+async def test_new_tenant_seeds_analytics_tiers(onboarded_company):
+    """Every *_analytics resource seeds management-only by default:
+    Owner WRITE, Manager READ, Member NONE, Viewer NONE."""
+    tenant_db = get_db_manager().tenant(onboarded_company["company"]["db_name"])
+    roles = {
+        role["name"]: role["permissions"]
+        for role in await tenant_db.roles.find({}).to_list(None)
+    }
+    for res in ("projects_analytics", "crm_analytics", "inventory_analytics",
+                "finance_analytics"):
+        assert roles["Owner"].get(res) == 3, res    # WRITE (all-resources map)
+        assert roles["Manager"].get(res) == 2, res   # READ → KPIs + charts
+        assert roles["Member"].get(res) == 0, res    # NONE → no Analytics tab
+        assert roles["Viewer"].get(res) == 0, res    # NONE → no Analytics tab
+
+
+async def test_seed_backfills_projects_analytics_into_tenant_roles(onboarded_company):
+    """A CLIENT_RESOURCE added after a tenant was provisioned is backfilled to each
+    system role's default level on re-seed, without clobbering a tenant's edited
+    levels (mirrors the admin-side fix in commit 494abb0)."""
+    from app.modules.settings.seed import seed_default_roles
+
+    tenant_db = get_db_manager().tenant(onboarded_company["company"]["db_name"])
+    # Simulate a Manager seeded before `projects_analytics` existed, with one edit.
+    await tenant_db.roles.update_one(
+        {"name": "Manager"},
+        {"$unset": {"permissions.projects_analytics": ""},
+         "$set": {"permissions.finance": 3}},  # operator raised finance to WRITE
+    )
+
+    await seed_default_roles(tenant_db)
+
+    manager = await tenant_db.roles.find_one({"name": "Manager"})
+    assert manager["permissions"]["projects_analytics"] == 2  # backfilled to READ
+    assert manager["permissions"]["finance"] == 3             # edit preserved

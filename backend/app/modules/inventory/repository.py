@@ -182,6 +182,113 @@ async def count_by(db: AsyncIOMotorDatabase, coll: str, query: dict) -> int:
     return await db[coll].count_documents({**query, **_LIVE})
 
 
+# --- analytics aggregations (docs/PROJECT_ANALYTICS_PLAN.md §6-D, Inventory) --
+# Read-only rollups. Stock lines join products for cost/category/reorder; only
+# active, live products count toward valuation and status.
+
+# stock_levels → product, valued at on_hand × cost_price.
+_VALUED_STOCK: list[dict] = [
+    {"$lookup": {"from": PRODUCTS, "localField": "product_id",
+                 "foreignField": "_id", "as": "product"}},
+    {"$unwind": "$product"},
+    {"$match": {"product.is_active": True, "product.is_deleted": {"$ne": True}}},
+    {"$addFields": {"value": {"$multiply": [
+        {"$ifNull": ["$on_hand", 0]}, {"$ifNull": ["$product.cost_price", 0]},
+    ]}}},
+]
+
+
+async def analytics_value_by_category(db: AsyncIOMotorDatabase) -> list[dict]:
+    agg: list[dict] = [
+        *_VALUED_STOCK,
+        {"$group": {"_id": {"$ifNull": ["$product.category", "Uncategorized"]},
+                    "value": {"$sum": "$value"}}},
+        {"$sort": {"value": -1}},
+    ]
+    return [
+        {"category": d["_id"] or "Uncategorized", "value": float(d["value"] or 0)}
+        async for d in db[STOCK_LEVELS].aggregate(agg)
+    ]
+
+
+async def analytics_top_products_by_value(
+    db: AsyncIOMotorDatabase, limit: int
+) -> list[dict]:
+    agg: list[dict] = [
+        *_VALUED_STOCK,
+        {"$group": {"_id": "$product_id",
+                    "sku": {"$first": "$product.sku"},
+                    "name": {"$first": "$product.name"},
+                    "value": {"$sum": "$value"}}},
+        {"$sort": {"value": -1}},
+        {"$limit": limit},
+    ]
+    return [
+        {"sku": d["sku"], "name": d["name"], "value": float(d["value"] or 0)}
+        async for d in db[STOCK_LEVELS].aggregate(agg)
+    ]
+
+
+async def analytics_stock_status(db: AsyncIOMotorDatabase) -> dict[str, int]:
+    """Configured (reorder_point>0) active stock lines bucketed by health:
+    out (≤0), low (≤ reorder), healthy (above). One pass feeds both the low/out
+    KPIs and the status chart."""
+    agg: list[dict] = [
+        {"$lookup": {"from": PRODUCTS, "localField": "product_id",
+                     "foreignField": "_id", "as": "product"}},
+        {"$unwind": "$product"},
+        {"$match": {"product.is_active": True, "product.is_deleted": {"$ne": True},
+                    "product.reorder_point": {"$gt": 0}}},
+        {"$group": {"_id": {"$switch": {"branches": [
+            {"case": {"$lte": ["$on_hand", 0]}, "then": "out"},
+            {"case": {"$lte": ["$on_hand", "$product.reorder_point"]}, "then": "low"},
+        ], "default": "healthy"}}, "n": {"$sum": 1}}},
+    ]
+    return {d["_id"]: int(d["n"]) async for d in db[STOCK_LEVELS].aggregate(agg)}
+
+
+async def analytics_low_stock_top(db: AsyncIOMotorDatabase, limit: int) -> list[dict]:
+    """The lowest configured items: on_hand vs reorder_point, most-urgent first."""
+    agg = [*LOW_STOCK_AGG, {"$sort": {"on_hand": 1}}, {"$limit": limit},
+           {"$project": {"_id": 0, "sku": "$product.sku", "name": "$product.name",
+                         "on_hand": 1, "reorder": "$product.reorder_point"}}]
+    return [
+        {"sku": d.get("sku"), "name": d.get("name"),
+         "on_hand": float(d.get("on_hand") or 0),
+         "reorder": float(d.get("reorder") or 0)}
+        async for d in db[STOCK_LEVELS].aggregate(agg)
+    ]
+
+
+async def analytics_movements_monthly(
+    db: AsyncIOMotorDatabase, since: datetime
+) -> dict[str, dict[str, float]]:
+    """Signed qty summed per (month, type) from `since` on → month → {type: qty}."""
+    agg: list[dict] = [
+        {"$match": {"occurred_at": {"$gte": since}}},
+        {"$group": {
+            "_id": {
+                "month": {"$dateToString": {"format": "%Y-%m", "date": "$occurred_at"}},
+                "type": "$type",
+            },
+            "qty": {"$sum": "$qty"},
+        }},
+    ]
+    out: dict[str, dict[str, float]] = {}
+    async for d in db[MOVEMENTS].aggregate(agg):
+        out.setdefault(d["_id"]["month"], {})[d["_id"]["type"]] = float(d["qty"] or 0)
+    return out
+
+
+async def analytics_active_products(db: AsyncIOMotorDatabase) -> int:
+    return await db[PRODUCTS].count_documents({**_LIVE, "is_active": True})
+
+
+async def analytics_categories(db: AsyncIOMotorDatabase) -> int:
+    cats = await db[PRODUCTS].distinct("category", {**_LIVE, "is_active": True})
+    return len([c for c in cats if c])
+
+
 async def any_stock_for_product(
     db: AsyncIOMotorDatabase, product_id: ObjectId
 ) -> dict[str, Any] | None:

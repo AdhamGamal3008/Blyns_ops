@@ -122,6 +122,125 @@ export interface KpiSet {
   unpaid_invoices_total?: number;
 }
 
+// --- Projects Analytics (docs/PROJECT_ANALYTICS_PLAN.md) ---------------------
+// Role-tiered: the KPI row is always present; the chart blocks are present only
+// when the caller has READ on `projects_analytics` (absent, never null).
+
+export interface AnalyticsBudget {
+  planned: number;
+  actual: number;
+  committed: number;
+  variance: number;
+  variance_pct: number | null;
+}
+
+export interface AnalyticsKpis {
+  active: number;
+  on_hold_blocked: number;
+  overdue: number;
+  open_exceptions: number;
+  budget: AnalyticsBudget;
+}
+
+export interface StageCount { order: number; key: string; label: string; count: number }
+export interface StageTime {
+  order: number; key: string; label: string; avg_days: number; count: number;
+}
+export interface TopProject { code: string; name: string; planned: number; actual: number }
+export interface CostByType { cost_type: string; amount: number }
+export interface ExceptionRow {
+  type: string; open: number; in_progress: number; total: number;
+}
+export interface ThroughputPoint { month: string; started: number; completed: number }
+
+export interface ProjectAnalytics {
+  kpis: AnalyticsKpis;
+  by_stage?: StageCount[];
+  time_in_stage?: StageTime[];
+  budget?: {
+    portfolio: { planned: number; actual: number; committed: number };
+    top_projects: TopProject[];
+    cost_by_type: CostByType[];
+  };
+  exceptions?: ExceptionRow[];
+  throughput?: ThroughputPoint[];
+}
+
+// --- CRM Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) ---------------------
+
+export interface CrmKpis {
+  open_deals: number;
+  pipeline_value: number;
+  pipeline_weighted: number;
+  win_rate: number | null;
+  open_leads: number;
+  customers: number;
+}
+
+export interface CrmStageRow { stage: string; label: string; count: number; amount: number }
+export interface CrmLeadStatusRow { status: string; label: string; count: number }
+export interface CrmLeadSourceRow { source: string; count: number }
+export interface CrmTopDeal { title: string; amount: number; stage: string }
+export interface CrmInflowPoint { month: string; leads: number; deals: number }
+
+export interface CrmAnalytics {
+  kpis: CrmKpis;
+  pipeline_by_stage?: CrmStageRow[];
+  lead_status?: CrmLeadStatusRow[];
+  lead_sources?: CrmLeadSourceRow[];
+  top_deals?: CrmTopDeal[];
+  inflow?: CrmInflowPoint[];
+}
+
+// --- Inventory Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) ---------------
+
+export interface InventoryKpis {
+  active_skus: number;
+  stock_value: number;
+  low_stock: number;
+  out_of_stock: number;
+  categories: number;
+}
+
+export interface InvCategoryValue { category: string; value: number }
+export interface InvLowStockItem { sku: string; name: string; on_hand: number; reorder: number }
+export interface InvTopProduct { sku: string; name: string; value: number }
+export interface InvMovementPoint { month: string; received: number; issued: number }
+export interface InvStatusRow { status: string; count: number }
+
+export interface InventoryAnalytics {
+  kpis: InventoryKpis;
+  value_by_category?: InvCategoryValue[];
+  low_stock_items?: InvLowStockItem[];
+  top_products?: InvTopProduct[];
+  movements?: InvMovementPoint[];
+  stock_status?: InvStatusRow[];
+}
+
+// --- Finance Analytics (docs/PROJECT_ANALYTICS_PLAN.md §6-D) -----------------
+
+export interface FinanceKpis {
+  revenue: number;
+  expenses: number;
+  ar_outstanding: number;
+  ap_outstanding: number;
+  overdue_ar: number;
+}
+
+export interface FinStatusRow { status: string; amount: number; count: number }
+export interface FinAgingRow { bucket: string; amount: number }
+export interface FinOverdueRow { number: string; outstanding: number; days: number }
+export interface FinCashflowPoint { month: string; revenue: number; expenses: number }
+
+export interface FinanceAnalytics {
+  kpis: FinanceKpis;
+  invoices_by_status?: FinStatusRow[];
+  bills_by_status?: FinStatusRow[];
+  ar_aging?: FinAgingRow[];
+  top_overdue?: FinOverdueRow[];
+  cashflow?: FinCashflowPoint[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

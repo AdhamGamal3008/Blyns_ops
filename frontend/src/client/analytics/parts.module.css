@@ -1,0 +1,25 @@
+/* A static key for multi-series charts — identity is label + swatch, never
+   colour alone (a11y). Single-series charts need none (the card title names it). */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}

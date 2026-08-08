@@ -37,6 +37,8 @@ export interface ChartProps {
   series: ChartSeries[];
   height?: number;
   formatValue?: (value: number) => string;
+  /** Bar only: stack the series into one bar per x (e.g. open + in_progress). */
+  stacked?: boolean;
 }
 
 interface TooltipInnerProps {
@@ -103,8 +105,9 @@ export function TrendChart({ data, xKey, series, height = 240, formatValue }: Ch
   );
 }
 
-export function BarChart({ data, xKey, series, height = 240, formatValue }: ChartProps) {
+export function BarChart({ data, xKey, series, height = 240, formatValue, stacked }: ChartProps) {
   const reduced = useReducedMotion();
+  const last = series.length - 1;
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ReBarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -121,7 +124,9 @@ export function BarChart({ data, xKey, series, height = 240, formatValue }: Char
             dataKey={s.key}
             name={s.label ?? s.key}
             fill={s.color ?? SERIES_COLORS[i % SERIES_COLORS.length]}
-            radius={[4, 4, 0, 0]}
+            // Stacked: round only the top segment so the stack reads as one bar.
+            radius={stacked ? (i === last ? [4, 4, 0, 0] : [0, 0, 0, 0]) : [4, 4, 0, 0]}
+            stackId={stacked ? "stack" : undefined}
             maxBarSize={48}
             isAnimationActive={!reduced}
             animationDuration={DUR.slow}

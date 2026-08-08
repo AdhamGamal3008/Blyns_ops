@@ -10,10 +10,20 @@ import styles from "./RoleMatrix.module.css";
 
 export const CLIENT_RESOURCES = [
   "dashboard", "calendar", "activity",
-  "projects", "crm", "inventory", "finance", "settings",
+  "projects", "projects_analytics",
+  "crm", "crm_analytics",
+  "inventory", "inventory_analytics",
+  "finance", "finance_analytics",
+  "settings",
 ];
 
 export const LEVELS = ["None", "View", "Read", "Write"];
+
+/** Humanize a resource key for display: `projects_analytics` → "Projects
+ *  Analytics". Title-cased in JS (not just CSS) so it reads correctly and is
+ *  assertable in tests. */
+export const resourceLabel = (res: string): string =>
+  res.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 /** Level → the swatch class that fills the checked cell. */
 const LEVEL_CLASS = [styles.lvl0, styles.lvl1, styles.lvl2, styles.lvl3];
@@ -91,7 +101,7 @@ export function RoleMatrix({
             const current = value[res] ?? 0;
             return (
               <tr key={res}>
-                <th scope="row" className={styles.resourceCell}>{res}</th>
+                <th scope="row" className={styles.resourceCell}>{resourceLabel(res)}</th>
                 {LEVELS.map((label, level) => (
                   <td key={label} className={styles.cell}>
                     <label className={styles.swatchLabel}>
@@ -105,7 +115,7 @@ export function RoleMatrix({
                         disabled={disabled}
                         checked={current === level}
                         onChange={() => onChange({ ...value, [res]: level })}
-                        aria-label={`${res}: ${label}`}
+                        aria-label={`${resourceLabel(res)}: ${label}`}
                       />
                       <span className={`${styles.swatch} ${LEVEL_CLASS[level]}`} aria-hidden="true" />
                     </label>

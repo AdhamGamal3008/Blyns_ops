@@ -9,6 +9,7 @@ import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 import { AccountsSection } from "./AccountsSection";
 import { ContactsSection } from "./ContactsSection";
+import { CrmAnalytics } from "./CrmAnalytics";
 import { LeadsSection } from "./LeadsSection";
 import { PipelineBoard } from "./PipelineBoard";
 
@@ -16,6 +17,7 @@ export function CrmPage() {
   const me = useOutletContext<ClientMe>();
   const { pathname } = useLocation();
   const canWrite = (me.role.permissions["crm"] ?? 0) >= 3;
+  const canAnalytics = (me.role.permissions["crm_analytics"] ?? 0) >= 1;
   const csv = (entity: string) => csvGrants(me, "crm", entity);
 
   // Dashboard quick actions deep-link to /app/crm/<section>[/new]: pick the tab
@@ -39,6 +41,7 @@ export function CrmPage() {
           <TabsTrigger value="leads">Leads</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="contacts">Contacts</TabsTrigger>
+          {canAnalytics && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="pipeline">
@@ -56,6 +59,11 @@ export function CrmPage() {
           <ContactsSection canWrite={canWrite} csv={csv("contacts")}
             openNew={tab === "contacts" && isNew} />
         </TabsContent>
+        {canAnalytics && (
+          <TabsContent value="analytics">
+            <CrmAnalytics />
+          </TabsContent>
+        )}
       </Tabs>
     </Stack>
   );

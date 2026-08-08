@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core import storage
-from app.modules.projects import service
+from app.modules.projects import analytics, service
 from app.modules.projects.models import (
     ApproveBody,
     ChecklistMark,
@@ -41,6 +41,9 @@ router = APIRouter(prefix="/api/v1/projects", tags=["client-projects"])
 
 _read = require("projects", Level.READ)
 _write = require("projects", Level.WRITE)
+# Analytics is a separate resource (management-only by default): VIEW = KPI row,
+# READ = KPIs + charts. The service tiers the body; the guard is the floor.
+_analytics = require("projects_analytics", Level.VIEW)
 
 
 # --- config (§12) — declared before /{project_id} so `config` is not an id ----
@@ -117,6 +120,12 @@ async def create_project(
     body: ProjectCreate, principal: ClientPrincipal = Depends(_write)
 ):
     return envelope(to_api(await service.create_project(principal, body)))
+
+
+# Declared before `/{project_id}` so "analytics" is never read as a project id.
+@router.get("/analytics")
+async def analytics_overview(principal: ClientPrincipal = Depends(_analytics)):
+    return envelope(to_api(await analytics.overview(principal)))
 
 
 @router.get("/{project_id}")
