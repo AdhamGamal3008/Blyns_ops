@@ -1,52 +1,82 @@
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  margin-bottom: clamp(2.5rem, 5vw, 4rem);
+}
+
 .list {
-  margin: clamp(var(--sp-7), 6vw, 72px) 0 0;
-  max-width: 70ch;
+  border-top: 1px solid var(--l-line);
 }
 
 .item {
-  border-top: 1px solid var(--border);
-}
-.item:last-child {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--l-line);
 }
 
 .q {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-5);
-  padding: var(--sp-5) 0;
+  align-items: baseline;
+  gap: 1.25rem;
+  padding: clamp(1.25rem, 3vw, 1.9rem) 0;
   cursor: pointer;
   list-style: none;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: clamp(var(--step-1), 0.9rem + 0.8vw, var(--step-2));
-  color: var(--ink);
+  color: var(--l-ink);
+  transition: color 0.3s var(--l-ease);
 }
-/* Hide the native disclosure triangle across engines. */
 .q::-webkit-details-marker {
   display: none;
 }
-.q:focus-visible {
-  outline: 2px solid var(--focus-ring-edge);
-  outline-offset: 4px;
-  border-radius: var(--r-sm);
+.q:hover {
+  color: var(--l-rust);
 }
 
-.chevron {
-  flex: none;
-  color: var(--gold-700);
-  transition: transform var(--dur-base) var(--ease-out);
+.qIndex {
+  flex-shrink: 0;
+  font-family: var(--l-mono);
+  font-size: var(--l-text-sm);
+  color: var(--l-rust);
+  padding-top: 0.35rem;
 }
-.item[open] .chevron {
+.qText {
+  flex: 1;
+  font-family: var(--l-serif);
+  font-size: clamp(1.35rem, 1rem + 1.2vw, 1.9rem);
+  line-height: 1.25;
+}
+.chev {
+  flex-shrink: 0;
+  margin-top: 0.35rem;
+  color: var(--l-ink-mute);
+  transition: transform 0.35s var(--l-ease), color 0.3s var(--l-ease);
+}
+.item[open] .chev {
   transform: rotate(180deg);
+  color: var(--l-rust);
 }
 
 .a {
+  overflow: hidden;
+  padding: 0 0 clamp(1.25rem, 3vw, 1.9rem) calc(1.25rem + 2ch);
+}
+.a p {
   margin: 0;
-  padding: 0 0 var(--sp-6);
   max-width: 62ch;
-  color: var(--text-muted);
-  font-size: var(--step-1);
-  line-height: var(--leading-normal);
+  color: var(--l-ink-soft);
+  line-height: 1.65;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .item[open] .a {
+    animation: faqOpen 0.4s var(--l-ease);
+  }
+}
+@keyframes faqOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

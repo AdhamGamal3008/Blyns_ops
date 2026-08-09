@@ -1,9 +1,10 @@
-// §9 — Security designed into every layer. Dark icon grid. Each item maps to a
-// capability the platform genuinely ships (RBAC, IP/country controls, rate
-// limiting, audit history, multi-tenant isolation).
+// Security — "Security designed into every layer." A dark icon grid that maps to
+// controls the platform genuinely ships (RBAC, IP/country rules, rate limiting,
+// audit history, tenant isolation). Copy verbatim.
 
 import { Gauge, Globe, History, KeyRound, Layers, Lock, type LucideIcon, Server } from "lucide-react";
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Security.module.css";
 
 const LAYERS: ReadonlyArray<[LucideIcon, string]> = [
@@ -18,33 +19,31 @@ const LAYERS: ReadonlyArray<[LucideIcon, string]> = [
 
 export function Security() {
   return (
-    <section
-      id="security"
-      className={`${shared.section} ${shared.sectionInk}`}
-      aria-labelledby="security-h"
-    >
-      <div className={shared.container}>
-        <p className={`${shared.eyebrow} ${shared.eyebrowInk}`}>Security</p>
-        <h2 id="security-h" className={`${shared.headline} ${shared.headlineInk}`}>
-          Security designed into every layer.
-        </h2>
+    <Section id="security" tone="deep" labelledBy="security-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="08">Security</SectionLabel>
+          <Heading id="security-h">Security designed into every layer.</Heading>
+        </Reveal>
 
         <ul className={styles.grid}>
-          {LAYERS.map(([Icon, label]) => (
-            <li key={label} className={styles.item}>
-              <span className={styles.icon} aria-hidden="true">
-                <Icon size={22} strokeWidth={1.5} />
+          {LAYERS.map(([Icon, label], i) => (
+            <Reveal as="li" key={label} className={styles.item} delay={i * 0.05}>
+              <span className={styles.icon}>
+                <Icon size={22} strokeWidth={1.4} />
               </span>
               <span className={styles.label}>{label}</span>
-            </li>
+            </Reveal>
           ))}
         </ul>
 
-        <p className={`${shared.lede} ${shared.ledeInk} ${styles.close}`}>
-          Because your operational data deserves the same level of protection as
-          your financial data.
-        </p>
+        <Reveal>
+          <p className={styles.close}>
+            Because your operational data deserves the same level of protection as your financial
+            data.
+          </p>
+        </Reveal>
       </div>
-    </section>
+    </Section>
   );
 }

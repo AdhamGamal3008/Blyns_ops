@@ -1,10 +1,9 @@
-// §12 — Questions we usually hear. Native <details> accordion (accessible, no JS).
-// Answers authored to the positioning: craft over jargon, and honest about what
-// the platform genuinely does (configurable approvals, per-team dashboards,
-// isolated multi-tenant branches).
+// FAQ — "Questions we usually hear." A native <details> accordion (accessible,
+// keyboard-friendly), numbered, with a chevron that turns on open. Copy verbatim.
 
 import { ChevronDown } from "lucide-react";
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Faq.module.css";
 
 const QA: ReadonlyArray<[string, string]> = [
@@ -40,25 +39,28 @@ const QA: ReadonlyArray<[string, string]> = [
 
 export function Faq() {
   return (
-    <section id="faq" className={shared.section} aria-labelledby="faq-h">
-      <div className={shared.container}>
-        <p className={shared.eyebrow}>FAQ</p>
-        <h2 id="faq-h" className={shared.headline}>
-          Questions we usually hear.
-        </h2>
+    <Section id="faq" tone="base" labelledBy="faq-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="11">FAQ</SectionLabel>
+          <Heading id="faq-h">Questions we usually hear.</Heading>
+        </Reveal>
 
         <div className={styles.list}>
-          {QA.map(([q, a]) => (
+          {QA.map(([q, a], i) => (
             <details key={q} className={styles.item}>
               <summary className={styles.q}>
-                <span>{q}</span>
-                <ChevronDown className={styles.chevron} size={22} aria-hidden="true" />
+                <span className={styles.qIndex}>0{i + 1}</span>
+                <span className={styles.qText}>{q}</span>
+                <ChevronDown className={styles.chev} size={20} aria-hidden="true" />
               </summary>
-              <p className={styles.a}>{a}</p>
+              <div className={styles.a}>
+                <p>{a}</p>
+              </div>
             </details>
           ))}
         </div>
       </div>
-    </section>
+    </Section>
   );
 }

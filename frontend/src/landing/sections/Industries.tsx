@@ -1,7 +1,9 @@
-// §3 — Every company is different, so every platform is different. Industry cards.
+// Industries — "Every company is different." A gallery of the five trades Blyns
+// is built for, as numbered cards that light up on hover. Copy verbatim.
 
 import { Blocks, Building2, Handshake, Layers, type LucideIcon, Package } from "lucide-react";
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Industries.module.css";
 
 const INDUSTRIES: ReadonlyArray<[LucideIcon, string, string]> = [
@@ -14,30 +16,28 @@ const INDUSTRIES: ReadonlyArray<[LucideIcon, string, string]> = [
 
 export function Industries() {
   return (
-    <section
-      id="industries"
-      className={`${shared.section} ${shared.sectionSunken}`}
-      aria-labelledby="industries-h"
-    >
-      <div className={shared.container}>
-        <p className={shared.eyebrow}>Who it's for</p>
-        <h2 id="industries-h" className={shared.headline}>
-          Every company is different.
-          <span className={shared.headlineSub}>So every platform is different.</span>
-        </h2>
+    <Section id="industries" tone="raised" labelledBy="industries-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="02">Who it&rsquo;s for</SectionLabel>
+          <Heading id="industries-h" sub="So every platform is different.">
+            Every company is different.
+          </Heading>
+        </Reveal>
 
         <ul className={styles.grid}>
-          {INDUSTRIES.map(([Icon, title, body]) => (
-            <li key={title} className={styles.card}>
-              <span className={styles.icon} aria-hidden="true">
-                <Icon size={22} strokeWidth={1.5} />
+          {INDUSTRIES.map(([Icon, title, body], i) => (
+            <Reveal as="li" key={title} className={styles.card} delay={i * 0.06}>
+              <span className={styles.num}>0{i + 1}</span>
+              <span className={styles.icon}>
+                <Icon size={24} strokeWidth={1.4} />
               </span>
               <h3 className={styles.cardTitle}>{title}</h3>
               <p className={styles.cardBody}>{body}</p>
-            </li>
+            </Reveal>
           ))}
         </ul>
       </div>
-    </section>
+    </Section>
   );
 }

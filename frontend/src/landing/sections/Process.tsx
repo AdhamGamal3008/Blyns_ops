@@ -1,6 +1,8 @@
-// §11 — How we build your platform. Six numbered steps.
+// Process — "How we build your platform." Six numbered steps from first
+// conversation to continuous evolution. Copy verbatim.
 
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Process.module.css";
 
 const STEPS: ReadonlyArray<[string, string, string]> = [
@@ -14,27 +16,23 @@ const STEPS: ReadonlyArray<[string, string, string]> = [
 
 export function Process() {
   return (
-    <section
-      id="process"
-      className={`${shared.section} ${shared.sectionAlt}`}
-      aria-labelledby="process-h"
-    >
-      <div className={shared.container}>
-        <p className={shared.eyebrow}>How we build</p>
-        <h2 id="process-h" className={shared.headline}>
-          How we build your platform.
-        </h2>
+    <Section id="process" tone="raised" labelledBy="process-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="10">How we build</SectionLabel>
+          <Heading id="process-h">How we build your platform.</Heading>
+        </Reveal>
 
         <ol className={styles.grid}>
-          {STEPS.map(([num, title, body]) => (
-            <li key={num} className={styles.step}>
+          {STEPS.map(([num, title, body], i) => (
+            <Reveal as="li" key={num} className={styles.step} delay={i * 0.06}>
               <span className={styles.num}>{num}</span>
               <h3 className={styles.title}>{title}</h3>
               <p className={styles.body}>{body}</p>
-            </li>
+            </Reveal>
           ))}
         </ol>
       </div>
-    </section>
+    </Section>
   );
 }

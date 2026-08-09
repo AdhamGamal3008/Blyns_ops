@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { EASE } from "./variants";
 
-type RevealTag = "div" | "section" | "span" | "li" | "p" | "h2" | "h3";
+type RevealTag = "div" | "section" | "span" | "li" | "p" | "h2" | "h3" | "article" | "ul" | "ol";
 
 type RevealProps = {
   children: ReactNode;

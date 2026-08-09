@@ -1,106 +1,94 @@
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+.lede {
+  margin: 0.4rem 0 0;
+  max-width: 40ch;
+  font-size: var(--l-text-lg);
+  line-height: 1.5;
+  color: var(--l-ink-soft);
+}
+
 .rows {
-  margin-top: clamp(var(--sp-7), 6vw, 80px);
-  display: grid;
-  gap: clamp(var(--sp-7), 6vw, 88px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3.5rem, 8vw, 8rem);
+  margin-top: clamp(3rem, 6vw, 5.5rem);
 }
 
 .row {
   display: grid;
-  gap: var(--sp-6);
+  gap: clamp(2rem, 4vw, 4rem);
   align-items: center;
 }
 @media (min-width: 900px) {
   .row {
-    grid-template-columns: 1fr 1fr;
-    gap: clamp(var(--sp-7), 6vw, 96px);
+    grid-template-columns: 0.82fr 1.18fr;
   }
-  /* Alternate the screenshot side on every other row. */
+  .row:nth-child(even) {
+    grid-template-columns: 1.18fr 0.82fr;
+  }
+  .copy {
+    order: 1;
+  }
+  .screen {
+    order: 2;
+  }
   .row:nth-child(even) .copy {
     order: 2;
+  }
+  .row:nth-child(even) .screen {
+    order: 1;
   }
 }
 
 .kicker {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: 0.75rem;
 }
 .icon {
-  display: inline-grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-md);
-  background: var(--gold-50);
-  color: var(--gold-700);
+  display: flex;
+  color: var(--l-rust);
 }
 .num {
-  font-family: var(--font-display);
-  font-size: var(--step-1);
-  color: var(--text-muted);
-  letter-spacing: var(--tracking-caps);
+  font-family: var(--l-mono);
+  font-size: var(--l-text-sm);
+  color: var(--l-ink-mute);
 }
-
 .name {
-  margin: var(--sp-4) 0 var(--sp-3);
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: clamp(var(--step-4), 1.4rem + 2vw, var(--step-5));
-  line-height: var(--leading-tight);
-  color: var(--ink);
+  margin: 1rem 0 0.6rem;
+  font-family: var(--l-serif);
+  font-weight: 400;
+  font-size: clamp(2rem, 1.4rem + 1.6vw, 2.85rem);
+  color: var(--l-ink);
 }
-
 .body {
   margin: 0;
-  max-width: 46ch;
-  font-size: var(--step-1);
-  line-height: var(--leading-normal);
-  color: var(--text-muted);
+  max-width: 34ch;
+  color: var(--l-ink-soft);
+  line-height: 1.6;
 }
 
-/* --- Screenshot slot ------------------------------------------------------ */
-.shot {
+/* Reset the product mock's inherited landing typography/colour back to product
+   defaults, and float it over a soft warm glow so the light screen reads as a
+   framed screenshot on the dark canvas. */
+.screen {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  aspect-ratio: 16 / 10;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background:
-    linear-gradient(180deg, var(--surface-raised), var(--surface-sunken));
-  box-shadow: var(--shadow-md);
-  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--font-ui, "Inter", system-ui, sans-serif);
 }
-.shotBar {
-  display: flex;
-  gap: 6px;
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-raised);
-}
-.shotBar i {
-  width: 9px;
-  height: 9px;
-  border-radius: var(--r-pill);
-  background: var(--n-200);
-}
-.shotLabel {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  font-family: var(--font-ui);
-  font-size: var(--step--1);
-  letter-spacing: var(--tracking-caps);
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-/* Captured product screenshot — fills the frame below the window bar. */
-.shotImg {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  object-fit: cover;
-  object-position: top left;
-  display: block;
+.screen::before {
+  content: "";
+  position: absolute;
+  inset: -8% -4%;
+  z-index: -1;
+  background: radial-gradient(
+    55% 55% at 50% 42%,
+    color-mix(in srgb, var(--l-rust) 20%, transparent),
+    transparent 72%
+  );
+  filter: blur(34px);
 }
