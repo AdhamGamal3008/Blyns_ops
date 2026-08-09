@@ -1,42 +1,36 @@
-.list {
-  list-style: none;
-  margin: clamp(var(--sp-7), 6vw, 72px) 0 0;
-  padding: 0;
-  display: grid;
-  gap: var(--sp-4) var(--sp-7);
-  grid-template-columns: 1fr;
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
 }
-@media (min-width: 640px) {
-  .list {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (min-width: 1000px) {
-  .list {
-    grid-template-columns: repeat(3, 1fr);
-  }
+
+.marqueeWrap {
+  margin-block: clamp(2.75rem, 6vw, 5rem);
 }
 
 .item {
-  font-family: var(--font-display);
-  font-weight: 440;
-  font-size: clamp(var(--step-3), 1.2rem + 2vw, var(--step-5));
-  line-height: 1.2;
-  color: var(--paper);
-  border-bottom: 1px solid color-mix(in srgb, var(--paper) 14%, transparent);
-  padding-bottom: var(--sp-4);
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-inline: clamp(0.75rem, 2vw, 1.5rem);
+  font-family: var(--l-serif);
+  font-weight: 400;
+  font-size: clamp(2.5rem, 1.5rem + 4vw, 6rem);
+  line-height: 1;
+  color: var(--l-ink);
+  white-space: nowrap;
 }
-.every {
-  color: var(--champagne);
+.star {
+  color: var(--l-rust);
+  font-size: 0.42em;
 }
 
 .close {
-  margin: clamp(var(--sp-7), 6vw, 72px) 0 0;
-  max-width: 30ch;
-  font-family: var(--font-display);
-  font-size: clamp(var(--step-4), 1.4rem + 2vw, var(--step-6));
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-  color: var(--paper);
+  max-width: 24ch;
+  font-family: var(--l-serif);
+  font-size: clamp(1.65rem, 1rem + 2.6vw, 3rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--l-ink);
   text-wrap: balance;
 }

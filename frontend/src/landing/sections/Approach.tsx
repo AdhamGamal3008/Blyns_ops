@@ -1,7 +1,9 @@
-// §2 — Built around your process. The "Blueprint → Workflow → Platform" motif is
-// rendered as a connected three-step flow (horizontal on desktop, stacked on mobile).
+// Approach — "Built around your process. Not ours." The lede uses the signature
+// word-by-word reveal; the Blueprint → Workflow → Platform steps rise in on scroll.
+// Copy verbatim from the brief.
 
-import shared from "../LandingPage.module.css";
+import { Reveal, WordReveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Approach.module.css";
 
 const STEPS: ReadonlyArray<[string, string, string]> = [
@@ -12,31 +14,29 @@ const STEPS: ReadonlyArray<[string, string, string]> = [
 
 export function Approach() {
   return (
-    <section id="approach" className={shared.section} aria-labelledby="approach-h">
-      <div className={shared.container}>
-        <div className={styles.head}>
-          <p className={shared.eyebrow}>The approach</p>
-          <h2 id="approach-h" className={shared.headline}>
+    <Section id="approach" tone="base" labelledBy="approach-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="01">The approach</SectionLabel>
+          <Heading id="approach-h" sub="Not ours.">
             Built around your process.
-            <span className={shared.headlineSub}>Not ours.</span>
-          </h2>
-          <p className={shared.lede}>
-            Instead of forcing your company into predefined workflows, we map
-            every approval, department, project phase, document flow, and
-            responsibility before writing a single configuration.
-          </p>
-        </div>
+          </Heading>
+        </Reveal>
 
-        <ol className={styles.flow}>
-          {STEPS.map(([num, title, body]) => (
-            <li key={num} className={styles.step}>
+        <p className={styles.lede}>
+          <WordReveal text="Instead of forcing your company into predefined workflows, we map every approval, department, project phase, document flow, and responsibility before writing a single configuration." />
+        </p>
+
+        <ol className={styles.steps}>
+          {STEPS.map(([num, title, body], i) => (
+            <Reveal as="li" key={num} className={styles.step} delay={i * 0.08}>
               <span className={styles.num}>{num}</span>
               <h3 className={styles.stepTitle}>{title}</h3>
               <p className={styles.stepBody}>{body}</p>
-            </li>
+            </Reveal>
           ))}
         </ol>
       </div>
-    </section>
+    </Section>
   );
 }

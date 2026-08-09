@@ -1,0 +1,16 @@
+.section {
+  position: relative;
+  padding-block: var(--l-section-y);
+  scroll-margin-top: 4.5rem;
+  border-top: 1px solid var(--l-line-soft);
+}
+
+.base {
+  background: var(--l-bg);
+}
+.raised {
+  background: var(--l-bg-raised);
+}
+.deep {
+  background: #0b0806;
+}

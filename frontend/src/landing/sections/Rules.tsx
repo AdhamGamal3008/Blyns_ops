@@ -1,6 +1,8 @@
-// §6 — Your business. Your rules. The emotional peak: each need answered "Done."
+// Rules — "Your business. Your rules." The emotional peak: each need is answered
+// with an italic rust "Done." that reveals on scroll. Copy verbatim.
 
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Rules.module.css";
 
 const NEEDS: readonly string[] = [
@@ -13,27 +15,30 @@ const NEEDS: readonly string[] = [
 
 export function Rules() {
   return (
-    <section id="rules" className={shared.section} aria-labelledby="rules-h">
-      <div className={shared.container}>
-        <p className={shared.eyebrow}>Your rules</p>
-        <h2 id="rules-h" className={styles.headline}>
-          Your business.
-          <span className={styles.headlineSub}>Your rules.</span>
-        </h2>
+    <Section id="rules" tone="base" labelledBy="rules-h">
+      <div className="l-container">
+        <Reveal className={styles.head}>
+          <SectionLabel index="05">Your rules</SectionLabel>
+          <Heading id="rules-h" sub="Your rules." subTone="rust">
+            Your business.
+          </Heading>
+        </Reveal>
 
         <dl className={styles.pairs}>
-          {NEEDS.map((need) => (
-            <div key={need} className={styles.pair}>
+          {NEEDS.map((need, i) => (
+            <Reveal as="div" key={need} className={styles.pair} delay={i * 0.06}>
               <dt className={styles.need}>{need}</dt>
               <dd className={styles.done}>Done.</dd>
-            </div>
+            </Reveal>
           ))}
         </dl>
 
-        <p className={styles.close}>
-          We don't ask you to adapt. <span>We adapt to you.</span>
-        </p>
+        <Reveal>
+          <p className={styles.close}>
+            We don&rsquo;t ask you to adapt. <span>We adapt to you.</span>
+          </p>
+        </Reveal>
       </div>
-    </section>
+    </Section>
   );
 }

@@ -1,25 +1,34 @@
-// §10 — More than software. A long-term partner. Centered narrative.
+// Partner — "More than software. A long-term partner." A centered closing
+// statement for the editorial run, revealed in three beats. Copy verbatim.
 
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import styles from "./Partner.module.css";
 
 export function Partner() {
   return (
-    <section id="partner" className={shared.section} aria-labelledby="partner-h">
-      <div className={`${shared.container} ${styles.inner}`}>
-        <p className={shared.eyebrow}>Beyond delivery</p>
-        <h2 id="partner-h" className={shared.headline}>
-          More than software.
-          <span className={shared.headlineSub}>A long-term partner.</span>
-        </h2>
-        <p className={shared.lede}>
-          We don't disappear after deployment. We continuously refine your
-          platform as your business evolves.
-        </p>
-        <p className={styles.evolve}>
-          Your processes improve. <span>Your software evolves with them.</span>
-        </p>
+    <Section id="partner" tone="base" labelledBy="partner-h">
+      <div className={`l-container ${styles.inner}`}>
+        <Reveal className={styles.head}>
+          <SectionLabel index="09">Beyond delivery</SectionLabel>
+          <Heading id="partner-h" sub="A long-term partner." subTone="rust">
+            More than software.
+          </Heading>
+        </Reveal>
+
+        <Reveal delay={0.1}>
+          <p className={styles.lede}>
+            We don&rsquo;t disappear after deployment. We continuously refine your platform as your
+            business evolves.
+          </p>
+        </Reveal>
+
+        <Reveal delay={0.16}>
+          <p className={styles.evolve}>
+            Your processes improve. <span>Your software evolves with them.</span>
+          </p>
+        </Reveal>
       </div>
-    </section>
+    </Section>
   );
 }

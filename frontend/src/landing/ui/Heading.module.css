@@ -1,0 +1,20 @@
+.heading {
+  margin: 0;
+  max-width: 20ch;
+  font-family: var(--l-serif);
+  font-weight: 400;
+  font-size: var(--l-display-sm);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  color: var(--l-ink);
+  text-wrap: balance;
+}
+
+.sub {
+  display: block;
+  font-style: italic;
+  color: var(--l-ink-mute);
+}
+.rust {
+  color: var(--l-rust);
+}
