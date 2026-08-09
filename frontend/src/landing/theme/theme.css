@@ -1,0 +1,100 @@
+@import "./fonts.css";
+
+/* Paint the document behind the landing warm-black too, so the product's paper
+   body colour never peeks through a scrollbar gutter or on overscroll. Gated by
+   :has() so it reverts the instant the landing unmounts — portals untouched.
+   (Literal hex: html is outside the [data-surface] scope where --l-bg lives.) */
+html:has([data-surface="landing"]) {
+  background-color: #100c0a;
+}
+
+/* =============================================================================
+   Landing design language — its OWN surface, deliberately unlike the product.
+
+   Every landing style references a `--l-*` token from here. All tokens are
+   scoped under [data-surface="landing"] (the LandingPage root wrapper) so they
+   can never leak into the admin/client portals, even once Vite bundles the CSS.
+   Warm near-black canvas · ivory ink · a single terracotta accent · a
+   high-contrast display serif + a grotesque mono. Built to attract, not to match.
+   ========================================================================== */
+
+[data-surface="landing"] {
+  /* --- Canvas — warm near-black ---------------------------------------- */
+  --l-bg:        #100c0a;
+  --l-bg-raised: #17120e;
+  --l-bg-card:   #1e1712;
+
+  /* --- Ink — warm ivory ------------------------------------------------ */
+  --l-ink:       #ece5d9;
+  --l-ink-soft:  #b8ad9d;
+  --l-ink-mute:  #8b8071;
+
+  /* --- Accent — terracotta / rust -------------------------------------- */
+  --l-rust:      #c56a3f;
+  --l-rust-soft: #d98a5e;
+  --l-rust-deep: #9d4f2c;
+  --l-on-rust:   #17120e;
+
+  /* --- Hairlines / fills ----------------------------------------------- */
+  --l-line:      rgba(236, 229, 217, 0.14);
+  --l-line-soft: rgba(236, 229, 217, 0.07);
+
+  /* --- Type families --------------------------------------------------- */
+  --l-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --l-mono:  "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --l-sans:  "Inter", system-ui, -apple-system, sans-serif;
+
+  /* --- Type scale (fluid) ---------------------------------------------- */
+  --l-text-xs:    0.75rem;
+  --l-text-sm:    0.875rem;
+  --l-text-base:  1.0625rem;
+  --l-text-lg:    clamp(1.125rem, 0.9rem + 0.9vw, 1.5rem);
+  --l-display-sm: clamp(2.25rem, 1.4rem + 3.6vw, 3.75rem);
+  --l-display:    clamp(3rem, 1rem + 9vw, 9rem);
+
+  /* --- Rhythm ---------------------------------------------------------- */
+  --l-container: 1320px;
+  --l-gutter:    clamp(1.25rem, 5vw, 5rem);
+  --l-section-y: clamp(5rem, 12vh, 11rem);
+
+  /* --- Motion ---------------------------------------------------------- */
+  --l-ease:       cubic-bezier(0.22, 1, 0.36, 1);
+  --l-ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* --- Base paint ------------------------------------------------------ */
+  min-height: 100svh;
+  background-color: var(--l-bg);
+  color: var(--l-ink);
+  font-family: var(--l-sans);
+  font-size: var(--l-text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: clip;
+}
+
+/* Landing-scoped element resets. */
+[data-surface="landing"] a { color: inherit; text-decoration: none; }
+[data-surface="landing"] ::selection { background: var(--l-rust); color: var(--l-on-rust); }
+[data-surface="landing"] :focus-visible {
+  outline: 2px solid var(--l-rust);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Shared container. */
+[data-surface="landing"] .l-container {
+  width: 100%;
+  max-width: var(--l-container);
+  margin-inline: auto;
+  padding-inline: var(--l-gutter);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="landing"] * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,34 @@
+/* Landing-only self-hosted faces — nothing is fetched at runtime from third
+   parties. Instrument Serif (display) + Space Mono (labels), latin subset,
+   vendored as woff2 under ./fonts/. Both are OFL / open license, sourced from the
+   fontsource distribution and bundled by Vite. Body/UI text reuses the app's
+   already-vendored Inter, so only two new faces ship with the landing. */
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/InstrumentSerif-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/InstrumentSerif-italic-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/SpaceMono-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/SpaceMono-bold-latin.woff2") format("woff2");
+}

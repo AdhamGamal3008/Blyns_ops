@@ -1,0 +1,55 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--l-bg);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 1.4rem;
+  padding: var(--l-gutter);
+  will-change: transform;
+}
+
+.inner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.word {
+  font-family: var(--l-serif);
+  font-size: clamp(3rem, 12vw, 9rem);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  color: var(--l-ink);
+}
+
+.count {
+  font-family: var(--l-mono);
+  font-size: var(--l-text-lg);
+  color: var(--l-ink-mute);
+}
+
+.barTrack {
+  height: 1px;
+  width: 100%;
+  background: var(--l-line);
+  overflow: hidden;
+}
+.bar {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--l-rust);
+  transform-origin: left center;
+}
+
+.meta {
+  font-family: var(--l-mono);
+  font-size: var(--l-text-xs);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--l-ink-soft);
+}

@@ -1,0 +1,22 @@
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-family: var(--l-mono);
+  font-size: var(--l-text-xs);
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--l-ink-soft);
+}
+
+.tick {
+  width: 1.75rem;
+  height: 1px;
+  background: var(--l-rust);
+}
+
+.index {
+  color: var(--l-rust);
+}

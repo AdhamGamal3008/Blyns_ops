@@ -1,0 +1,49 @@
+.magnet {
+  /* keeps the magnetic transform from clipping the arrow */
+  display: inline-flex;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1.05rem 1.6rem;
+  border-radius: 999px;
+  font-family: var(--l-sans);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.4s var(--l-ease), color 0.4s var(--l-ease),
+    border-color 0.4s var(--l-ease);
+}
+
+/* Compound `.pill.primary` (0,2,0) intentionally outranks the landing's scoped
+   `a { color: inherit }` reset (0,1,1) so the CTA text keeps its own colour. */
+.pill.primary {
+  background: var(--l-ink);
+  color: var(--l-bg);
+}
+.pill.primary:hover {
+  background: var(--l-rust);
+  color: var(--l-on-rust);
+}
+
+.pill.ghost {
+  background: transparent;
+  color: var(--l-ink);
+  border: 1px solid var(--l-line);
+}
+.pill.ghost:hover {
+  border-color: var(--l-ink);
+}
+
+.arrow {
+  display: inline-flex;
+  color: currentColor;
+  transition: transform 0.4s var(--l-ease);
+}
+.pill:hover .arrow {
+  transform: translateX(4px);
+}

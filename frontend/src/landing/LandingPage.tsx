@@ -1,46 +1,26 @@
-// Public landing page — its own surface, no portal shell, no auth. Composes the
-// marketing sections in content order; the booking form (#book) is mounted in
-// Phase D. Order and copy follow docs/LANDING_PAGE.md §3.
+// Public landing page — its own surface, no portal shell, no auth. The redesign
+// gives the landing its own dark, editorial visual language (see ./theme). This
+// composition currently mounts the new chrome + hero (Phase 1); the remaining
+// sections are rebuilt in the new language in later phases and re-added here.
 
-import { LandingFooter } from "./components/LandingFooter";
-import { LandingNav } from "./components/LandingNav";
-import styles from "./LandingPage.module.css";
-import { Approach } from "./sections/Approach";
-import { Configurable } from "./sections/Configurable";
-import { Faq } from "./sections/Faq";
-import { FinalCta } from "./sections/FinalCta";
-import { Growth } from "./sections/Growth";
+import { useState } from "react";
+import { LandingNav } from "./chrome/LandingNav";
+import { PRELOAD_KEY, Preloader } from "./chrome/Preloader";
 import { Hero } from "./sections/Hero";
-import { Industries } from "./sections/Industries";
-import { Lifecycle } from "./sections/Lifecycle";
-import { Partner } from "./sections/Partner";
-import { Platform } from "./sections/Platform";
-import { Process } from "./sections/Process";
-import { Rules } from "./sections/Rules";
-import { Security } from "./sections/Security";
+import "./theme/theme.css";
 
 export function LandingPage() {
+  const [ready, setReady] = useState(
+    () => typeof window !== "undefined" && window.sessionStorage.getItem(PRELOAD_KEY) === "1",
+  );
+
   return (
-    <div className={styles.page}>
+    <div data-surface="landing">
+      <Preloader onDone={() => setReady(true)} />
       <LandingNav />
-
       <main>
-        <Hero />
-        <Approach />
-        <Industries />
-        <Platform />
-        <Configurable />
-        <Rules />
-        <Lifecycle />
-        <Growth />
-        <Security />
-        <Partner />
-        <Process />
-        <Faq />
-        <FinalCta />
+        <Hero ready={ready} />
       </main>
-
-      <LandingFooter />
     </div>
   );
 }
