@@ -5,11 +5,13 @@
 // rebuilt in the new language in Phase 4.
 
 import { useState } from "react";
+import { LandingFooter } from "./chrome/LandingFooter";
 import { LandingNav } from "./chrome/LandingNav";
 import { PRELOAD_KEY, Preloader } from "./chrome/Preloader";
 import { Approach } from "./sections/Approach";
 import { Configurable } from "./sections/Configurable";
 import { Faq } from "./sections/Faq";
+import { FinalCta } from "./sections/FinalCta";
 import { Growth } from "./sections/Growth";
 import { Hero } from "./sections/Hero";
 import { Industries } from "./sections/Industries";
@@ -43,7 +45,9 @@ export function LandingPage() {
         <Partner />
         <Process />
         <Faq />
+        <FinalCta />
       </main>
+      <LandingFooter />
     </div>
   );
 }

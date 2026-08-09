@@ -1,16 +1,75 @@
 .form {
   display: grid;
-  gap: var(--sp-5);
+  gap: 1.5rem;
+  color-scheme: dark; /* native date picker + select render dark */
 }
 
 .grid {
   display: grid;
-  gap: var(--sp-4);
+  gap: 1.25rem;
 }
 @media (min-width: 520px) {
   .grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.label {
+  font-family: var(--l-mono);
+  font-size: var(--l-text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--l-ink-soft);
+}
+.label em {
+  font-style: normal;
+  color: var(--l-rust);
+}
+.hint {
+  font-size: var(--l-text-xs);
+  color: var(--l-ink-mute);
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  appearance: none;
+  background: color-mix(in srgb, var(--l-ink) 4%, transparent);
+  border: 1px solid var(--l-line);
+  border-radius: 4px;
+  padding: 0.8rem 0.9rem;
+  color: var(--l-ink);
+  font-family: var(--l-sans);
+  font-size: var(--l-text-base);
+  transition: border-color 0.3s var(--l-ease), background-color 0.3s var(--l-ease);
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--l-rust);
+  background: color-mix(in srgb, var(--l-ink) 7%, transparent);
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--l-ink-mute);
+}
+.textarea {
+  resize: vertical;
+  min-height: 6rem;
+  line-height: 1.5;
+}
+.select {
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23c56a3f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
 }
 
 /* Honeypot: removed from the visual + a11y tree but still in the DOM for bots. */
@@ -27,35 +86,61 @@
 
 .error {
   margin: 0;
-  color: var(--danger);
-  font-size: var(--step--1);
+  color: var(--l-rust-soft);
+  font-size: var(--l-text-sm);
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 1.05rem 1.6rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--l-ink);
+  color: var(--l-bg);
+  font-family: var(--l-sans);
+  font-size: var(--l-text-sm);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background-color 0.3s var(--l-ease), color 0.3s var(--l-ease);
+}
+.submit:hover:not(:disabled) {
+  background: var(--l-rust);
+  color: var(--l-on-rust);
+}
+.submit:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .fineprint {
   margin: 0;
   text-align: center;
-  color: var(--text-muted);
-  font-size: var(--step--1);
+  color: var(--l-ink-mute);
+  font-size: var(--l-text-xs);
 }
 
 /* Confirmation state (replaces the form after a successful submit). */
 .done {
   display: grid;
-  gap: var(--sp-3);
+  gap: 1rem;
   place-items: center;
   text-align: center;
-  padding: var(--sp-8) var(--sp-4);
+  padding: clamp(2.5rem, 6vw, 4rem) 1rem;
 }
 .doneTitle {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--step-3);
-  color: var(--ink);
+  font-family: var(--l-serif);
+  font-weight: 400;
+  font-size: clamp(2rem, 1.4rem + 1.6vw, 2.75rem);
+  color: var(--l-ink);
 }
 .doneBody {
   margin: 0;
   max-width: 38ch;
-  color: var(--text-muted);
-  line-height: var(--leading-normal);
+  color: var(--l-ink-soft);
+  line-height: 1.6;
 }

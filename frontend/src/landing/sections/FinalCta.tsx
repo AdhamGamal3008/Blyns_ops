@@ -1,35 +1,32 @@
 // Final CTA — the invitation + the discovery-booking form (the page's one
-// functional feature).
+// functional feature). The closing tentpole, on the deepest tone with a rust
+// wash. Copy verbatim.
 
-import shared from "../LandingPage.module.css";
+import { Reveal } from "../motion";
+import { Heading, Section, SectionLabel } from "../ui";
 import { BookingForm } from "./BookingForm";
 import styles from "./FinalCta.module.css";
 
 export function FinalCta() {
   return (
-    <section
-      id="book"
-      className={`${shared.section} ${shared.sectionGold}`}
-      aria-labelledby="book-h"
-    >
-      <div className={`${shared.container} ${styles.grid}`}>
-        <div className={styles.copy}>
-          <p className={shared.eyebrow}>Let's begin</p>
-          <h2 id="book-h" className={styles.headline}>
-            Your company isn't standard.
-            <span className={styles.headlineSub}>Why should your software be?</span>
-          </h2>
-          <p className={shared.lede}>
-            Every successful project starts with understanding the brief. Let's
-            start with yours.
+    <Section id="book" tone="deep" labelledBy="book-h" className={styles.section}>
+      <div className={`l-container ${styles.grid}`}>
+        <Reveal className={styles.copy}>
+          <SectionLabel>Let&rsquo;s begin</SectionLabel>
+          <Heading id="book-h" sub="Why should your software be?" subTone="rust">
+            Your company isn&rsquo;t standard.
+          </Heading>
+          <p className={styles.lede}>
+            Every successful project starts with understanding the brief. Let&rsquo;s start with
+            yours.
           </p>
-        </div>
+        </Reveal>
 
-        <div className={styles.formCard}>
+        <Reveal delay={0.1} className={styles.formCard}>
           <p className={styles.formTitle}>Book a discovery session</p>
           <BookingForm />
-        </div>
+        </Reveal>
       </div>
-    </section>
+    </Section>
   );
 }

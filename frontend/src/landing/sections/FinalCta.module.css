@@ -1,41 +1,56 @@
+.section {
+  position: relative;
+  overflow: hidden;
+}
+/* warm rust wash to bookend the page, echoing the hero */
+.section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 55% at 12% 15%, color-mix(in srgb, var(--l-rust) 18%, transparent), transparent 68%),
+    radial-gradient(50% 55% at 95% 90%, color-mix(in srgb, var(--l-rust) 10%, transparent), transparent 70%);
+}
+
 .grid {
+  position: relative;
+  z-index: 1;
   display: grid;
-  gap: clamp(var(--sp-6), 5vw, 72px);
+  gap: clamp(2.5rem, 5vw, 5rem);
   align-items: center;
 }
 @media (min-width: 900px) {
   .grid {
-    grid-template-columns: 1.05fr 0.95fr;
+    grid-template-columns: 1fr 1fr;
   }
 }
 
-.headline {
-  margin: 0;
-  font-family: var(--font-display);
-  font-optical-sizing: auto;
-  font-weight: 460;
-  font-size: clamp(2.25rem, 1.3rem + 3.6vw, 3.5rem);
-  line-height: 1.04;
-  letter-spacing: var(--tracking-tight);
-  color: var(--ink);
-  text-wrap: balance;
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
 }
-.headlineSub {
-  display: block;
-  color: var(--brand-600);
+.lede {
+  margin: 0.3rem 0 0;
+  max-width: 38ch;
+  font-size: var(--l-text-lg);
+  line-height: 1.5;
+  color: var(--l-ink-soft);
 }
 
 .formCard {
-  padding: clamp(var(--sp-5), 3vw, var(--sp-7));
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  border: 1px solid var(--l-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--l-bg-raised) 78%, transparent);
+  backdrop-filter: blur(6px);
 }
 .formTitle {
-  margin: 0 0 var(--sp-5);
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: var(--step-2);
-  color: var(--ink);
+  margin: 0 0 1.5rem;
+  font-family: var(--l-serif);
+  font-weight: 400;
+  font-size: 1.6rem;
+  color: var(--l-ink);
 }
