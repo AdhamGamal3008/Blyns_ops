@@ -9,6 +9,22 @@ portal** as leads.
 This doc is the definition of done. Build to its section inventory, data model,
 endpoints, RBAC, and **Acceptance criteria**.
 
+> **Redesign (2026-08) — read first.** The landing was rebuilt to *attract* rather
+> than match the product. It no longer reuses the product's design system: it has
+> its **own dark, editorial visual language** — warm near-black canvas, ivory ink,
+> a single terracotta accent, self-hosted **Instrument Serif** (display) + **Space
+> Mono** (labels) + Inter (body), all scoped under `[data-surface="landing"]` — and
+> a small framer-motion **motion kit** (reveals, word-by-word reveal, marquee,
+> magnetic CTAs, counter preloader). Layout + motion inspiration: the **ASHCROFT**
+> studio Framer template (no asset reused). The **content, routing, booking
+> feature, RBAC, and acceptance criteria below are unchanged** — only the visual
+> language, arrangement, and motion were rebuilt. File shape under
+> `frontend/src/landing/`: `theme/` (tokens + fonts), `motion/`, `ui/` (Section,
+> Heading, SectionLabel, PillLink), `chrome/` (Preloader, LandingNav,
+> LandingFooter, LiveClock), `sections/`, `showcase/` (the real product screens,
+> code-split + lazy-mounted on the Platform section). Where §1/§5 below say "reuses
+> the design system verbatim," this note supersedes them.
+
 ---
 
 ## 1. Positioning & tone
@@ -18,13 +34,14 @@ endpoints, RBAC, and **Acceptance criteria**.
   *optimized / streamlined / digital transformation*.
 - **Avoid the word "ERP."** Refer to the product as *your company's operating
   system / the system behind exceptional projects*.
-- Reuses the existing design system verbatim — `--paper / --ink / --oxblood /
-  --champagne` tokens and the **Fraunces** (display) + **Inter** (UI) faces from
-  `shared/design`. The landing is a *new visual arrangement of the same brand*,
-  not a second design system.
-- Inspiration for **layout patterns only** (full-bleed serif hero, gallery grid,
-  numbered disciplines, horizontal process timeline, FAQ accordion, big-type
-  sections): the Harmony Studio Framer template. **No asset from it is reused.**
+- **Its own dark, editorial visual language** (see the redesign note above) — warm
+  near-black canvas, ivory ink, a single terracotta accent, self-hosted
+  **Instrument Serif** (display) + **Space Mono** (labels) + Inter (body), scoped
+  under `[data-surface="landing"]` so it never leaks into the portals.
+- Inspiration for **layout + motion patterns only** (full-bleed serif hero, gallery
+  grid, numbered disciplines, horizontal scroll timeline, FAQ accordion, big-type
+  sections, counter preloader, word-by-word reveals): the **ASHCROFT** studio
+  Framer template. **No asset from it is reused.**
 
 ## 2. Surfaces & routing
 
