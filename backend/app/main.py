@@ -154,6 +154,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     from app.modules.dashboard.router import router as dashboard_router
     from app.modules.finance.router import router as finance_router
     from app.modules.inventory.router import router as inventory_router
+    from app.modules.production.router import router as production_router
     from app.modules.projects.router import router as projects_router
     from app.modules.settings.router import router as settings_router
 
@@ -171,6 +172,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(inventory_router)
     app.include_router(finance_router)
     app.include_router(projects_router)
+    app.include_router(production_router)
 
     # Opt-in: serve the production React build from the API origin (same-origin ⇒
     # no CORS, works behind the tunnel). Greedy mount at "/" ⇒ MUST be last.

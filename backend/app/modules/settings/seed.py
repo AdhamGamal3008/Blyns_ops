@@ -25,6 +25,7 @@ from app.shared.enums import Level
 CLIENT_RESOURCES = [
     "dashboard", "calendar", "activity",
     "projects", "projects_analytics",
+    "production", "production_analytics",
     "crm", "crm_analytics",
     "inventory", "inventory_analytics",
     "finance", "finance_analytics",
@@ -59,17 +60,18 @@ def default_roles() -> list[dict]:
         _role("Owner", {res: w for res in CLIENT_RESOURCES}),
         _role("Manager", {
             "dashboard": r, "calendar": r, "activity": r,
-            "projects": w, "crm": w, "inventory": w,   # WRITE ops modules
+            "projects": w, "production": w, "crm": w, "inventory": w,   # WRITE ops modules
             "finance": r,                              # READ finance
             "settings": r,
             "projects_analytics": r,                   # full analytics oversight
+            "production_analytics": r,
             "crm_analytics": r,
             "inventory_analytics": r,
             "finance_analytics": r,
         }),
         _role("Member", {
             "dashboard": r, "calendar": r, "activity": r,
-            "projects": w, "crm": w, "inventory": r,
+            "projects": w, "production": w, "crm": w, "inventory": r,
         }),
         _role("Viewer", {"dashboard": r, "calendar": r}),
     ]

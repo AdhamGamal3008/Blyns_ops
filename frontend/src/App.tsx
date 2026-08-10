@@ -17,6 +17,7 @@ import { CrmPage } from "./client/crm/CrmPage";
 import { DashboardPage } from "./client/dashboard/DashboardPage";
 import { FinancePage } from "./client/finance/FinancePage";
 import { InventoryPage } from "./client/inventory/InventoryPage";
+import { ProductionPage } from "./client/production/ProductionPage";
 import { ProjectDetail } from "./client/projects/ProjectDetail";
 import { ProjectsPage } from "./client/projects/ProjectsPage";
 import { SettingsPage } from "./client/settings/SettingsPage";
@@ -50,6 +51,7 @@ export function App() {
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="production/*" element={<ProductionPage />} />
           <Route path="crm/*" element={<CrmPage />} />
           <Route path="inventory/*" element={<InventoryPage />} />
           <Route path="finance/*" element={<FinancePage />} />
