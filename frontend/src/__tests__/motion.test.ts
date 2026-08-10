@@ -24,6 +24,12 @@ function cssFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
     if (entry === "node_modules") return [];
+    // The landing (src/landing) is a separate marketing surface with its own,
+    // deliberately slower editorial motion language (cinematic reveals, an
+    // infinite material marquee) and its own reduced-motion kill switch
+    // (landing/theme/theme.css, asserted below). This app budget —
+    // UI_REFACTOR.md Phase 6 — governs the product, not the marketing page.
+    if (entry === "landing") return [];
     if (statSync(path).isDirectory()) return cssFiles(path);
     return path.endsWith(".css") ? [path] : [];
   });
@@ -100,6 +106,17 @@ describe("motion budget", () => {
       }
     }
     expect([...found].filter((n) => !allowed.has(n))).toEqual([]);
+  });
+
+  // The landing is exempt from the app budget above (see cssFiles). It must
+  // still ship its own reduced-motion kill switch, asserted here so the
+  // exemption can never hide a loop that keeps running for someone who opted out.
+  it("keeps the landing's own reduced-motion kill switch", () => {
+    const themeCss = readFileSync(join(SRC, "landing/theme/theme.css"), "utf8");
+    expect(themeCss).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(themeCss).toMatch(/animation-duration:\s*0\.001ms\s*!important/);
+    expect(themeCss).toMatch(/animation-iteration-count:\s*1\s*!important/);
+    expect(themeCss).toMatch(/transition-duration:\s*0\.001ms\s*!important/);
   });
 
   it("keeps the reduced-motion kill switch in tokens.css", () => {

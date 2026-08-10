@@ -90,6 +90,20 @@ html:has([data-surface="landing"]) {
   padding-inline: var(--l-gutter);
 }
 
+/* Visually hidden, still read by assistive tech (e.g. the real text behind a
+   split-word animation). */
+[data-surface="landing"] .l-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-surface="landing"] * {
     animation-duration: 0.001ms !important;

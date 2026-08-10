@@ -92,3 +92,12 @@
   );
   filter: blur(34px);
 }
+
+/* Holds the row's height until the lazy screen chunk resolves. */
+.placeholder {
+  width: 100%;
+  aspect-ratio: 1160 / 780;
+  border: 1px solid var(--l-line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--l-bg-raised) 55%, transparent);
+}

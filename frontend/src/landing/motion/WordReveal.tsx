@@ -18,29 +18,32 @@ export function WordReveal({ text, className, stagger = 0.03 }: WordRevealProps)
 
   const words = text.split(" ");
   return (
-    <motion.span
-      className={className}
-      aria-label={text}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true, margin: "0px 0px -20% 0px" }}
-      transition={{ staggerChildren: stagger }}
-    >
-      {words.map((word, i) => (
-        <span
-          key={`${word}-${i}`}
-          aria-hidden="true"
-          style={{ display: "inline-block", overflow: "hidden", marginRight: "0.25em" }}
-        >
-          <motion.span
-            style={{ display: "inline-block", willChange: "transform" }}
-            variants={{ hidden: { y: "110%", opacity: 0 }, visible: { y: 0, opacity: 1 } }}
-            transition={{ duration: 0.6, ease: EASE }}
+    <span className={className}>
+      {/* Real, space-separated copy for assistive tech + selection; the animated
+          words below are decorative and hidden from the a11y tree. */}
+      <span className="l-sr-only">{text}</span>
+      <motion.span
+        aria-hidden="true"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "0px 0px -20% 0px" }}
+        transition={{ staggerChildren: stagger }}
+      >
+        {words.map((word, i) => (
+          <span
+            key={`${word}-${i}`}
+            style={{ display: "inline-block", overflow: "hidden", marginRight: "0.25em" }}
           >
-            {word}
-          </motion.span>
-        </span>
-      ))}
-    </motion.span>
+            <motion.span
+              style={{ display: "inline-block", willChange: "transform" }}
+              variants={{ hidden: { y: "110%", opacity: 0 }, visible: { y: 0, opacity: 1 } }}
+              transition={{ duration: 0.6, ease: EASE }}
+            >
+              {word}
+            </motion.span>
+          </span>
+        ))}
+      </motion.span>
+    </span>
   );
 }

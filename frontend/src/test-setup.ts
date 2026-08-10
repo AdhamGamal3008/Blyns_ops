@@ -26,6 +26,25 @@ if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !=
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom ships no IntersectionObserver. framer-motion's useInView (the landing's
+// <Reveal> entrances and the lazily-mounted Platform screens) constructs one on
+// mount; a no-op observer that never fires keeps those components mounted at
+// their initial state — findable by text — without throwing.
+if (typeof globalThis.IntersectionObserver !== "function") {
+  globalThis.IntersectionObserver = class {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds: ReadonlyArray<number> = [];
+    constructor() {}
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  } as unknown as typeof IntersectionObserver;
+}
+
 // jsdom ships no matchMedia. Components read it to decide whether to animate,
 // so provide a real-shaped stub that reports "no preference"; a test that cares
 // about reduced motion overrides `matches` for the query it is exercising.
