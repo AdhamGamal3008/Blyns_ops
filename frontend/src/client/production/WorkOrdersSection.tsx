@@ -13,6 +13,7 @@ import {
   dueTone, formatDue, statusLabel, WO_STATUS_TONE,
   type WorkOrder, type WorkOrderDraft,
 } from "./types";
+import { WorkOrderDetail } from "./WorkOrderDetail";
 
 interface ProjectRow {
   id: string;
@@ -20,7 +21,7 @@ interface ProjectRow {
   name: string;
 }
 
-export function WorkOrdersSection(props: { canManage: boolean }) {
+export function WorkOrdersSection(props: { canWrite: boolean; canManage: boolean }) {
   const [wos, setWos] = useState<WorkOrder[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [generating, setGenerating] = useState(false);
@@ -95,7 +96,15 @@ export function WorkOrdersSection(props: { canManage: boolean }) {
       {generating && (
         <GenerateModal onDone={(ok) => { setGenerating(false); if (ok) load(); }} />
       )}
-      {viewing && <WorkOrderDetail wo={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <WorkOrderDetail
+          woId={viewing.id}
+          canWrite={props.canWrite}
+          canManage={props.canManage}
+          onClose={() => setViewing(null)}
+          onChanged={load}
+        />
+      )}
     </section>
   );
 }
@@ -192,50 +201,6 @@ function GenerateModal(props: { onDone: (ok: boolean) => void }) {
           </table>
         )}
         {drafts && drafts.length === 0 && <p>No work orders were proposed for this project.</p>}
-      </Stack>
-    </Modal>
-  );
-}
-
-/** Read-only detail: the pinned drawing revision, the BOM snapshot, and the
- *  revision-conflict flag (plan §2.1). */
-function WorkOrderDetail(props: { wo: WorkOrder; onClose: () => void }) {
-  const w = props.wo;
-  return (
-    <Modal
-      open
-      onOpenChange={(o) => !o && props.onClose()}
-      title={w.code}
-      size="md"
-      footer={<Button onClick={props.onClose}>Close</Button>}
-    >
-      <Stack gap={3}>
-        <b>{w.item_name}</b>
-        <Row gap={2}>
-          <Badge tone={WO_STATUS_TONE[w.status] ?? "neutral"}>{statusLabel(w.status)}</Badge>
-          <Badge tone={dueTone(w.due_date)}>Due {formatDue(w.due_date)}</Badge>
-          {w.revision_conflict && <Badge tone="danger">revision conflict</Badge>}
-        </Row>
-        <div>Project: {w.project_code ?? "—"}{w.client_name ? ` · ${w.client_name}` : ""}</div>
-        <div>Station: {w.station_name ?? "Unassigned"}</div>
-        <div>Qty: {w.qty.done} / {w.qty.ordered}</div>
-        <div>
-          Drawing:{" "}
-          {w.source_drawing
-            ? `${w.source_drawing.title ?? w.source_drawing.deliverable_id} · v${w.source_drawing.version}`
-            : "none pinned"}
-          {w.revision_conflict && " — a newer revision has been issued"}
-        </div>
-        <div>
-          <b>BOM</b>
-          <ul>
-            {w.bom_lines.map((l, i) => (
-              <li key={i}>
-                {l.description ?? l.sku ?? l.product_id} — {l.qty}{l.uom ? ` ${l.uom}` : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
       </Stack>
     </Modal>
   );

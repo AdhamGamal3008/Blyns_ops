@@ -15,11 +15,12 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.modules.crm.repository import ACCOUNTS
-from app.modules.inventory.repository import PRODUCTS
+from app.modules.inventory.repository import PRODUCTS, WAREHOUSES
 from app.modules.projects.repository import DELIVERABLES, PROJECTS
 
 STATIONS = "production_stations"
 WORK_ORDERS = "work_orders"
+PRODUCTION_ROLLUP = "production_rollup"
 COUNTERS = "counters"
 
 _LIVE = {"is_deleted": {"$ne": True}}
@@ -39,6 +40,33 @@ async def list_stations(db: AsyncIOMotorDatabase) -> list[dict]:
 async def stations_map(db: AsyncIOMotorDatabase) -> dict[str, dict]:
     """{station_id: station} over all stations, for enriching WO rows."""
     return {str(s["_id"]): s async for s in db[STATIONS].find({})}
+
+
+async def get_station(db: AsyncIOMotorDatabase, oid: ObjectId) -> dict | None:
+    return await db[STATIONS].find_one({"_id": oid})
+
+
+async def station_load(
+    db: AsyncIOMotorDatabase, active_statuses: list[str]
+) -> dict[str, dict]:
+    """{station_id: {units, count}} — the remaining build work parked at each
+    station (only WOs still in a producing state count against capacity)."""
+    agg: list[dict] = [
+        {"$match": {
+            "status": {"$in": active_statuses},
+            "current_station_id": {"$ne": None},
+            **_LIVE,
+        }},
+        {"$group": {
+            "_id": "$current_station_id",
+            "units": {"$sum": {"$subtract": ["$qty.ordered", "$qty.done"]}},
+            "count": {"$sum": 1},
+        }},
+    ]
+    out: dict[str, dict] = {}
+    async for d in db[WORK_ORDERS].aggregate(agg):
+        out[str(d["_id"])] = {"units": float(d["units"] or 0), "count": int(d["count"])}
+    return out
 
 
 # --- cross-module reads (same tenant DB, read-only) --------------------------
@@ -137,3 +165,42 @@ async def queue_work_orders(
     applied in the service so null due dates sort last, not first."""
     filt = {**query, **_LIVE}
     return await db[WORK_ORDERS].find(filt).limit(limit).to_list(length=limit)
+
+
+async def live_work_orders(
+    db: AsyncIOMotorDatabase, project_id: ObjectId
+) -> list[dict]:
+    """Every live WO on a project — the input to the Stage-6 checklist rollup."""
+    return await db[WORK_ORDERS].find({"project_id": project_id, **_LIVE}).to_list(length=2000)
+
+
+async def update_work_order(
+    db: AsyncIOMotorDatabase, oid: ObjectId, fields: dict
+) -> dict | None:
+    fields["updated_at"] = _now()
+    await db[WORK_ORDERS].update_one({"_id": oid}, {"$set": fields})
+    return await get_work_order(db, oid)
+
+
+# --- pipeline rollup (display cache, keyed by project_id) --------------------
+
+async def upsert_rollup(
+    db: AsyncIOMotorDatabase, project_id: ObjectId, sections: dict
+) -> None:
+    await db[PRODUCTION_ROLLUP].update_one(
+        {"_id": project_id},
+        {"$set": {"sections": sections, "updated_at": _now()}},
+        upsert=True,
+    )
+
+
+async def get_rollup(
+    db: AsyncIOMotorDatabase, project_id: ObjectId
+) -> dict | None:
+    return await db[PRODUCTION_ROLLUP].find_one({"_id": project_id})
+
+
+# --- inventory (read a warehouse to draw rework stock from) ------------------
+
+async def default_warehouse(db: AsyncIOMotorDatabase) -> dict | None:
+    return await db[WAREHOUSES].find_one({"is_deleted": {"$ne": True}}, sort=[("code", 1)])

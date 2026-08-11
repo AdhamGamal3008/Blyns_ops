@@ -40,6 +40,7 @@ export interface WorkOrder {
   status: string;
   blocked_by?: BlockedBy | null;
   revision_conflict?: boolean;
+  qc?: { result: string; defects: string[]; note?: string | null } | null;
 }
 
 /** The propose output; the identical shape is posted back to confirm (D4). */
@@ -75,4 +76,38 @@ export function dueTone(due?: string | null): BadgeTone {
 export function formatDue(due?: string | null): string {
   if (!due) return "—";
   return new Date(due).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export interface Station {
+  id: string;
+  code: string;
+  name: string;
+  material_types: string[];
+  capacity_units_per_day: number;
+  is_active: boolean;
+  load: {
+    units: number;
+    work_orders: number;
+    capacity: number;
+    utilization: number | null;
+  };
+}
+
+/** The read-only Stage-6 mirror Production shows next to "Approve in pipeline". */
+export interface ProjectRollup {
+  project_id: string;
+  project_code?: string | null;
+  sections: Record<string, number>;
+  release_checklist: string[];
+  checklist_done: string[];
+  stage_order?: number | null;
+  stage_status?: string | null;
+  releasable: boolean;
+}
+
+/** WOs that belong in the Quality register — awaiting QC, held, or reworking. */
+export const QC_STATUSES = ["qc_pending", "qc_hold", "rework"];
+
+export function sectionLabel(section: string): string {
+  return section.replace(/_/g, " ");
 }

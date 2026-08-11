@@ -8,7 +8,9 @@ import { api } from "../../shared/api";
 import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
+import { QualitySection } from "./QualitySection";
 import { QueueSection } from "./QueueSection";
+import { StationsSection } from "./StationsSection";
 import { WorkOrdersSection } from "./WorkOrdersSection";
 
 export function ProductionPage() {
@@ -39,13 +41,13 @@ export function ProductionPage() {
         </TabsList>
 
         <TabsContent value="queue"><QueueSection /></TabsContent>
-        <TabsContent value="work-orders"><WorkOrdersSection canManage={canManage} /></TabsContent>
+        <TabsContent value="work-orders">
+          <WorkOrdersSection canWrite={canWrite} canManage={canManage} />
+        </TabsContent>
         <TabsContent value="quality">
-          <Placeholder note="The defect log, rework, and QC-hold register. A hold blocks only its own work order, never the project. Lands in Phase 2." />
+          <QualitySection canWrite={canWrite} canManage={canManage} />
         </TabsContent>
-        <TabsContent value="stations">
-          <Placeholder note="Load and capacity by work centre, with allocation override. Lands in Phase 3." />
-        </TabsContent>
+        <TabsContent value="stations"><StationsSection /></TabsContent>
         <TabsContent value="dispatch">
           <Placeholder note="Packed → staged → shipped, with delivery note and manifest generation. Lands in Phase 4." />
         </TabsContent>

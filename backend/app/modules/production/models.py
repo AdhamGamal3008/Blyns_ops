@@ -9,6 +9,7 @@ trim the drafts before they are created.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -52,3 +53,31 @@ class WorkOrderConfirm(BaseModel):
     """The reviewed set the manager commits (D4)."""
 
     work_orders: list[WorkOrderInput] = Field(min_length=1)
+
+
+# --- Phase 2 status transitions (§2.2) ---------------------------------------
+
+class RequestQCInput(BaseModel):
+    """Production complete → QC. Optionally capture labor for a job cost."""
+
+    qty_done: float | None = Field(default=None, gt=0)
+    labor_hours: float = Field(default=0, ge=0)
+    labor_rate: float = Field(default=0, ge=0)
+
+
+class QCResultInput(BaseModel):
+    result: Literal["pass", "hold"]
+    defects: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class ReworkInput(BaseModel):
+    note: str | None = None
+
+
+class ShortfallInput(BaseModel):
+    note: str = Field(min_length=1)
+
+
+class AllocateInput(BaseModel):
+    station_id: str = Field(min_length=1)

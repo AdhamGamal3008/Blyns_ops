@@ -10,7 +10,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.modules.production import service
-from app.modules.production.models import ProposeRequest, WorkOrderConfirm
+from app.modules.production.models import (
+    AllocateInput,
+    ProposeRequest,
+    QCResultInput,
+    RequestQCInput,
+    ReworkInput,
+    ShortfallInput,
+    WorkOrderConfirm,
+)
 from app.shared.enums import Level
 from app.shared.schemas import PaginationParams, envelope, page_meta, to_api
 from app.tenant.deps import ClientPrincipal, require
@@ -74,3 +82,67 @@ async def list_work_orders(
 @router.get("/work-orders/{wo_id}")
 async def get_work_order(wo_id: str, principal: ClientPrincipal = Depends(_read)):
     return envelope(to_api(await service.get_work_order(principal, wo_id)))
+
+
+# --- status transitions (§2.2). Release additionally requires the
+# production_manager position (enforced in the service); the floor actions are
+# plain WRITE (soft functions, plan §4). ---------------------------------------
+
+@router.post("/work-orders/{wo_id}/release")
+async def release(wo_id: str, principal: ClientPrincipal = Depends(_write)):
+    return envelope(to_api(await service.release_work_order(principal, wo_id)))
+
+
+@router.post("/work-orders/{wo_id}/start")
+async def start(wo_id: str, principal: ClientPrincipal = Depends(_write)):
+    return envelope(to_api(await service.start_work_order(principal, wo_id)))
+
+
+@router.post("/work-orders/{wo_id}/request-qc")
+async def request_qc(
+    wo_id: str, body: RequestQCInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.request_qc(principal, wo_id, body)))
+
+
+@router.post("/work-orders/{wo_id}/qc")
+async def record_qc(
+    wo_id: str, body: QCResultInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.record_qc(principal, wo_id, body)))
+
+
+@router.post("/work-orders/{wo_id}/rework")
+async def rework(
+    wo_id: str, body: ReworkInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.rework_work_order(principal, wo_id, body)))
+
+
+@router.post("/work-orders/{wo_id}/shortfall")
+async def shortfall(
+    wo_id: str, body: ShortfallInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.flag_shortfall(principal, wo_id, body)))
+
+
+# --- station allocation (§3). Both require the production_manager position
+# (enforced in the service) — operators do not move WOs between work centres. ---
+
+@router.post("/work-orders/{wo_id}/allocate")
+async def allocate(
+    wo_id: str, body: AllocateInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.allocate_work_order(principal, wo_id, body.station_id)))
+
+
+@router.post("/work-orders/{wo_id}/auto-allocate")
+async def auto_allocate(wo_id: str, principal: ClientPrincipal = Depends(_write)):
+    return envelope(to_api(await service.auto_allocate_work_order(principal, wo_id)))
+
+
+# --- pipeline mirror (read-only; the approve lives in the pipeline) ----------
+
+@router.get("/projects/{project_id}/rollup")
+async def project_rollup(project_id: str, principal: ClientPrincipal = Depends(_read)):
+    return envelope(to_api(await service.project_rollup(principal, project_id)))
