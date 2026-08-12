@@ -49,6 +49,17 @@ export function ClientShell() {
     if (error) navigate("/login");
   }, [error, navigate]);
 
+  // Settings → Company profile dispatches this after saving a new logo, so the
+  // sidebar brand reflects it without a reload.
+  useEffect(() => {
+    function onLogo(e: Event) {
+      const logo = (e as CustomEvent<string | null>).detail;
+      setMe((m) => (m ? { ...m, company: { ...m.company, logo_ref: logo } } : m));
+    }
+    window.addEventListener("blyns:company-logo", onLogo);
+    return () => window.removeEventListener("blyns:company-logo", onLogo);
+  }, []);
+
   if (!me) {
     return (
       <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center" }}>
@@ -95,7 +106,11 @@ export function ClientShell() {
 
   return (
     <AppShell
-      brand={{ title: me.company.name, subtitle: "Blyns workspace" }}
+      brand={{
+        title: me.company.name,
+        subtitle: "Blyns workspace",
+        logo: me.company.logo_ref ?? null,
+      }}
       nav={nav}
       user={{ name: me.name, role: me.role.name }}
       onSignOut={() => void logout()}

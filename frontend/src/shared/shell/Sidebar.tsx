@@ -6,8 +6,15 @@ import { Tooltip } from "../ui/Tooltip/Tooltip";
 import type { ShellNavItem } from "./types";
 import styles from "./Sidebar.module.css";
 
+interface SidebarBrand {
+  title: string;
+  subtitle?: string;
+  /** Company logo (data URI or URL); falls back to a monogram when absent. */
+  logo?: string | null;
+}
+
 export interface SidebarProps {
-  brand: { title: string; subtitle?: string };
+  brand: SidebarBrand;
   nav: ShellNavItem[];
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -20,6 +27,21 @@ function monogram(title: string): string {
   const parts = title.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return title.trim().slice(0, 2).toUpperCase();
+}
+
+/** The square brand icon — the company logo when the tenant has one (no chrome
+ *  behind it), otherwise a monogram chip. Display-only; the logo is uploaded from
+ *  Settings → Company profile. */
+function BrandMark({ brand }: { brand: SidebarBrand }) {
+  if (brand.logo) {
+    return (
+      <span className={styles.mark} style={{ background: "transparent", border: "none" }}>
+        <img src={brand.logo} alt=""
+          style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }} />
+      </span>
+    );
+  }
+  return <span className={styles.mark} aria-hidden="true">{monogram(brand.title)}</span>;
 }
 
 function SidebarLink({
@@ -64,9 +86,7 @@ export function Sidebar({
   return (
     <aside className={cn(styles.root, collapsed && styles.collapsed)}>
       <div className={styles.brand}>
-        <span className={styles.mark} aria-hidden="true">
-          {monogram(brand.title)}
-        </span>
+        <BrandMark brand={brand} />
         {!collapsed && (
           <span className={styles.brandText}>
             <span className={styles.brandTitle}>{brand.title}</span>

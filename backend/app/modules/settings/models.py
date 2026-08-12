@@ -24,6 +24,18 @@ class CompanyProfilePatch(BaseModel):
     # "company setting [that] may allow it".
     allow_negative_stock: bool | None = None
 
+    @field_validator("logo_ref")
+    @classmethod
+    def _valid_logo(cls, v: str | None) -> str | None:
+        # The logo is uploaded as an inline data URI (kept small); a plain URL is
+        # also allowed. Guard the data-URI form: image only, ~256 KB cap.
+        if v and v.startswith("data:"):
+            if not v.startswith("data:image/"):
+                raise ValueError("logo must be an image")
+            if len(v) > 360_000:  # ~256 KB encoded as base64
+                raise ValueError("logo is too large (max ~256 KB)")
+        return v
+
 
 class EmployeeCreate(BaseModel):
     name: str = Field(min_length=1)

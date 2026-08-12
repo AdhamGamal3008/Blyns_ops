@@ -10,7 +10,7 @@ import styles from "./MobileNav.module.css";
 export interface MobileNavProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  brand: { title: string; subtitle?: string };
+  brand: { title: string; subtitle?: string; logo?: string | null };
   nav: ShellNavItem[];
   /** Subset shown in the bottom tab bar (client app). */
   tabs?: ShellNavItem[];
@@ -54,8 +54,12 @@ export function MobileNav({
                 >
                   <div className={styles.drawerHead}>
                     <div className={styles.brand}>
-                      <span className={styles.mark} aria-hidden="true">
-                        {brand.title.trim().slice(0, 2).toUpperCase()}
+                      <span className={styles.mark} aria-hidden="true"
+                        style={brand.logo ? { background: "transparent", border: "none" } : undefined}>
+                        {brand.logo
+                          ? <img src={brand.logo} alt=""
+                              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }} />
+                          : brand.title.trim().slice(0, 2).toUpperCase()}
                       </span>
                       <span className={styles.brandText}>
                         <RadixDialog.Title className={styles.brandTitle}>

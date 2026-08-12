@@ -16,6 +16,15 @@ import {
   Stack,
 } from "../../shared/ui";
 
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 interface Profile {
   name?: string;
   legal_name?: string;
@@ -23,6 +32,7 @@ interface Profile {
   currency?: string;
   fiscal_year_start?: string;
   contact?: { email?: string; phone?: string };
+  logo_ref?: string | null;
 }
 
 export function ProfileSection(props: { canWrite: boolean }) {
@@ -48,15 +58,36 @@ export function ProfileSection(props: { canWrite: boolean }) {
           name: profile.name, legal_name: profile.legal_name,
           timezone: profile.timezone, currency: profile.currency,
           fiscal_year_start: profile.fiscal_year_start, contact: profile.contact,
+          logo_ref: profile.logo_ref,
         },
       });
       setProfile(res.data);
       setSaved(true);
+      // keep the sidebar brand in sync without a reload
+      window.dispatchEvent(new CustomEvent("blyns:company-logo",
+        { detail: res.data.logo_ref ?? null }));
     } catch (err) {
       setError(err);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";  // allow re-picking the same file after a rejection
+    if (!file || !profile) return;
+    if (!file.type.startsWith("image/")) {
+      setError(new Error("Please choose an image file."));
+      return;
+    }
+    if (file.size > 256 * 1024) {
+      setError(new Error("That image is too large — please choose one under 256 KB."));
+      return;
+    }
+    setError(null);
+    setSaved(false);
+    setProfile({ ...profile, logo_ref: await readAsDataURL(file) });
   }
 
   return (
@@ -101,6 +132,20 @@ export function ProfileSection(props: { canWrite: boolean }) {
                         setProfile({ ...profile, fiscal_year_start: e.target.value })} />
                   </Field>
                 </FormGrid>
+
+                <Field label="Logo" hint="Shown in the sidebar. PNG, JPG or SVG, up to 256 KB.">
+                  <Stack gap={2}>
+                    {profile.logo_ref && (
+                      <img src={profile.logo_ref} alt="Company logo"
+                        style={{ height: 48, maxWidth: 180, objectFit: "contain",
+                          borderRadius: "var(--r-md)" }} />
+                    )}
+                    {props.canWrite && (
+                      <input type="file" accept="image/*" onChange={onLogoFile}
+                        aria-label="Upload company logo" />
+                    )}
+                  </Stack>
+                </Field>
 
                 {props.canWrite && (
                   <FormActions>

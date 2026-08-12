@@ -73,7 +73,7 @@ export interface ClientMe {
   email: string;
   name: string;
   must_reset_password: boolean;
-  company: { slug: string; name: string; enabled_modules: string[] };
+  company: { slug: string; name: string; enabled_modules: string[]; logo_ref?: string | null };
   role: RoleInfo;
 }
 

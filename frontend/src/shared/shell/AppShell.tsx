@@ -11,7 +11,12 @@ import styles from "./AppShell.module.css";
 const COLLAPSE_KEY = "blyns-sidebar-collapsed";
 
 export interface AppShellProps {
-  brand: { title: string; subtitle?: string };
+  brand: {
+    title: string;
+    subtitle?: string;
+    /** Company logo (data URI or URL); falls back to a monogram when absent. */
+    logo?: string | null;
+  };
   nav: ShellNavItem[];
   user: ShellUser;
   onSignOut: () => void;
