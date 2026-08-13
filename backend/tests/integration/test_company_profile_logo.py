@@ -40,6 +40,30 @@ async def test_logo_is_stored_and_surfaced_to_every_user(client_client):
     assert me["company"]["logo_ref"] == PNG
 
 
+async def test_logo_can_be_removed(client_client):
+    # set a logo, then clear it with an explicit null — a partial PATCH must be
+    # able to remove a field, not just add or replace it.
+    await client_client.patch("/api/v1/settings/company", json={"logo_ref": PNG})
+    res = await client_client.patch("/api/v1/settings/company", json={"logo_ref": None})
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["logo_ref"] is None
+
+    assert (await client_client.get(
+        "/api/v1/settings/company")).json()["data"]["logo_ref"] is None
+    me = (await client_client.get("/api/v1/auth/me")).json()["data"]
+    assert me["company"]["logo_ref"] is None
+
+
+async def test_unsent_fields_are_left_untouched(client_client):
+    # a PATCH that only sets the logo must not wipe the other profile fields
+    await client_client.patch("/api/v1/settings/company", json={
+        "name": "Kept Co", "currency": "EUR"})
+    await client_client.patch("/api/v1/settings/company", json={"logo_ref": PNG})
+    data = (await client_client.get("/api/v1/settings/company")).json()["data"]
+    assert data["name"] == "Kept Co" and data["currency"] == "EUR"
+    assert data["logo_ref"] == PNG
+
+
 async def test_logo_rejects_non_image_and_oversized(client_client):
     res = await client_client.patch("/api/v1/settings/company",
         json={"logo_ref": "data:text/html;base64,PHNjcmlwdD4="})

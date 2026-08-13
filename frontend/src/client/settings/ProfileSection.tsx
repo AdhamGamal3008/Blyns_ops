@@ -13,6 +13,7 @@ import {
   FormActions,
   FormGrid,
   Input,
+  Row,
   Stack,
 } from "../../shared/ui";
 
@@ -141,8 +142,16 @@ export function ProfileSection(props: { canWrite: boolean }) {
                           borderRadius: "var(--r-md)" }} />
                     )}
                     {props.canWrite && (
-                      <input type="file" accept="image/*" onChange={onLogoFile}
-                        aria-label="Upload company logo" />
+                      <Row gap={2}>
+                        <input type="file" accept="image/*" onChange={onLogoFile}
+                          aria-label="Upload company logo" />
+                        {profile.logo_ref && (
+                          <Button type="button" variant="ghost" size="compact"
+                            onClick={() => { setSaved(false); setProfile({ ...profile, logo_ref: null }); }}>
+                            Remove
+                          </Button>
+                        )}
+                      </Row>
                     )}
                   </Stack>
                 </Field>

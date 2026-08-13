@@ -90,7 +90,10 @@ async def get_company_profile(principal: ClientPrincipal) -> dict:
 async def patch_company_profile(
     principal: ClientPrincipal, patch: CompanyProfilePatch
 ) -> dict:
-    fields = {k: v for k, v in patch.model_dump().items() if v is not None}
+    # exclude_unset so an explicit null clears a field (e.g. removing the logo)
+    # while fields the client never sent are left untouched. A None-filter here
+    # conflated "not provided" with "set to null", making a logo un-removable.
+    fields = patch.model_dump(exclude_unset=True)
     if fields:
         fields["updated_at"] = datetime.now(UTC)
         await principal.tenant_db.company_profile.update_one(

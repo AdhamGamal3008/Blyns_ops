@@ -53,10 +53,32 @@ describe("ProfileSection logo", () => {
     });
   });
 
+  it("removes the logo by saving an explicit null", async () => {
+    const mock = stubFetch();
+    render(<ProfileSection canWrite />);
+    await waitFor(() => expect(screen.getByAltText("Company logo")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    // the preview clears immediately once removed
+    await waitFor(() =>
+      expect(screen.queryByAltText("Company logo")).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => {
+      const patch = mock.mock.calls.find(
+        ([, init]) => (init as RequestInit)?.method === "PATCH",
+      );
+      const body = JSON.parse(String((patch![1] as RequestInit).body));
+      expect("logo_ref" in body).toBe(true);
+      expect(body.logo_ref).toBeNull();
+    });
+  });
+
   it("hides the upload input for a read-only user", async () => {
     stubFetch();
     render(<ProfileSection canWrite={false} />);
     await waitFor(() => expect(screen.getByAltText("Company logo")).toBeInTheDocument());
     expect(screen.queryByLabelText("Upload company logo")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 });
