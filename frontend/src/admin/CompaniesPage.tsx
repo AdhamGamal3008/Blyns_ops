@@ -28,7 +28,11 @@ import {
 } from "../shared/ui";
 import styles from "./CompaniesPage.module.css";
 
-const ALL_MODULES = ["dashboard", "settings", "projects", "crm", "inventory", "finance"];
+// Keep in step with KNOWN_MODULES on the backend (companies/models.py). A module
+// missing here can never be selected at onboarding or enabled afterwards.
+const ALL_MODULES = [
+  "dashboard", "settings", "projects", "production", "crm", "inventory", "finance",
+];
 
 const STATUS_TONE: Record<string, BadgeTone> = {
   active: "success", blocked: "danger", suspended: "neutral",
@@ -45,6 +49,7 @@ export function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[] | null>(null);
   const [showOnboard, setShowOnboard] = useState(false);
   const [seating, setSeating] = useState<Company | null>(null);
+  const [editingModules, setEditingModules] = useState<Company | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   const load = useCallback(() => {
@@ -110,6 +115,9 @@ export function CompaniesPage() {
       header: "",
       accessor: (c) => (
         <Row gap={2} className={styles.noWrap}>
+          <Button variant="ghost" size="compact" onClick={() => setEditingModules(c)}>
+            Modules
+          </Button>
           <Button variant="ghost" size="compact" onClick={() => setSeating(c)}>Seats</Button>
           {c.status === "active" ? (
             <Button variant="danger" size="compact" onClick={() => setStatus(c, "blocked")}>
@@ -178,7 +186,71 @@ export function CompaniesPage() {
           onDone={(changed) => { setSeating(null); if (changed) load(); }}
         />
       )}
+      {editingModules && (
+        <ModulesModal
+          company={editingModules}
+          onDone={(changed) => { setEditingModules(null); if (changed) load(); }}
+        />
+      )}
     </Stack>
+  );
+}
+
+/** Enable/disable modules on an existing tenant (ADMIN_PORTAL.md §1). Enabling a
+ *  module runs its seed + backfills its RBAC onto the tenant's roles server-side,
+ *  so it appears in navigation without a re-onboard. */
+function ModulesModal(props: { company: Company; onDone: (changed: boolean) => void }) {
+  const { company } = props;
+  const [modules, setModules] = useState<string[]>([...(company.enabled_modules ?? [])]);
+  const [error, setError] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+
+  function toggle(m: string) {
+    // dashboard + settings are the tenant's spine — never toggleable off.
+    if (m === "dashboard" || m === "settings") return;
+    setModules((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/admin/companies/${company.id}`, {
+        method: "PATCH", body: { enabled_modules: modules }, realm: "admin",
+      });
+      props.onDone(true);
+    } catch (err) {
+      setError(err);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <FormModal
+      open
+      onOpenChange={(o) => !o && props.onDone(false)}
+      title={`Modules — ${company.name}`}
+      description="Enabling a module provisions it for this tenant and reveals it in their navigation."
+      onSubmit={submit}
+      error={error}
+      errorTitle="Could not update modules"
+      busy={busy}
+      submitDisabled={modules.length === 0}
+      submitLabel="Save modules"
+    >
+      <Grid min={150} gap={2} stagger={false}>
+        {ALL_MODULES.map((m) => (
+          <Checkbox
+            key={m}
+            label={m}
+            checked={modules.includes(m)}
+            disabled={m === "dashboard" || m === "settings"}
+            onCheckedChange={() => toggle(m)}
+          />
+        ))}
+      </Grid>
+    </FormModal>
   );
 }
 

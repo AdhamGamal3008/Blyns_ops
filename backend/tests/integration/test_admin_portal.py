@@ -78,6 +78,34 @@ async def test_patch_enabled_modules_runs_seed(admin_client):
     assert await t.stage_definitions.count_documents({}) == 9  # seed ran
 
 
+async def test_enabling_a_module_backfills_its_rbac_onto_existing_roles(admin_client):
+    """A tenant onboarded before a module's RBAC resource existed has roles that
+    lack it; enabling the module must backfill the resource onto those roles, or
+    the module stays invisible in the client nav (which gates on enabled + a role
+    grant), even though it is enabled."""
+    slug = uslug()
+    res = await admin_client.post("/api/v1/admin/companies", json=onboard_body(slug))
+    company_id = res.json()["data"]["company"]["id"]
+    db_name = res.json()["data"]["company"]["db_name"]
+    t = get_db_manager().tenant(db_name)
+
+    # simulate a legacy tenant: strip `production` from every role's permissions
+    await t.roles.update_many({}, {"$unset": {"permissions.production": ""}})
+    owner = await t.roles.find_one({"name": "Owner"})
+    assert "production" not in (owner["permissions"] or {})
+    assert await t.production_stations.count_documents({}) == 0
+
+    res = await admin_client.patch(f"/api/v1/admin/companies/{company_id}", json={
+        "enabled_modules": ["dashboard", "settings", "crm", "production"],
+    })
+    assert res.status_code == 200, res.text
+
+    # the module seeded its data AND its RBAC reached the existing roles
+    assert await t.production_stations.count_documents({}) > 0
+    owner = await t.roles.find_one({"name": "Owner"})
+    assert owner["permissions"]["production"] >= 1
+
+
 async def test_seat_limit_enforced_on_admin_employee_create(admin_client):
     slug = uslug()
     res = await admin_client.post(

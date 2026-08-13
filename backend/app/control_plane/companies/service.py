@@ -30,6 +30,7 @@ from app.core.errors import (
     DomainError,
 )
 from app.core.security import hash_password
+from app.modules.settings.seed import seed_default_roles
 
 
 async def _load_company(control: AsyncIOMotorDatabase, company_id: str) -> dict:
@@ -93,6 +94,13 @@ async def update_company(
     for name in SEED_ORDER:  # canonical order for newly enabled seeds
         if name in newly_enabled:
             await MODULE_SEEDS[name](tenant_db)
+    if newly_enabled:
+        # A newly enabled module's RBAC resources (settings CLIENT_RESOURCES) must
+        # reach the tenant's EXISTING roles — the client nav gates on BOTH the
+        # enabled flag and a role grant (>= VIEW), so without this the module stays
+        # invisible even once enabled. seed_default_roles idempotently backfills
+        # the missing resource keys at their default levels.
+        await seed_default_roles(tenant_db)
 
     await companies_repo.update_fields(dbm.control, company["_id"], fields)
     await write_admin_audit(
