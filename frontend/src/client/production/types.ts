@@ -22,6 +22,25 @@ export interface BlockedBy {
   note?: string | null;
 }
 
+/** Packing spec + protection, derived from the WO material (plan §Phase 4). */
+export interface Packing {
+  type: string;
+  protection_spec: string;
+  moisture_barrier_ref?: string | null;
+  labels: string[];
+  handling: string[];
+}
+
+/** Dispatch record — load, vehicle, the confirmed window + generated refs. */
+export interface Dispatch {
+  load?: { units: number; lines: number } | null;
+  vehicle?: string | null;
+  delivery_window?: { start?: string | null; end?: string | null } | null;
+  delivery_note_ref?: string | null;
+  manifest_ref?: string | null;
+  site_notified_at?: string | null;
+}
+
 export interface WorkOrder {
   id: string;
   code: string;
@@ -41,6 +60,24 @@ export interface WorkOrder {
   blocked_by?: BlockedBy | null;
   revision_conflict?: boolean;
   qc?: { result: string; defects: string[]; note?: string | null } | null;
+  packing?: Packing | null;
+  dispatch?: Dispatch | null;
+}
+
+/** The shipping manifest for a WO (packing + dispatch + line items). */
+export interface Manifest {
+  work_order: string;
+  status: string;
+  project_code?: string | null;
+  client_name?: string | null;
+  item_name: string;
+  station_name?: string | null;
+  qty: { ordered: number; done: number };
+  manifest_ref?: string | null;
+  delivery_note_ref?: string | null;
+  packing?: Packing | null;
+  dispatch?: Dispatch | null;
+  lines: WorkOrderLine[];
 }
 
 /** The propose output; the identical shape is posted back to confirm (D4). */
@@ -108,6 +145,21 @@ export interface ProjectRollup {
 /** WOs that belong in the Quality register — awaiting QC, held, or reworking. */
 export const QC_STATUSES = ["qc_pending", "qc_hold", "rework"];
 
+/** WOs that belong on the Dispatch board — packed, staged, or shipped. */
+export const DISPATCH_STATUSES = ["packed", "staged", "dispatched"];
+
 export function sectionLabel(section: string): string {
   return section.replace(/_/g, " ");
+}
+
+/** A confirmed delivery window, formatted for the floor (plan §Phase 4). */
+export function formatWindow(w?: Dispatch["delivery_window"]): string {
+  if (!w || (!w.start && !w.end)) return "—";
+  const fmt = (d?: string | null) =>
+    d
+      ? new Date(d).toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+        })
+      : "…";
+  return `${fmt(w.start)} → ${fmt(w.end)}`;
 }

@@ -10,8 +10,8 @@ import {
 } from "../../shared/ui";
 import { Modal } from "../../shared/ui";
 import {
-  dueTone, formatDue, type ProjectRollup, sectionLabel, type Station,
-  statusLabel, WO_STATUS_TONE, type WorkOrder,
+  dueTone, formatDue, formatWindow, type ProjectRollup, sectionLabel,
+  type Station, statusLabel, WO_STATUS_TONE, type WorkOrder,
 } from "./types";
 
 const REALLOCATABLE = ["queued", "released", "in_progress", "rework"];
@@ -30,6 +30,9 @@ export function WorkOrderDetail(props: {
   const [note, setNote] = useState("");
   const [hours, setHours] = useState("");
   const [rate, setRate] = useState("");
+  const [winStart, setWinStart] = useState("");
+  const [winEnd, setWinEnd] = useState("");
+  const [vehicle, setVehicle] = useState("");
   const [stations, setStations] = useState<Station[]>([]);
   const [stationId, setStationId] = useState("");
 
@@ -56,6 +59,7 @@ export function WorkOrderDetail(props: {
       await api(`/production/work-orders/${props.woId}/${action}`,
         { method: "POST", body: body ?? {} });
       setNote(""); setHours(""); setRate("");
+      setWinStart(""); setWinEnd(""); setVehicle("");
       load();
       props.onChanged();
     } catch (err) {
@@ -169,7 +173,45 @@ export function WorkOrderDetail(props: {
                   </Button>
                 </Stack>
               )}
-              {s === "passed" && <span>Passed QC. Packing & dispatch land in Phase 4.</span>}
+              {s === "passed" && (
+                <Button onClick={() => act("pack")} disabled={busy || !w}>
+                  Pack — protection derived from material
+                </Button>
+              )}
+              {s === "packed" && (
+                <Stack gap={2}>
+                  <Row gap={2}>
+                    <Field label="Delivery from">
+                      <Input type="datetime-local" value={winStart}
+                        onChange={(e) => setWinStart(e.target.value)} />
+                    </Field>
+                    <Field label="Delivery to">
+                      <Input type="datetime-local" value={winEnd}
+                        onChange={(e) => setWinEnd(e.target.value)} />
+                    </Field>
+                  </Row>
+                  <Field label="Vehicle" hint="Left blank, it's suggested from the staged load.">
+                    <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)}
+                      placeholder="Auto from load" />
+                  </Field>
+                  <Button disabled={busy || !w}
+                    onClick={() => act("stage", {
+                      delivery_window_start: winStart ? new Date(winStart).toISOString() : null,
+                      delivery_window_end: winEnd ? new Date(winEnd).toISOString() : null,
+                      vehicle: vehicle || null,
+                    })}>
+                    Stage for dispatch
+                  </Button>
+                </Stack>
+              )}
+              {s === "staged" && (
+                <Button onClick={() => act("dispatch")} disabled={busy || !w}>
+                  Mark dispatched
+                </Button>
+              )}
+              {s === "dispatched" && (
+                <span>Dispatched — this work order has left the building.</span>
+              )}
 
               {(s === "released" || s === "in_progress" || s === "rework") && (
                 <Row gap={2}>
@@ -204,6 +246,41 @@ export function WorkOrderDetail(props: {
               )}
             </Stack>
           </section>
+
+          {/* --- packing + dispatch record (Phase 4) --- */}
+          {(wo.packing || wo.dispatch) && (
+            <section>
+              <b>Packing & dispatch</b>
+              <Stack gap={1}>
+                {wo.packing && (
+                  <>
+                    <div>Packing: {wo.packing.type} · {wo.packing.protection_spec}</div>
+                    {wo.packing.moisture_barrier_ref && (
+                      <div>Moisture barrier: {wo.packing.moisture_barrier_ref}</div>
+                    )}
+                    {wo.packing.handling.length > 0 && (
+                      <div>Handling: {wo.packing.handling.join(", ")}</div>
+                    )}
+                  </>
+                )}
+                {wo.dispatch && (
+                  <>
+                    <div>
+                      Vehicle: {wo.dispatch.vehicle ?? "—"}
+                      {wo.dispatch.load ? ` · ${wo.dispatch.load.units} units` : ""}
+                    </div>
+                    <div>Delivery window: {formatWindow(wo.dispatch.delivery_window)}</div>
+                    {wo.dispatch.manifest_ref && (
+                      <div>
+                        Manifest {wo.dispatch.manifest_ref} · Delivery note{" "}
+                        {wo.dispatch.delivery_note_ref}
+                      </div>
+                    )}
+                  </>
+                )}
+              </Stack>
+            </section>
+          )}
 
           {/* --- read-only pipeline mirror + Approve-in-pipeline link (§2.3) --- */}
           {rollup && (

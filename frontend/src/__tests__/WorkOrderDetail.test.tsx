@@ -81,4 +81,31 @@ describe("WorkOrderDetail", () => {
       expect(JSON.parse(String(call![1]!.body)).result).toBe("pass");
     });
   });
+
+  it("packs a passed work order through the API", async () => {
+    const passed = { ...WO.data, status: "passed" };
+    const mock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/production/work-orders/w1/pack") && init?.method === "POST") {
+        return okJson({ data: { ...passed, status: "packed" } });
+      }
+      if (/\/production\/work-orders\/w1$/.test(u)) return okJson({ data: passed });
+      if (u.includes("/production/projects/p1/rollup")) return okJson(ROLLUP);
+      return okJson({ data: {} });
+    });
+    vi.stubGlobal("fetch", mock);
+    render(
+      <MemoryRouter>
+        <WorkOrderDetail woId="w1" canWrite canManage onClose={() => {}} onChanged={() => {}} />
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Pack/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Pack/ }));
+    await waitFor(() => {
+      const call = mock.mock.calls.find(([u, init]) =>
+        String(u).includes("/work-orders/w1/pack") && init?.method === "POST");
+      expect(call).toBeTruthy();
+    });
+  });
 });

@@ -81,3 +81,33 @@ class ShortfallInput(BaseModel):
 
 class AllocateInput(BaseModel):
     station_id: str = Field(min_length=1)
+
+
+# --- Phase 4 packing + dispatch (§2.2, §3) -----------------------------------
+
+class PackInput(BaseModel):
+    """Pack a passed WO. The protection spec defaults from the WO's material
+    (plan §Phase 4); the floor may override the packing type and add labels or
+    handling notes."""
+
+    packing_type: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    handling: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class StageInput(BaseModel):
+    """Stage a packed WO for dispatch: confirm the delivery window — the schedule
+    that clears `delivery_planning` (sync rule 5) — and optionally override the
+    load-suggested vehicle. Generating the manifest + notifying site happen here."""
+
+    delivery_window_start: datetime | None = None
+    delivery_window_end: datetime | None = None
+    vehicle: str | None = None
+    note: str | None = None
+
+
+class DispatchInput(BaseModel):
+    """Record the physical dispatch — the truck leaves and the WO is done."""
+
+    note: str | None = None

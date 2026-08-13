@@ -31,7 +31,8 @@ DONE_STATUSES = frozenset({"dispatched"})
 QUEUE_DEFAULT_DAYS = 14
 
 # §2.2 the legal status moves. Each is enforced on the matching transition
-# endpoint; `passed` is the Phase 2 terminal (packing/dispatch land in Phase 4).
+# endpoint. Phase 4 opens the dispatch lane: passed → packed → staged →
+# dispatched, where `dispatched` is the terminal (the WO has left the building).
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"released"},
     "released": {"in_progress"},
@@ -39,9 +40,9 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "qc_pending": {"passed", "qc_hold"},
     "qc_hold": {"rework"},
     "rework": {"in_progress"},
-    "passed": set(),
-    "packed": set(),
-    "staged": set(),
+    "passed": {"packed"},
+    "packed": {"staged"},
+    "staged": {"dispatched"},
     "dispatched": set(),
 }
 
@@ -54,9 +55,46 @@ PHASE_CLEARED: dict[str, set[str]] = {
     "packing_protection": {"packed", "staged", "dispatched"},
     "delivery_planning": {"staged", "dispatched"},
 }
-# Sections Production drives into the pipeline checklist this phase (§2.3 sync
-# rule 2). Packing + delivery are driven in Phase 4; until then they stay manual.
-DRIVEN_SECTIONS: tuple[str, ...] = ("production", "quality_control")
+# Sections Production drives into the pipeline checklist (§2.3 sync rule 2). All
+# four are now WO-driven: production + quality_control clear during the build,
+# packing_protection at `packed`, delivery_planning at `staged` (a confirmed
+# schedule, not arrival — sync rule 5). A project with ≥1 WO has Production own
+# every section; a no-WO project keeps manual marking (sync rule 4).
+DRIVEN_SECTIONS: tuple[str, ...] = (
+    "production", "quality_control", "packing_protection", "delivery_planning",
+)
+
+# §Phase 4 — the protection spec is derived from the WO's material (its product
+# category ↔ a substring match, like the station suggestion). A sane factory
+# default set for a cladding / joinery shop; tenant-tunable policy is a later
+# upgrade. `moisture_barrier` True stamps a barrier reference on the packing doc.
+PROTECTION_SPECS: dict[str, dict] = {
+    "panel":  {"type": "pallet", "protection_spec": "edge guards + corner blocks",
+               "moisture_barrier": True,  "handling": ["keep flat", "max 4 high"]},
+    "sheet":  {"type": "pallet", "protection_spec": "banded to pallet + slip sheet",
+               "moisture_barrier": True,  "handling": ["keep flat"]},
+    "timber": {"type": "bundle", "protection_spec": "shrink-wrap + battens",
+               "moisture_barrier": True,  "handling": ["keep dry"]},
+    "metal":  {"type": "crate",  "protection_spec": "VCI film + strapping",
+               "moisture_barrier": True,  "handling": ["sharp edges"]},
+    "glass":  {"type": "crate",  "protection_spec": "foam-lined crate",
+               "moisture_barrier": False, "handling": ["fragile", "keep upright",
+                                                        "two-person lift"]},
+}
+DEFAULT_PROTECTION: dict = {
+    "type": "carton", "protection_spec": "boxed + labelled",
+    "moisture_barrier": False, "handling": [],
+}
+
+# §Phase 4 — the vehicle is suggested from the staged load. The catalogue carries
+# no product weight, so the unit count is the load proxy; anything over the top
+# band takes the heavy vehicle. Ascending by unit ceiling.
+VEHICLE_BANDS: tuple[tuple[float, str], ...] = (
+    (20, "van"),
+    (80, "3.5t truck"),
+    (200, "7.5t truck"),
+)
+HEAVY_VEHICLE = "articulated lorry"
 
 # §3 A WO still loads its production station while it has building work left —
 # from queued through rework. Once it reaches QC (qc_pending+) production is done

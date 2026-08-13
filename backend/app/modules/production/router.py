@@ -12,11 +12,14 @@ from fastapi import APIRouter, Depends
 from app.modules.production import service
 from app.modules.production.models import (
     AllocateInput,
+    DispatchInput,
+    PackInput,
     ProposeRequest,
     QCResultInput,
     RequestQCInput,
     ReworkInput,
     ShortfallInput,
+    StageInput,
     WorkOrderConfirm,
 )
 from app.shared.enums import Level
@@ -124,6 +127,41 @@ async def shortfall(
     wo_id: str, body: ShortfallInput, principal: ClientPrincipal = Depends(_write)
 ):
     return envelope(to_api(await service.flag_shortfall(principal, wo_id, body)))
+
+
+# --- packing + dispatch (Phase 4, §2.2). Floor actions — plain WRITE. ---------
+
+@router.post("/work-orders/{wo_id}/pack")
+async def pack(
+    wo_id: str, body: PackInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.pack_work_order(principal, wo_id, body)))
+
+
+@router.post("/work-orders/{wo_id}/stage")
+async def stage(
+    wo_id: str, body: StageInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.stage_work_order(principal, wo_id, body)))
+
+
+@router.post("/work-orders/{wo_id}/dispatch")
+async def dispatch(
+    wo_id: str, body: DispatchInput, principal: ClientPrincipal = Depends(_write)
+):
+    return envelope(to_api(await service.dispatch_work_order(principal, wo_id, body)))
+
+
+@router.get("/work-orders/{wo_id}/manifest")
+async def manifest(wo_id: str, principal: ClientPrincipal = Depends(_read)):
+    return envelope(to_api(await service.work_order_manifest(principal, wo_id)))
+
+
+@router.get("/dispatch")
+async def dispatch_board(
+    project_id: str | None = None, principal: ClientPrincipal = Depends(_read)
+):
+    return envelope(to_api(await service.dispatch_board(principal, project_id)))
 
 
 # --- station allocation (§3). Both require the production_manager position

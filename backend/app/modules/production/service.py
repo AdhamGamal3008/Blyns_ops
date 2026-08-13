@@ -25,21 +25,28 @@ from app.core.errors import (
 )
 from app.modules.production import repository as repo
 from app.modules.production.models import (
+    DispatchInput,
+    PackInput,
     QCResultInput,
     RequestQCInput,
     ReworkInput,
     ShortfallInput,
+    StageInput,
     WorkOrderConfirm,
 )
 from app.modules.production.permissions import (
     ACTIVE_AT_STATION,
     ALLOWED_TRANSITIONS,
+    DEFAULT_PROTECTION,
     DONE_STATUSES,
     DRIVEN_SECTIONS,
     FACTORY_RELEASE_KEY,
+    HEAVY_VEHICLE,
     MATERIAL_PROCUREMENT_KEY,
     PHASE_CLEARED,
+    PROTECTION_SPECS,
     QUEUE_DEFAULT_DAYS,
+    VEHICLE_BANDS,
 )
 from app.modules.projects import engines as pm_engines
 from app.modules.projects import repository as pm_repo
@@ -565,6 +572,158 @@ async def flag_shortfall(
                {"type": "work_order", "id": str(updated["_id"]), "label": updated["code"]},
                {"note": body.note})
     return await _detail(db, updated)
+
+
+# --- Phase 4: packing + dispatch (§2.2, §3) ----------------------------------
+
+
+def _protection_for(category: str | None) -> dict:
+    """Best-effort protection spec from the WO's material category (plan §Phase 4),
+    falling back to a plain carton default when nothing matches."""
+    if category:
+        cat = category.lower()
+        for material, spec in PROTECTION_SPECS.items():
+            if material in cat or cat in material:
+                return spec
+    return DEFAULT_PROTECTION
+
+
+def _suggest_vehicle(units: float) -> str:
+    """The smallest vehicle band whose ceiling covers the staged load (§Phase 4)."""
+    for ceiling, vehicle in VEHICLE_BANDS:
+        if units <= ceiling:
+            return vehicle
+    return HEAVY_VEHICLE
+
+
+async def pack_work_order(
+    principal: ClientPrincipal, wo_id: str, body: PackInput
+) -> dict:
+    """passed → packed. Builds the packing list + protection spec by material
+    type; drives the Stage-6 `packing_protection` section (sync rule 2)."""
+    db = principal.tenant_db
+    actor = str(principal.user["_id"])
+    wo = await _wo_or_404(db, wo_id)
+    _assert_transition(wo, "packed")
+    project = await _project_of(db, wo)
+    spec = _protection_for(await _wo_category(db, wo))
+    packing = {
+        "type": body.packing_type or spec["type"],
+        "protection_spec": spec["protection_spec"],
+        "moisture_barrier_ref": "VCI/poly barrier" if spec["moisture_barrier"] else None,
+        "labels": body.labels or [wo["code"]],
+        "handling": body.handling or list(spec["handling"]),
+        "packed_by": actor,
+        "packed_at": _now(),
+    }
+    wo = await _set_status(db, wo, "packed", actor, note=body.note,
+                           packing=packing, blocked_by=None)
+    await _log(principal, "production.wo_packed",
+               {"type": "work_order", "id": str(wo["_id"]), "label": wo["code"]},
+               {"packing_type": packing["type"]})
+    await _recompute_pipeline(principal, project)
+    return await _detail(db, wo)
+
+
+async def stage_work_order(
+    principal: ClientPrincipal, wo_id: str, body: StageInput
+) -> dict:
+    """packed → staged. Computes the dispatch load + suggested vehicle, records
+    the confirmed delivery window, generates the delivery-note + manifest refs,
+    and notifies the site supervisor in-app (activity, never an external send).
+    Clears the Stage-6 `delivery_planning` section on the confirmed schedule."""
+    db = principal.tenant_db
+    actor = str(principal.user["_id"])
+    wo = await _wo_or_404(db, wo_id)
+    _assert_transition(wo, "staged")
+    project = await _project_of(db, wo)
+
+    units = float((wo.get("qty") or {}).get("ordered") or 0)
+    vehicle = body.vehicle or _suggest_vehicle(units)
+    window = (
+        {"start": body.delivery_window_start, "end": body.delivery_window_end}
+        if (body.delivery_window_start or body.delivery_window_end) else None
+    )
+    dispatch = {
+        "load": {"units": units, "lines": len(wo.get("bom_lines") or [])},
+        "vehicle": vehicle,
+        "delivery_window": window,
+        "delivery_note_ref": f"DN-{wo['code']}",
+        "manifest_ref": f"MF-{wo['code']}",
+        "site_notified_at": _now(),
+        "staged_by": actor,
+        "staged_at": _now(),
+    }
+    wo = await _set_status(db, wo, "staged", actor, note=body.note,
+                           dispatch=dispatch, blocked_by=None)
+    # in-app site-supervisor notice (plan §Phase 4: activity, not an external send)
+    await _log(principal, "production.site_notified",
+               {"type": "work_order", "id": str(wo["_id"]), "label": wo["code"]},
+               {"project": project.get("code"), "vehicle": vehicle, "delivery_window": window})
+    await _log(principal, "production.wo_staged",
+               {"type": "work_order", "id": str(wo["_id"]), "label": wo["code"]},
+               {"vehicle": vehicle})
+    await _recompute_pipeline(principal, project)
+    return await _detail(db, wo)
+
+
+async def dispatch_work_order(
+    principal: ClientPrincipal, wo_id: str, body: DispatchInput
+) -> dict:
+    """staged → dispatched. The truck leaves; the WO is terminal and drops out of
+    the Queue (already cleared every Stage-6 section at `staged`)."""
+    db = principal.tenant_db
+    actor = str(principal.user["_id"])
+    wo = await _wo_or_404(db, wo_id)
+    _assert_transition(wo, "dispatched")
+    project = await _project_of(db, wo)
+    dispatch = {**(wo.get("dispatch") or {}), "dispatched_by": actor,
+                "dispatched_at": _now()}
+    wo = await _set_status(db, wo, "dispatched", actor, note=body.note,
+                           dispatch=dispatch)
+    await _log(principal, "production.wo_dispatched",
+               {"type": "work_order", "id": str(wo["_id"]), "label": wo["code"]}, {})
+    await _recompute_pipeline(principal, project)
+    return await _detail(db, wo)
+
+
+async def dispatch_board(
+    principal: ClientPrincipal, project_id: str | None
+) -> list[dict]:
+    """The dispatch lane — WOs that are packed, staged, or recently dispatched.
+    Most-recently-touched first so the freshest movements sit at the top (§6)."""
+    db = principal.tenant_db
+    query: dict = {"status": {"$in": ["packed", "staged", "dispatched"]}}
+    if project_id:
+        query["project_id"] = _oid(project_id, "Project")
+    docs, _ = await repo.list_work_orders(
+        db, query, 0, 500, sort=[("updated_at", -1)]
+    )
+    await _enrich(db, docs)
+    return docs
+
+
+async def work_order_manifest(principal: ClientPrincipal, wo_id: str) -> dict:
+    """The shipping manifest for a WO — its packing spec, dispatch details, and
+    the line items, plus the generated refs (§6). Refs are null until staged."""
+    db = principal.tenant_db
+    wo = await _wo_or_404(db, wo_id)
+    await _enrich(db, [wo])
+    dispatch = wo.get("dispatch") or {}
+    return {
+        "work_order": wo["code"],
+        "status": wo["status"],
+        "project_code": wo.get("project_code"),
+        "client_name": wo.get("client_name"),
+        "item_name": wo.get("item_name"),
+        "station_name": wo.get("station_name"),
+        "qty": wo.get("qty"),
+        "manifest_ref": dispatch.get("manifest_ref"),
+        "delivery_note_ref": dispatch.get("delivery_note_ref"),
+        "packing": wo.get("packing"),
+        "dispatch": dispatch or None,
+        "lines": wo.get("bom_lines") or [],
+    }
 
 
 # --- pipeline drive (§2.3) ---------------------------------------------------

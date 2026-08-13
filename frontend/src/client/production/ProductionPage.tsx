@@ -1,6 +1,6 @@
-// Production module UI (docs/PRODUCTION_MODULE_PLAN.md). Phase 1 ships the Queue
-// (default landing) and the Work Orders register + generation; Quality lands in
-// Phase 2, Stations in Phase 3, and Dispatch in Phase 4.
+// Production module UI (docs/PRODUCTION_MODULE_PLAN.md). Five work-centre tabs:
+// Queue (default landing) + Work Orders (Phase 1), Quality (Phase 2), Stations
+// (Phase 3), and Dispatch — packing → staging → shipping + manifest (Phase 4).
 
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
@@ -8,6 +8,7 @@ import { api } from "../../shared/api";
 import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
+import { DispatchSection } from "./DispatchSection";
 import { QualitySection } from "./QualitySection";
 import { QueueSection } from "./QueueSection";
 import { StationsSection } from "./StationsSection";
@@ -49,13 +50,9 @@ export function ProductionPage() {
         </TabsContent>
         <TabsContent value="stations"><StationsSection /></TabsContent>
         <TabsContent value="dispatch">
-          <Placeholder note="Packed → staged → shipped, with delivery note and manifest generation. Lands in Phase 4." />
+          <DispatchSection canWrite={canWrite} canManage={canManage} />
         </TabsContent>
       </Tabs>
     </Stack>
   );
-}
-
-function Placeholder({ note }: { note: string }) {
-  return <p style={{ color: "var(--text-muted)", maxWidth: "60ch" }}>{note}</p>;
 }
