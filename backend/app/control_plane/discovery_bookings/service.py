@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -23,7 +24,7 @@ _AUDIT_TARGET = "discovery_booking"
 async def create_booking(
     control: AsyncIOMotorDatabase, payload: BookingCreate, source_ip: str | None
 ) -> dict:
-    doc = {
+    doc: dict[str, Any] = {
         "full_name": payload.full_name,
         "work_email": payload.work_email,
         "company": payload.company,

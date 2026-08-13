@@ -19,18 +19,22 @@ from app.modules.crm import seed as crm_seed
 from app.modules.dashboard import seed as dashboard_seed
 from app.modules.finance import seed as finance_seed
 from app.modules.inventory import seed as inventory_seed
+from app.modules.production import seed as production_seed
 from app.modules.projects import seed as projects_seed  # existing asset — wired, not recreated
 from app.modules.settings import seed as settings_seed
 
 SeedFn = Callable[[AsyncIOMotorDatabase], Awaitable[None]]
 
 # Canonical seeding order (docs/MULTITENANCY.md §5).
-SEED_ORDER: list[str] = ["dashboard", "settings", "projects", "crm", "inventory", "finance"]
+SEED_ORDER: list[str] = [
+    "dashboard", "settings", "projects", "production", "crm", "inventory", "finance",
+]
 
 MODULE_SEEDS: dict[str, SeedFn] = {
     "dashboard": dashboard_seed.seed,
     "settings": settings_seed.seed,
     "projects": projects_seed.seed,
+    "production": production_seed.seed,
     "crm": crm_seed.seed,
     "inventory": inventory_seed.seed,
     "finance": finance_seed.seed,

@@ -227,7 +227,8 @@ async def test_security_modules_and_approver_map(client_client):
 
     res = await client_client.get("/api/v1/settings/modules")
     mods = {m["module"]: m["enabled"] for m in res.json()["data"]}
-    assert mods["projects"] is True and len(mods) == 6
+    assert mods["projects"] is True and len(mods) == 7
+    assert mods["production"] is False  # a known module, not enabled for this fixture tenant
 
     # approver map seeded by the projects seed: v2.0's six approver positions,
     # every one mapping to the owner by default (no `client` position in v2.0)

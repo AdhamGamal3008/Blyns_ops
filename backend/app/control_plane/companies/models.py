@@ -15,7 +15,7 @@ CompanyStatus = Literal["active", "blocked", "suspended", "provisioning", "faile
 SLUG_PATTERN = re.compile(r"^[a-z0-9-]{3,40}$")
 
 # Modules a tenant may enable, in seeding order (docs/MULTITENANCY.md §5).
-KNOWN_MODULES = ["dashboard", "settings", "projects", "crm", "inventory", "finance"]
+KNOWN_MODULES = ["dashboard", "settings", "projects", "production", "crm", "inventory", "finance"]
 
 
 class OwnerPayload(BaseModel):

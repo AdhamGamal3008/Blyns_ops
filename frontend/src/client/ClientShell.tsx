@@ -4,6 +4,7 @@
 
 import {
   Contact,
+  Factory,
   FolderKanban,
   LayoutDashboard,
   LogOut,
@@ -29,6 +30,7 @@ const DASHBOARD: ShellNavItem = {
 
 const MODULES: { key: string; label: string; route: string; icon: ReactNode }[] = [
   { key: "projects", label: "Projects", route: "/app/projects", icon: <FolderKanban size={20} /> },
+  { key: "production", label: "Production", route: "/app/production", icon: <Factory size={20} /> },
   { key: "crm", label: "CRM", route: "/app/crm", icon: <Contact size={20} /> },
   { key: "inventory", label: "Inventory", route: "/app/inventory", icon: <Package size={20} /> },
   { key: "finance", label: "Finance", route: "/app/finance", icon: <Receipt size={20} /> },

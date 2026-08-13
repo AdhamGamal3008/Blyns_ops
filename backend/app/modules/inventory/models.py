@@ -17,7 +17,7 @@ MOVEMENT_TYPES: tuple[str, ...] = ("receipt", "issue", "transfer", "adjustment")
 # INVENTORY.md §1 lists finance|manual|transfer, but PROJECT_MANAGEMENT.md §1
 # has PM reserve/consume stock "via Inventory movements" — so a movement must be
 # able to name `projects` as its origin.
-RefModule = Literal["finance", "manual", "transfer", "projects"]
+RefModule = Literal["finance", "manual", "transfer", "projects", "production"]
 
 
 class ProductCreate(BaseModel):
