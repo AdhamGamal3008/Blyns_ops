@@ -25,7 +25,7 @@ const COMPANIES = {
 };
 
 function stubFetch() {
-  const mock = vi.fn(async (url: string) => {
+  const mock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (String(url).includes("/admin/companies")) return okJson(COMPANIES);
     return okJson({ data: [] });
   });
