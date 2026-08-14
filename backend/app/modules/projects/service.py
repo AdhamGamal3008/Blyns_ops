@@ -132,6 +132,22 @@ async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> 
     §1: the client record itself belongs to CRM — we link, never copy it.
     """
     db = principal.tenant_db
+
+    # A non-default workflow needs its stage template seeded on this tenant, or the
+    # project would be stranded at Stage 1 (nothing to unlock). Tenants seeded
+    # before the concurrent template existed must be migrated first
+    # (scripts/migrate_projects_v3.py).
+    if payload.workflow_type != "sequential" and not await repo.stage_defs(
+        db, payload.workflow_type
+    ):
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"The '{payload.workflow_type}' workflow is not available on this "
+            "workspace yet — the Projects module must be re-seeded before "
+            "concurrent projects can be created.",
+            422,
+        )
+
     crm_account_id: ObjectId | None = None
     if payload.crm_account_id:
         from app.modules.crm import repository as crm_repo
@@ -805,6 +821,21 @@ async def _finalize_stage(
     """
     db = principal.tenant_db
     order = int(definition["order"])
+    workflow_type = project.get("workflow_type", "sequential")
+
+    # Fail BEFORE any mutation if this project's stage template isn't seeded — else
+    # the approval marks the stage done but can't open what it unlocks, stranding
+    # the project (a tenant not yet migrated to the concurrent template). Sequential
+    # always resolves (a missing workflow_type reads as sequential).
+    if not await repo.stage_defs(db, workflow_type):
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"The '{workflow_type}' workflow is not seeded on this workspace — "
+            "re-seed the Projects module (scripts/migrate_projects_v3.py) before "
+            "approving stages.",
+            409,
+        )
+
     auto = decision_by == "system"
     integration = await _run_integrations(principal, project, definition)
 
@@ -846,15 +877,15 @@ async def _finalize_stage(
 
     # Point the single representative cursor at the lowest-order stage still in
     # flight (entered, not yet approved); fall back to the stage just approved.
-    workflow_type = updated.get("workflow_type", "sequential")
     defs_by_order = {int(d["order"]): d for d in await repo.stage_defs(db, workflow_type)}
     instances = await repo.stage_instances(db, updated["_id"])
     active = sorted(
         int(i["stage_order"]) for i in instances if i.get("status") != "approved"
     )
     rep = active[0] if active else order
+    rep_def = defs_by_order.get(rep) or definition
     updated = await repo.update(db, repo.PROJECTS, updated["_id"], {
-        "current_stage_order": rep, "current_stage_key": defs_by_order[rep]["key"],
+        "current_stage_order": rep, "current_stage_key": rep_def["key"],
     })
     assert updated is not None
     return {

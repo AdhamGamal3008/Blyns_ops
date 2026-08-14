@@ -8,10 +8,19 @@ that acts on this (parallel unlock, completion) lands in Phase 1.
 
 from __future__ import annotations
 
+from bson import ObjectId
+
 from app.core.db import get_db_manager
 from app.modules.projects import repository as repo
 from app.modules.projects import seed as projects_seed
-from tests.integration.test_projects import _advance, _create_project, _machine_config
+from tests.integration.test_projects import (
+    _advance,
+    _approve,
+    _create_project,
+    _machine_config,
+    _submit,
+    _supply,
+)
 from tests.integration.test_projects_v2 import _auto_advance
 
 BASE = "/api/v1/projects"
@@ -170,3 +179,50 @@ async def test_concurrent_lifecycle_9_waits_for_all_then_completes(
     assert all(s["status"] == "approved" for s in tl["stages"])
     db = _tenant_db(onboarded_company)
     assert await db.activity_log.count_documents({"action": "project.completed"}) >= 1
+
+
+# --- guards: a tenant that never got the concurrent template (un-migrated) -----
+
+async def test_concurrent_creation_rejected_without_template(
+    client_client, onboarded_company
+):
+    db = _tenant_db(onboarded_company)
+    await db.stage_definitions.delete_many({"workflow_type": "concurrent"})  # un-migrated
+    res = await client_client.post(
+        BASE, json={"name": "No template", "workflow_type": "concurrent"}
+    )
+    assert res.status_code == 422, res.text
+    assert "concurrent" in res.json()["error"]["message"].lower()
+
+
+async def test_approve_fails_before_mutation_if_template_missing(
+    client_client, onboarded_company
+):
+    """A concurrent project created while the template existed, then the template
+    goes missing: approving must fail cleanly WITHOUT half-approving the stage."""
+    db = _tenant_db(onboarded_company)
+    project = await _create_project(
+        client_client, name="Stranded", workflow_type="concurrent"
+    )
+    pid = project["id"]
+    stages, _ = await _machine_config(client_client)
+
+    # drive stage 1 to pending_approval
+    definition = next(s for s in stages if s["order"] == 1)
+    for gate in definition.get("entry_gates") or []:
+        if gate["type"] == "document":
+            await _supply(client_client, pid, 1, gate["key"])
+    assert (await _submit(client_client, pid, 1)).status_code == 200
+
+    # the tenant loses the concurrent template (simulates the un-migrated state)
+    await db.stage_definitions.delete_many({"workflow_type": "concurrent"})
+
+    res = await _approve(client_client, pid, 1)
+    assert res.status_code == 409, res.text
+    assert "seed" in res.json()["error"]["message"].lower()
+
+    # stage 1 is NOT left half-approved — the guard runs before any mutation
+    inst = await db.stage_instances.find_one(
+        {"project_id": ObjectId(pid), "stage_order": 1}
+    )
+    assert inst["status"] != "approved"
