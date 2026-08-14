@@ -204,5 +204,16 @@ frontend/src/__tests__/ConcurrentWorkflow.test.tsx       NEW  — picker + multi
   rail already colours each stage by its own status and lets you open any active
   one, so no rail rewrite was needed. Verified: ConcurrentPipeline.test (concurrent
   vs sequential header); tsc + 193 frontend green.
-- **Phase 4 — pending**: full concurrent lifecycle test (walk all of 2-8 → 9
-  unlocks → completes) + hardening.
+- **Phase 4 — DONE**: full concurrent lifecycle test — create → approve Stage 1 →
+  approve 2-8 in a scrambled order (Handover stays closed until the last) →
+  Handover completes the project; every stage approved + completion audited
+  (test_projects_concurrent.py, 7 tests). Hardening: whole backend suite batched
+  green (settings/auth/dashboard/discovery/rbac/audit/production 176; crm/inventory/
+  finance 91; projects 39; production pipeline 6; provisioning/admin 17), frontend
+  193, ruff/mypy/tsc clean.
+
+**FEATURE COMPLETE.** Concurrent projects are selectable at creation, run stages
+2-8 in parallel, and complete only when Handover clears after all of them. See
+gotcha G-5: the "all of 2-8 parallel" template is a mechanism starting point —
+the product owner should review which concurrent stages keep real cross-deps
+(e.g. procurement → production) before using it for real manufacturing projects.

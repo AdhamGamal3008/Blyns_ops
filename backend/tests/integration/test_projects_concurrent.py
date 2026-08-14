@@ -11,13 +11,22 @@ from __future__ import annotations
 from app.core.db import get_db_manager
 from app.modules.projects import repository as repo
 from app.modules.projects import seed as projects_seed
-from tests.integration.test_projects import _advance, _create_project
+from tests.integration.test_projects import _advance, _create_project, _machine_config
+from tests.integration.test_projects_v2 import _auto_advance
 
 BASE = "/api/v1/projects"
 
 
 def _tenant_db(onboarded_company):
     return get_db_manager().tenant(onboarded_company["company"]["db_name"])
+
+
+async def _walk_stage(client_client, pid, order, stages, gates):
+    """Approve one open stage — stage 2 (site_survey) auto-advances on submit,
+    every other stage needs an approval."""
+    if order == 2:
+        return await _auto_advance(client_client, pid, order, gates)
+    return await _advance(client_client, pid, order, stages, gates)
 
 
 async def test_both_templates_seed_with_the_same_stages(onboarded_company):
@@ -121,3 +130,43 @@ async def test_sequential_project_still_advances_one_stage_at_a_time(client_clie
     by_order = {s["order"]: s for s in tl["stages"]}
     assert by_order[2]["entered_at"] is not None
     assert by_order[3]["entered_at"] is None                 # stage 3 stays closed
+
+
+# --- Phase 4: the full concurrent lifecycle ----------------------------------
+
+async def test_concurrent_lifecycle_9_waits_for_all_then_completes(
+    client_client, onboarded_company
+):
+    project = await _create_project(
+        client_client, name="Parallel lifecycle", workflow_type="concurrent"
+    )
+    pid = project["id"]
+    stages, gates = await _machine_config(client_client)
+
+    await _advance(client_client, pid, 1, stages, gates)     # opens stages 2-8
+
+    # approve 2-8 in a scrambled order — they have no inter-dependencies, and
+    # Handover (9) must stay closed until the very last of them is approved.
+    walk = [8, 3, 5, 2, 7, 4, 6]
+    for i, order in enumerate(walk):
+        await _walk_stage(client_client, pid, order, stages, gates)
+        tl = (await client_client.get(f"{BASE}/{pid}/timeline")).json()["data"]
+        by_order = {s["order"]: s for s in tl["stages"]}
+        if i < len(walk) - 1:
+            assert by_order[9]["entered_at"] is None, \
+                f"Handover opened after only {i + 1} of 7 stages"
+        else:
+            assert by_order[9]["entered_at"] is not None    # the last one unlocked it
+
+    # Handover walks → the project completes
+    result = await _advance(client_client, pid, 9, stages, gates)
+    assert result["project_status"] == "completed"
+
+    detail = (await client_client.get(f"{BASE}/{pid}")).json()["data"]
+    assert detail["status"] == "completed"
+
+    # every stage is approved, and the completion is audited
+    tl = (await client_client.get(f"{BASE}/{pid}/timeline")).json()["data"]
+    assert all(s["status"] == "approved" for s in tl["stages"])
+    db = _tenant_db(onboarded_company)
+    assert await db.activity_log.count_documents({"action": "project.completed"}) >= 1
