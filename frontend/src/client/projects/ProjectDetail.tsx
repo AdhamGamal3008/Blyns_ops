@@ -104,6 +104,16 @@ export function ProjectDetail() {
   const activeStage = stages.find((s) => s.order === activeOrder);
   const pct = (n: number) => (b.planned ? `${Math.round((n / b.planned) * 100)}% of planned` : undefined);
 
+  // A concurrent project has no single "current" stage — several run at once, so
+  // the header counts them rather than pointing at one (CONCURRENT_WORKFLOW_PLAN §Phase 3).
+  const isConcurrent =
+    (timeline.workflow_type ?? project.workflow_type) === "concurrent";
+  const stageCount = timeline.stages.length;
+  const doneCount = timeline.stages.filter((s) => s.status === "approved").length;
+  const activeCount = timeline.stages.filter(
+    (s) => s.status !== "approved" && s.status !== "pending",
+  ).length;
+
   return (
     <Stack>
       <PageHeader
@@ -114,10 +124,13 @@ export function ProjectDetail() {
             <Badge tone={PROJECT_TONE[project.status] ?? "neutral"}>
               {(project.status ?? "—").replace("_", " ")}
             </Badge>
+            {isConcurrent && <Badge tone="info">Concurrent</Badge>}
             <span>
-              {project.current_stage_order
-                ? `Stage ${project.current_stage_order} of ${timeline.stages.length} · ${humanize(project.current_stage_key)}`
-                : "No stage machine (legacy record)"}
+              {!project.current_stage_order
+                ? "No stage machine (legacy record)"
+                : isConcurrent
+                  ? `${doneCount} of ${stageCount} stages complete · ${activeCount} in progress`
+                  : `Stage ${project.current_stage_order} of ${stageCount} · ${humanize(project.current_stage_key)}`}
             </span>
           </Row>
         }
@@ -148,7 +161,9 @@ export function ProjectDetail() {
       <Card>
         <CardHeader
           title="Stage-gate pipeline"
-          description="Select a stage to open its gates, tasks, and approval."
+          description={isConcurrent
+            ? "Stages 2–8 run in parallel — open any active stage to work it; Handover (9) waits for all."
+            : "Select a stage to open its gates, tasks, and approval."}
           actions={
             timeline.milestones.length > 0 && (
               <Row gap={2}>

@@ -198,5 +198,11 @@ frontend/src/__tests__/ConcurrentWorkflow.test.tsx       NEW  — picker + multi
   TS types carry it. Verified: form sends the field (ProjectCreateWorkflow.test),
   tsc + 191 frontend green. (Concurrent value is accepted/persisted by the backend
   per Phase 1 tests.)
-- **Phases 3-4 — pending**: parallel pipeline UI (multiple active stages), full
-  concurrent lifecycle test + hardening.
+- **Phase 3 — DONE**: the project detail reflects the parallel shape — a
+  "Concurrent" badge + "N of M stages complete · K in progress" header (sequential
+  keeps "Stage X of N"), and a pipeline hint that 2-8 run in parallel. The stage
+  rail already colours each stage by its own status and lets you open any active
+  one, so no rail rewrite was needed. Verified: ConcurrentPipeline.test (concurrent
+  vs sequential header); tsc + 193 frontend green.
+- **Phase 4 — pending**: full concurrent lifecycle test (walk all of 2-8 → 9
+  unlocks → completes) + hardening.
