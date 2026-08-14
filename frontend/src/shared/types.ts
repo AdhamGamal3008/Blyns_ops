@@ -269,6 +269,26 @@ export interface FinanceAnalytics {
   cashflow?: FinCashflowPoint[];
 }
 
+// --- Production Analytics (docs/PRODUCTION_MODULE_PLAN.md §7 Phase 5) ---------
+
+export interface ProductionKpis {
+  throughput: number;
+  on_time_pct: number | null;
+  wip: number;
+  hold_rate: number | null;
+}
+
+export interface ProdStatusRow { status: string; count: number }
+export interface ProdStationRow { station: string; open: number }
+export interface ProdThroughputPoint { month: string; dispatched: number }
+
+export interface ProductionAnalytics {
+  kpis: ProductionKpis;
+  by_status?: ProdStatusRow[];
+  by_station?: ProdStationRow[];
+  throughput?: ProdThroughputPoint[];
+}
+
 export interface CalendarEvent {
   id: string;
   source_module: string;

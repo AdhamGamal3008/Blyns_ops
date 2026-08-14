@@ -185,6 +185,18 @@ async def live_work_orders(
     return await db[WORK_ORDERS].find({"project_id": project_id, **_LIVE}).to_list(length=2000)
 
 
+async def analytics_work_orders(db: AsyncIOMotorDatabase) -> list[dict]:
+    """All live WOs, projected to the fields the analytics overview needs — status,
+    due date, station, qty, and the history/dispatch stamps for throughput,
+    on-time and hold-rate. Volume is per-tenant manufacturing, so a single read
+    computed in Python beats a fan-out of aggregations."""
+    projection = {
+        "status": 1, "due_date": 1, "current_station_id": 1, "qty": 1,
+        "history": 1, "dispatch": 1, "created_at": 1,
+    }
+    return await db[WORK_ORDERS].find(_LIVE, projection).to_list(length=5000)
+
+
 async def update_work_order(
     db: AsyncIOMotorDatabase, oid: ObjectId, fields: dict
 ) -> dict | None:

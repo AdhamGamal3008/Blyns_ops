@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.modules.production import service
+from app.modules.production import analytics, service
 from app.modules.production.models import (
     AllocateInput,
     DispatchInput,
@@ -30,6 +30,14 @@ router = APIRouter(prefix="/api/v1/production", tags=["client-production"])
 
 _read = require("production", Level.READ)
 _write = require("production", Level.WRITE)
+_analytics = require("production_analytics", Level.VIEW)
+
+
+# --- analytics (docs/PRODUCTION_MODULE_PLAN.md §7 Phase 5) --------------------
+
+@router.get("/analytics")
+async def analytics_overview(principal: ClientPrincipal = Depends(_analytics)):
+    return envelope(to_api(await analytics.overview(principal)))
 
 
 @router.get("/context")
