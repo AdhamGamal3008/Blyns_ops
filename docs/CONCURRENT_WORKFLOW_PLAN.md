@@ -183,5 +183,15 @@ frontend/src/__tests__/ConcurrentWorkflow.test.tsx       NEW  — picker + multi
   (large blast radius), we keep it as a representative pointer. Lower risk, and the
   detail already returns all stage instances for the multi-active UI.
 
-## Build status (fill in after building)
-_not built yet._
+## Build status
+- **Phase 0 — DONE** (commit `d4c2099`): data foundation; both templates seed;
+  sequential unchanged; ruff/mypy clean.
+- **Phase 1 — DONE**: engine is dependency-driven. `engines.py` evaluates the
+  project's own template's gates and the hard-coded linear loop is gone;
+  `_finalize_stage` enters every newly-unlocked stage (`_enter_unlocked_stages`)
+  and keeps `current_stage_order` as the lowest active stage; timeline reports
+  `workflow_type`. Verified: sequential regression (test_projects 19 +
+  test_projects_v2 13 + production pipeline 6 = all green), concurrent stage 1 →
+  2-8 open in parallel, 9 waits (test_projects_concurrent 6). ruff/mypy clean.
+- **Phases 2-4 — pending**: create-form picker, parallel pipeline UI, full
+  concurrent lifecycle test + hardening.

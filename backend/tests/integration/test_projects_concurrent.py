@@ -11,6 +11,9 @@ from __future__ import annotations
 from app.core.db import get_db_manager
 from app.modules.projects import repository as repo
 from app.modules.projects import seed as projects_seed
+from tests.integration.test_projects import _advance, _create_project
+
+BASE = "/api/v1/projects"
 
 
 def _tenant_db(onboarded_company):
@@ -72,3 +75,49 @@ async def test_key_lookups_scope_to_type_and_seed_is_idempotent(onboarded_compan
     await projects_seed.seed(db)
     assert await db.stage_definitions.count_documents({"workflow_type": "sequential"}) == 9
     assert await db.stage_definitions.count_documents({"workflow_type": "concurrent"}) == 9
+
+
+# --- Phase 1: the engine acts on the concurrent template ---------------------
+
+async def test_concurrent_stage1_opens_2to8_in_parallel(client_client):
+    project = await _create_project(
+        client_client, name="Parallel build", workflow_type="concurrent"
+    )
+    pid = project["id"]
+    assert project["workflow_type"] == "concurrent"          # persisted at creation
+
+    # walk stage 1 (project_initiation) to approved — identical to sequential
+    body = await _advance(client_client, pid, 1)
+
+    # the single approval opened EVERY one of stages 2..8 at once
+    assert sorted(s["order"] for s in body["next_stages"]) == [2, 3, 4, 5, 6, 7, 8]
+
+    # the timeline confirms 2..8 are entered and 9 (Handover) waits for all of them
+    tl = (await client_client.get(f"{BASE}/{pid}/timeline")).json()["data"]
+    assert tl["workflow_type"] == "concurrent"
+    by_order = {s["order"]: s for s in tl["stages"]}
+    for order in range(2, 9):
+        assert by_order[order]["entered_at"] is not None, f"stage {order} not entered"
+    assert by_order[9]["entered_at"] is None                 # not unlocked yet
+    assert 9 not in {s["order"] for s in body["next_stages"]}
+
+    # the representative cursor points at the lowest stage still in flight
+    proj = (await client_client.get(f"{BASE}/{pid}")).json()["data"]
+    assert proj["current_stage_order"] == 2
+
+
+async def test_sequential_project_still_advances_one_stage_at_a_time(client_client):
+    """The same engine, driven by the sequential template, opens exactly one next
+    stage — the built-in regression that the DAG change didn't leak into linear."""
+    project = await _create_project(client_client, name="Linear build")  # default
+    pid = project["id"]
+    assert project["workflow_type"] == "sequential"
+
+    body = await _advance(client_client, pid, 1)
+    assert [s["order"] for s in body["next_stages"]] == [2]  # only the next
+    assert body["next_stage"]["order"] == 2
+
+    tl = (await client_client.get(f"{BASE}/{pid}/timeline")).json()["data"]
+    by_order = {s["order"]: s for s in tl["stages"]}
+    assert by_order[2]["entered_at"] is not None
+    assert by_order[3]["entered_at"] is None                 # stage 3 stays closed

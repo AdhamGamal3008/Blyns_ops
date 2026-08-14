@@ -203,6 +203,37 @@ async def _enter_stage(
     return result["instance"]
 
 
+async def _enter_unlocked_stages(
+    principal: ClientPrincipal, project: dict
+) -> list[tuple[dict, dict]]:
+    """Enter every stage whose declared dependencies are all approved and which has
+    not been entered yet. A sequential project opens exactly the next stage; a
+    concurrent one can open several at once (docs/CONCURRENT_WORKFLOW_PLAN.md).
+    Returns the (definition, instance) pairs newly entered, lowest order first."""
+    db = principal.tenant_db
+    workflow_type = project.get("workflow_type", "sequential")
+    defs = await repo.stage_defs(db, workflow_type)
+    instances = {
+        i["stage_order"]: i for i in await repo.stage_instances(db, project["_id"])
+    }
+    approved = {
+        d["key"] for d in defs
+        if (inst := instances.get(int(d["order"]))) and inst.get("status") == "approved"
+    }
+    newly: list[tuple[dict, dict]] = []
+    for definition in sorted(defs, key=lambda d: int(d["order"])):
+        if int(definition["order"]) in instances:
+            continue  # already entered
+        deps = [
+            g["depends_on"] for g in (definition.get("entry_gates") or [])
+            if g.get("type") == "dependency"
+        ]
+        if all(dep in approved for dep in deps):
+            instance = await _enter_stage(principal, project, definition)
+            newly.append((definition, instance))
+    return newly
+
+
 async def patch_project(
     principal: ClientPrincipal, project_id: str, patch: ProjectPatch
 ) -> dict:
@@ -245,7 +276,7 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
     """§12 — stages + milestones for the Gantt view."""
     project = await _project(principal, project_id)
     db = principal.tenant_db
-    definitions = await repo.stage_defs(db)
+    definitions = await repo.stage_defs(db, project.get("workflow_type", "sequential"))
     instances = {
         i["stage_order"]: i for i in await repo.stage_instances(db, project["_id"])
     }
@@ -253,6 +284,7 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
         "project_id": project_id,
         # tolerate legacy/partial docs that predate the stage machine
         "code": project.get("code"),
+        "workflow_type": project.get("workflow_type", "sequential"),
         "current_stage_order": project.get("current_stage_order"),
         "milestones": project.get("milestone_schedule") or [],
         "stages": [
@@ -806,19 +838,38 @@ async def _finalize_stage(
             "integration": integration,
         }
 
-    next_def = await _definition(principal, order + 1)
-    fields.update({
-        "current_stage_order": next_def["order"],
-        "current_stage_key": next_def["key"],
-    })
+    # Persist history, then open every stage this approval unlocked — exactly the
+    # next one for a sequential project, possibly several for a concurrent one.
     updated = await repo.update(db, repo.PROJECTS, project["_id"], fields)
     assert updated is not None
-    next_instance = await _enter_stage(principal, updated, next_def)
+    newly = await _enter_unlocked_stages(principal, updated)
+
+    # Point the single representative cursor at the lowest-order stage still in
+    # flight (entered, not yet approved); fall back to the stage just approved.
+    workflow_type = updated.get("workflow_type", "sequential")
+    defs_by_order = {int(d["order"]): d for d in await repo.stage_defs(db, workflow_type)}
+    instances = await repo.stage_instances(db, updated["_id"])
+    active = sorted(
+        int(i["stage_order"]) for i in instances if i.get("status") != "approved"
+    )
+    rep = active[0] if active else order
+    updated = await repo.update(db, repo.PROJECTS, updated["_id"], {
+        "current_stage_order": rep, "current_stage_key": defs_by_order[rep]["key"],
+    })
+    assert updated is not None
     return {
         "stage": "approved", "project_status": updated["status"],
         "integration": integration,
-        "next_stage": {"order": next_def["order"], "key": next_def["key"],
-                       "status": next_instance["status"]},
+        # `next_stage` stays the (single) next for sequential callers; `next_stages`
+        # carries the full set a concurrent approval opened.
+        "next_stage": (
+            {"order": int(newly[0][0]["order"]), "key": newly[0][0]["key"],
+             "status": newly[0][1]["status"]} if newly else None
+        ),
+        "next_stages": [
+            {"order": int(d["order"]), "key": d["key"], "status": inst["status"]}
+            for d, inst in newly
+        ],
     }
 
 

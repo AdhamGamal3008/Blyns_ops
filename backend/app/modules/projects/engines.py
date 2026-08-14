@@ -114,6 +114,14 @@ async def evaluate_stage(
     Pure — it reports, it does not write. `run_decision_engine` applies it.
     """
     supplied: set[str] = set(instance.get("documents_supplied") or [])
+    # Dependencies vary by workflow_type; a caller may hand us another template's
+    # copy of this stage (same key/order), so evaluate against the project's own
+    # template (docs/CONCURRENT_WORKFLOW_PLAN.md).
+    workflow_type = project.get("workflow_type", "sequential")
+    if definition.get("workflow_type") != workflow_type:
+        own = await repo.stage_def_by_key(db, definition["key"], workflow_type)
+        if own is not None:
+            definition = own
     entry_gates = definition.get("entry_gates") or []
     quality_gates = definition.get("quality_gates") or []
 
@@ -142,13 +150,10 @@ async def evaluate_stage(
         if dep_instance is None or dep_instance.get("status") != "approved":
             blocked_by.append(f"stage:{dep_def['order']}:{dep_def['key']}")
 
-    # every preceding stage must be approved before this one can run at all
-    for order in range(1, int(definition["order"])):
-        prior = await repo.stage_instance(db, project["_id"], order)
-        if prior is None or prior.get("status") != "approved":
-            token = f"stage:{order}"
-            if not any(b.startswith(token) for b in blocked_by):
-                blocked_by.append(token)
+    # Gating is the declared dependencies above — the sequential template encodes
+    # the linear chain (each stage depends on the one before), the concurrent one a
+    # DAG (2-8 depend on 1, 9 on all). No hard-coded "every lower order approved"
+    # rule, which is what let stages run in parallel (docs/CONCURRENT_WORKFLOW_PLAN.md).
 
     # 4. automated validation — blocking quality gates must have a passing result
     gate_failures: list[dict] = []
