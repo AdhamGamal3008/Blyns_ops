@@ -8,6 +8,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 ProjectStatus = Literal["active", "on_hold", "completed", "archived", "cancelled"]
+# Which stage machine a project runs: the classic linear 9-stage chain, or the
+# concurrent template where stages 2-8 run in parallel (docs/CONCURRENT_WORKFLOW_PLAN.md).
+WorkflowType = Literal["sequential", "concurrent"]
 DeliverableKind = Literal["shop_drawing", "bom", "scan", "photo", "report", "certificate"]
 # How a document's file is held: an uploaded file in GridFS, or an external URL.
 DeliverableSource = Literal["upload", "url"]
@@ -63,6 +66,7 @@ class ProjectSchedule(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
     scope: str | None = None
+    workflow_type: WorkflowType = "sequential"  # §1: chosen at creation (Stage 1)
     crm_account_id: str | None = None  # §1: stage 1 links to a CRM account
     pm_id: str | None = None
     team_ids: list[str] = Field(default_factory=list)

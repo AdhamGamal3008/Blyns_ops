@@ -85,16 +85,39 @@ async def next_code(db: AsyncIOMotorDatabase) -> str:
 
 # --- stage definitions / config (seeded, tenant-editable) --------------------
 
-async def stage_defs(db: AsyncIOMotorDatabase) -> list[dict]:
-    return [d async for d in db[STAGE_DEFS].find({}).sort([("order", 1)])]
+# Stage definitions are scoped by workflow_type — a tenant carries one full set
+# per type (docs/CONCURRENT_WORKFLOW_PLAN.md). Callers default to "sequential",
+# which is every existing project; concurrent projects pass their own type.
+
+def _wf_query(workflow_type: str) -> dict:
+    """A tenant seeded before workflow_type existed carries stage docs with no such
+    field; those are the sequential machine, so a missing field reads as sequential.
+    This lets live tenants work before the backfill re-seed reaches them."""
+    if workflow_type == "sequential":
+        return {"$or": [{"workflow_type": "sequential"},
+                        {"workflow_type": {"$exists": False}}]}
+    return {"workflow_type": workflow_type}
 
 
-async def stage_def_by_order(db: AsyncIOMotorDatabase, order: int) -> dict | None:
-    return await db[STAGE_DEFS].find_one({"order": order})
+async def stage_defs(
+    db: AsyncIOMotorDatabase, workflow_type: str = "sequential"
+) -> list[dict]:
+    return [
+        d async for d in
+        db[STAGE_DEFS].find(_wf_query(workflow_type)).sort([("order", 1)])
+    ]
 
 
-async def stage_def_by_key(db: AsyncIOMotorDatabase, key: str) -> dict | None:
-    return await db[STAGE_DEFS].find_one({"key": key})
+async def stage_def_by_order(
+    db: AsyncIOMotorDatabase, order: int, workflow_type: str = "sequential"
+) -> dict | None:
+    return await db[STAGE_DEFS].find_one({**_wf_query(workflow_type), "order": order})
+
+
+async def stage_def_by_key(
+    db: AsyncIOMotorDatabase, key: str, workflow_type: str = "sequential"
+) -> dict | None:
+    return await db[STAGE_DEFS].find_one({**_wf_query(workflow_type), "key": key})
 
 
 async def gate_rules(db: AsyncIOMotorDatabase) -> list[dict]:

@@ -149,6 +149,7 @@ async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> 
         "code": code,
         "name": payload.name,
         "scope": payload.scope,
+        "workflow_type": payload.workflow_type,  # engine honours this in Phase 1
         "crm_account_id": crm_account_id,
         "current_stage_order": first["order"],
         "current_stage_key": first["key"],
@@ -1672,7 +1673,9 @@ async def patch_stage_config(
     fields = {k: v for k, v in patch.model_dump(exclude_unset=True).items() if v is not None}
     if not fields:
         return definition
-    await db[repo.STAGE_DEFS].update_one({"key": key}, {"$set": fields})
+    # update the exact doc we read (by _id) — key alone is ambiguous now that the
+    # collection carries one stage set per workflow_type.
+    await db[repo.STAGE_DEFS].update_one({"_id": definition["_id"]}, {"$set": fields})
     updated = await repo.stage_def_by_key(db, key)
     assert updated is not None
     await _log(principal, "projects.stage_config_updated",

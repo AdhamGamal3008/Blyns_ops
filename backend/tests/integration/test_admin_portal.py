@@ -75,7 +75,7 @@ async def test_patch_enabled_modules_runs_seed(admin_client):
     })
     assert res.status_code == 200
     assert "projects" in res.json()["data"]["enabled_modules"]
-    assert await t.stage_definitions.count_documents({}) == 9  # seed ran
+    assert await t.stage_definitions.count_documents({}) == 18  # seed ran: 9 seq + 9 concurrent
 
 
 async def test_enabling_a_module_backfills_its_rbac_onto_existing_roles(admin_client):

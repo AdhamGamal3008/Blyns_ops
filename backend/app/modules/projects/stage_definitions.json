@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "machine_version": 2,
-  "description": "Seed data for the Project Management state machine, v2.0 (9-stage workflow per docs/modules/PROJECT_WORKFLOW_V2_SOP.md). Consumed by modules/projects/seed.py. On a tenant still on machine_version 1, the loader resets the definition collections before inserting these (see seed.py); fresh tenants seed straight to v2.",
+  "machine_version": 3,
+  "description": "Seed data for the Project Management state machine, v2.0 (9-stage workflow per docs/modules/PROJECT_WORKFLOW_V2_SOP.md). Consumed by modules/projects/seed.py. machine_version 3 (docs/CONCURRENT_WORKFLOW_PLAN.md) adds a per-stage workflow_type: the 9 stages here are the 'sequential' template; the loader also derives a 'concurrent' template (stages 2-8 run in parallel, stage 9 waits for all). The bump reseeds definitions on existing tenants; stage keys/orders are unchanged so in-flight sequential projects are unaffected.",
 
   "foundational_phases": [
     {
@@ -200,6 +200,7 @@
       "name": "Measurement Verification & Design Freeze",
       "phase_ref": "site_measurement_audit",
       "entry_gates": [
+        {"key": "design_package_approved", "type": "dependency", "depends_on": "design_package", "blocking": true},
         {"key": "shop_drawings_present", "type": "document", "blocking": true},
         {"key": "raw_site_data_present", "type": "document", "blocking": true}
       ],

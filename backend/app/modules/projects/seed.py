@@ -16,10 +16,12 @@ edited without touching code.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
+from pymongo.errors import OperationFailure
 
 _SEED_FILE = Path(__file__).with_name("stage_definitions.json")
 
@@ -27,6 +29,46 @@ _SEED_FILE = Path(__file__).with_name("stage_definitions.json")
 def _load_seed() -> dict:
     with _SEED_FILE.open(encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def _concurrent_variant(seq_defs: list[dict]) -> list[dict]:
+    """Derive the 'concurrent' template from the 'sequential' one
+    (docs/CONCURRENT_WORKFLOW_PLAN.md): the same stages, but every stage between the
+    first and the last depends only on the first stage, and the last (Handover)
+    depends on all of them — so 2..N-1 run in parallel and N waits for every one.
+    Document/quality gates, approvers and checklists are preserved; only dependency
+    entry-gates are rebuilt."""
+    by_order = {int(d["order"]): d for d in seq_defs}
+    orders = sorted(by_order)
+    first, last = orders[0], orders[-1]
+    first_key = by_order[first]["key"]
+    middle = [o for o in orders if first < o < last]
+
+    out: list[dict] = []
+    for o in orders:
+        d = deepcopy(by_order[o])
+        d["workflow_type"] = "concurrent"
+        # keep non-dependency gates (documents, phase refs); rebuild dependencies
+        gates = [g for g in (d.get("entry_gates") or []) if g.get("type") != "dependency"]
+        if o == last:
+            for mo in middle:
+                mk = by_order[mo]["key"]
+                gates.append({"key": f"{mk}_done", "type": "dependency",
+                              "depends_on": mk, "blocking": True})
+        elif o != first:
+            gates.append({"key": f"{first_key}_started", "type": "dependency",
+                          "depends_on": first_key, "blocking": True})
+        d["entry_gates"] = gates
+        out.append(d)
+    return out
+
+
+async def _drop_legacy_index(collection, name: str) -> None:
+    """Drop a pre-workflow_type single-field unique index if present (no-op else)."""
+    try:
+        await collection.drop_index(name)
+    except OperationFailure:
+        pass
 
 
 async def _upsert_by(collection, docs: list[dict], key_field: str) -> None:
@@ -42,10 +84,29 @@ async def _upsert_by(collection, docs: list[dict], key_field: str) -> None:
         )
 
 
+async def _upsert_stage_defs(collection, docs: list[dict]) -> None:
+    """Stage defs are unique per (workflow_type, key); upsert on both so the two
+    templates coexist and a re-run never clobbers a tenant's edits."""
+    for doc in docs:
+        await collection.update_one(
+            {"workflow_type": doc["workflow_type"], "key": doc["key"]},
+            {"$setOnInsert": doc},
+            upsert=True,
+        )
+
+
 async def _build_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
-    # Definition/config collections
-    await tenant_db.stage_definitions.create_index("key", unique=True)
-    await tenant_db.stage_definitions.create_index("order", unique=True)
+    # Definition/config collections. Stage definitions are scoped by workflow_type
+    # (docs/CONCURRENT_WORKFLOW_PLAN.md), so key/order are unique *per type* — drop
+    # the legacy single-field unique indexes and make them compound.
+    await _drop_legacy_index(tenant_db.stage_definitions, "key_1")
+    await _drop_legacy_index(tenant_db.stage_definitions, "order_1")
+    await tenant_db.stage_definitions.create_index(
+        [("workflow_type", ASCENDING), ("key", ASCENDING)], unique=True
+    )
+    await tenant_db.stage_definitions.create_index(
+        [("workflow_type", ASCENDING), ("order", ASCENDING)], unique=True
+    )
     await tenant_db.gate_rules.create_index("key", unique=True)
     await tenant_db.foundational_phases.create_index("key", unique=True)
     await tenant_db.report_types.create_index("type", unique=True)
@@ -131,7 +192,20 @@ async def seed(tenant_db: AsyncIOMotorDatabase) -> None:
     await _upsert_by(tenant_db.gate_rules, data["gate_rules"], "key")
     await _upsert_by(tenant_db.report_types, data["report_types"], "type")
     await _upsert_by(tenant_db.approver_role_map, data["approver_role_map"], "approver_role")
-    await _upsert_by(tenant_db.stage_definitions, data["stage_definitions"], "key")
+
+    # Stage definitions: the JSON set is the 'sequential' template; the 'concurrent'
+    # template is derived (docs/CONCURRENT_WORKFLOW_PLAN.md). Backfill first so any
+    # legacy docs (seeded before workflow_type existed) join the sequential set and
+    # the compound unique index stays consistent.
+    await tenant_db.stage_definitions.update_many(
+        {"workflow_type": {"$exists": False}},
+        {"$set": {"workflow_type": "sequential"}},
+    )
+    sequential = [{**d, "workflow_type": "sequential"} for d in data["stage_definitions"]]
+    await _upsert_stage_defs(tenant_db.stage_definitions, sequential)
+    await _upsert_stage_defs(
+        tenant_db.stage_definitions, _concurrent_variant(data["stage_definitions"])
+    )
 
     await tenant_db.pm_meta.update_one(
         {"_id": "state_machine"},

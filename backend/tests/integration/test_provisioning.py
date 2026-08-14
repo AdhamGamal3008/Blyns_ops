@@ -61,8 +61,10 @@ async def test_onboarding_creates_seeded_tenant_db(engine_db):
     assert "test_tenant_acme1" in dbs_after
 
     t = engine_db.tenant("test_tenant_acme1")
-    # the EXISTING projects seed ran: v2.0 9-stage machine + gates etc.
-    assert await t.stage_definitions.count_documents({}) == 9
+    # the projects seed ran: the 9-stage machine in BOTH templates (sequential +
+    # concurrent, docs/CONCURRENT_WORKFLOW_PLAN.md) + gates etc.
+    assert await t.stage_definitions.count_documents({}) == 18
+    assert await t.stage_definitions.count_documents({"workflow_type": "sequential"}) == 9
     assert await t.gate_rules.count_documents({}) == 8
     assert await t.report_types.count_documents({}) == 8
     assert await t.approver_role_map.count_documents({}) == 6
@@ -140,7 +142,7 @@ async def test_failed_job_resumes_idempotently(engine_db, monkeypatch):
     assert result.company["seats_used"] == 1  # not double-incremented
 
     t = engine_db.tenant("test_tenant_acme4")
-    assert await t.stage_definitions.count_documents({}) == 9  # not 18
+    assert await t.stage_definitions.count_documents({}) == 18  # 9 seq + 9 concurrent, idempotent
     assert await t.roles.count_documents({}) == 4
     assert await t.accounts.count_documents({}) == 8
     assert await t.users.count_documents({}) == 1
@@ -158,7 +160,7 @@ async def test_teardown_drops_only_target_tenant(engine_db):
     assert "test_tenant_acme5" not in dbs      # target dropped
     assert "test_tenant_acme6" in dbs          # neighbor intact
     other = engine_db.tenant("test_tenant_acme6")
-    assert await other.stage_definitions.count_documents({}) == 9
+    assert await other.stage_definitions.count_documents({}) == 18  # neighbor intact
 
     # control plane intact; company suspended, not removed (soft teardown)
     company5 = await engine_db.control.companies.find_one({"slug": "acme5"})
