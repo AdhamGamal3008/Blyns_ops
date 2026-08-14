@@ -174,7 +174,7 @@ function GenerateModal(props: { onDone: (ok: boolean) => void }) {
         {error != null && (
           <Banner tone="danger" title="Could not generate">{errorText(error)}</Banner>
         )}
-        <Field label="Project" hint="Auto-proposes one work order per BOM line, pinned to the current shop-drawing revision.">
+        <Field label="Project" hint="One work order per BOM line, pinned to the current shop-drawing revision. The project needs a BOM carrying product lines (its Documents tab) — a BOM attached only as gate evidence has none.">
           <Combobox
             options={projects.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))}
             value={projectId}

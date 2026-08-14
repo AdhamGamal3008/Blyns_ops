@@ -117,3 +117,17 @@ async def test_propose_requires_a_bom_carrying_line_items(client_client):
     pid = (await client_client.post(PJ, json={"name": "No BOM"})).json()["data"]["id"]
     res = await client_client.post(f"{PP}/work-orders/propose", json={"project_id": pid})
     assert res.status_code == 422, res.text
+    assert "no bill of materials" in res.json()["error"]["message"]
+
+
+async def test_propose_message_distinguishes_a_line_less_bom(client_client):
+    # a BOM attached only as gate evidence has an empty lines[]; the error must say
+    # the BOM has no product lines (add them), not that the project has no BOM.
+    pid = (await client_client.post(PJ, json={"name": "File BOM"})).json()["data"]["id"]
+    res = await client_client.post(f"{PJ}/{pid}/deliverables", json={
+        "kind": "bom", "title": "BOM file", "file_ref": "vault://bom"})  # no lines
+    assert res.status_code == 201, res.text
+
+    res = await client_client.post(f"{PP}/work-orders/propose", json={"project_id": pid})
+    assert res.status_code == 422, res.text
+    assert "no product lines" in res.json()["error"]["message"]

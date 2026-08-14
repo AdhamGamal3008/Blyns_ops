@@ -155,9 +155,21 @@ async def propose_work_orders(
 
     bom = await repo.reservable_bom(db, project["_id"])
     if bom is None:
+        # Distinguish "no BOM at all" from "a BOM exists but carries no product
+        # lines" (a BOM attached only as gate evidence has an empty lines[]) — the
+        # fix differs, so the message must say which (plan §2.1, §5 BOM-shadow trap).
+        if await repo.has_any_bom(db, project["_id"]):
+            raise DomainError(
+                VALIDATION_ERROR,
+                "This project's bill of materials has no product lines. Open the "
+                "project → Documents → add a BOM with line items (product + qty), "
+                "then generate work orders.",
+                422,
+            )
         raise DomainError(
             VALIDATION_ERROR,
-            "This project has no BOM with line items to generate work orders from.",
+            "This project has no bill of materials. Open the project → Documents → "
+            "add a BOM with line items (product + qty), then generate work orders.",
             422,
         )
 

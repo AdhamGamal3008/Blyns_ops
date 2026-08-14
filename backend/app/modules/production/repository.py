@@ -85,6 +85,17 @@ async def reservable_bom(db: AsyncIOMotorDatabase, project_id: ObjectId) -> dict
     )
 
 
+async def has_any_bom(db: AsyncIOMotorDatabase, project_id: ObjectId) -> bool:
+    """Whether the project has *any* BOM deliverable, line-carrying or not — a
+    BOM attached only as gate evidence has an empty `lines[]`. Lets propose tell
+    'no BOM at all' apart from 'a BOM with no product lines' (plan §2.1)."""
+    doc = await db[DELIVERABLES].find_one(
+        {"project_id": project_id, "kind": "bom", "is_deleted": {"$ne": True}},
+        {"_id": 1},
+    )
+    return doc is not None
+
+
 async def latest_shop_drawing(
     db: AsyncIOMotorDatabase, project_id: ObjectId
 ) -> dict | None:
