@@ -193,5 +193,10 @@ frontend/src/__tests__/ConcurrentWorkflow.test.tsx       NEW  — picker + multi
   `workflow_type`. Verified: sequential regression (test_projects 19 +
   test_projects_v2 13 + production pipeline 6 = all green), concurrent stage 1 →
   2-8 open in parallel, 9 waits (test_projects_concurrent 6). ruff/mypy clean.
-- **Phases 2-4 — pending**: create-form picker, parallel pipeline UI, full
+- **Phase 2 — DONE**: the New Project form has a Workflow picker (Sequential /
+  Concurrent, default Sequential) that sends `workflow_type`; `Project`/`Timeline`
+  TS types carry it. Verified: form sends the field (ProjectCreateWorkflow.test),
+  tsc + 191 frontend green. (Concurrent value is accepted/persisted by the backend
+  per Phase 1 tests.)
+- **Phases 3-4 — pending**: parallel pipeline UI (multiple active stages), full
   concurrent lifecycle test + hardening.

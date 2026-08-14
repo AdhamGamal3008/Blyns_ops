@@ -188,6 +188,8 @@ const NO_ACCOUNT = "__none";
 function ProjectModal(props: { open: boolean; onDone: (createdId: string | null) => void }) {
   const [name, setName] = useState("");
   const [scope, setScope] = useState("");
+  const [workflowType, setWorkflowType] =
+    useState<"sequential" | "concurrent">("sequential");
   const [budget, setBudget] = useState("0");
   const [accountId, setAccountId] = useState(NO_ACCOUNT);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -211,6 +213,7 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
         body: {
           name,
           scope: scope || null,
+          workflow_type: workflowType,
           crm_account_id: accountId === NO_ACCOUNT ? null : accountId,
           planned_budget: Number(budget),
         },
@@ -242,6 +245,17 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
       <Field label="Scope">
         <Input value={scope} onChange={(e) => setScope(e.target.value)}
           placeholder="Short description of the works" />
+      </Field>
+      <Field label="Workflow"
+        hint="Sequential runs the stages in order. Concurrent opens stages 2–8 for teams to work in parallel; only Handover waits for all of them. Chosen now, not changed later.">
+        <Select
+          value={workflowType}
+          onValueChange={(v) => setWorkflowType(v as "sequential" | "concurrent")}
+          options={[
+            { value: "sequential", label: "Sequential — one stage at a time" },
+            { value: "concurrent", label: "Concurrent — stages 2–8 in parallel" },
+          ]}
+        />
       </Field>
       <Field label="Client account (CRM)">
         <Select

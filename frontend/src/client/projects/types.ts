@@ -12,11 +12,14 @@ export interface Budget {
   currency: string;
 }
 
+export type WorkflowType = "sequential" | "concurrent";
+
 export interface Project {
   id: string;
   code: string;
   name: string;
   scope?: string | null;
+  workflow_type?: WorkflowType;
   crm_account_id?: string | null;
   current_stage_order: number;
   current_stage_key: string;
@@ -42,6 +45,7 @@ export interface TimelineStage {
 export interface Timeline {
   project_id: string;
   code: string;
+  workflow_type?: WorkflowType;
   current_stage_order: number;
   milestones: { key: string; name: string; due_date: string }[];
   stages: TimelineStage[];
