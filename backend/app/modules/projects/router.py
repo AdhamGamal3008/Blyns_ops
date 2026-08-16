@@ -11,19 +11,23 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.core import storage
-from app.modules.projects import analytics, service
+from app.modules.projects import analytics, configurations, service
 from app.modules.projects.models import (
     ApproveBody,
     ChecklistMark,
     ClientAcceptanceCreate,
+    ConfigurationVersionPublish,
     DelegationCreate,
     DeliverableCreate,
     DocumentSupply,
+    GateCatalogCreate,
     GateConfigPatch,
     GateDocumentAttach,
     GateResultCreate,
     GateWaive,
     JobCostCreate,
+    ProjectConfigurationCreate,
+    ProjectConfigurationPatch,
     ProjectCreate,
     ProjectPatch,
     RejectBody,
@@ -44,6 +48,90 @@ _write = require("projects", Level.WRITE)
 # Analytics is a separate resource (management-only by default): VIEW = KPI row,
 # READ = KPIs + charts. The service tiers the body; the guard is the floor.
 _analytics = require("projects_analytics", Level.VIEW)
+# Managing project configurations is tenant-admin work, guarded exactly like the
+# approver-role map it sits next to in Settings — `settings` WRITE, not `projects`
+# WRITE (docs/PROJECT_CONFIGURATIONS_PLAN.md §4). READING them for the Stage-1
+# picker stays `projects` READ, so a PM can pick one without Settings access.
+_settings_write = require("settings", Level.WRITE)
+
+
+# --- project configurations (PROJECT_CONFIGURATIONS_PLAN.md §5) ---------------
+# Declared before /{project_id} so `config` is never read as a project id.
+
+@router.get("/config/configurations")
+async def list_configurations(
+    active_only: bool = False, principal: ClientPrincipal = Depends(_read)
+):
+    return envelope(to_api(
+        await configurations.list_configurations(principal, active_only)
+    ))
+
+
+@router.get("/config/configurations/{config_id}")
+async def get_configuration(
+    config_id: str, principal: ClientPrincipal = Depends(_settings_write)
+):
+    return envelope(to_api(
+        await configurations.get_configuration(principal, config_id)
+    ))
+
+
+@router.post("/config/configurations", status_code=201)
+async def create_configuration(
+    body: ProjectConfigurationCreate,
+    principal: ClientPrincipal = Depends(_settings_write),
+):
+    return envelope(to_api(
+        await configurations.create_configuration(principal, body)
+    ))
+
+
+@router.patch("/config/configurations/{config_id}")
+async def patch_configuration(
+    config_id: str, body: ProjectConfigurationPatch,
+    principal: ClientPrincipal = Depends(_settings_write),
+):
+    return envelope(to_api(
+        await configurations.patch_configuration(principal, config_id, body)
+    ))
+
+
+@router.delete("/config/configurations/{config_id}", status_code=204)
+async def delete_configuration(
+    config_id: str, principal: ClientPrincipal = Depends(_settings_write)
+):
+    await configurations.delete_configuration(principal, config_id)
+
+
+@router.post("/config/configurations/{config_id}/versions", status_code=201)
+async def publish_configuration_version(
+    config_id: str, body: ConfigurationVersionPublish,
+    principal: ClientPrincipal = Depends(_settings_write),
+):
+    return envelope(to_api(
+        await configurations.publish_version(principal, config_id, body)
+    ))
+
+
+@router.get("/config/gate-catalog")
+async def list_gate_catalog(principal: ClientPrincipal = Depends(_settings_write)):
+    return envelope(to_api(await configurations.list_gate_catalog(principal)))
+
+
+@router.post("/config/gate-catalog", status_code=201)
+async def create_gate_catalog_entry(
+    body: GateCatalogCreate, principal: ClientPrincipal = Depends(_settings_write)
+):
+    return envelope(to_api(
+        await configurations.create_gate_catalog_entry(principal, body)
+    ))
+
+
+@router.delete("/config/gate-catalog/{key}", status_code=204)
+async def delete_gate_catalog_entry(
+    key: str, principal: ClientPrincipal = Depends(_settings_write)
+):
+    await configurations.delete_gate_catalog_entry(principal, key)
 
 
 # --- config (§12) — declared before /{project_id} so `config` is not an id ----

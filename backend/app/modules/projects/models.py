@@ -66,7 +66,12 @@ class ProjectSchedule(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
     scope: str | None = None
-    workflow_type: WorkflowType = "sequential"  # §1: chosen at creation (Stage 1)
+    # §1: chosen at creation (Stage 1). `configuration_id` names a tenant-defined
+    # project configuration and wins when given — the project pins that config's
+    # current version for life (docs/PROJECT_CONFIGURATIONS_PLAN.md D1). Without
+    # one, `workflow_type` selects the matching seeded system configuration.
+    configuration_id: str | None = None
+    workflow_type: WorkflowType = "sequential"
     crm_account_id: str | None = None  # §1: stage 1 links to a CRM account
     pm_id: str | None = None
     team_ids: list[str] = Field(default_factory=list)
@@ -261,3 +266,88 @@ class GateConfigPatch(BaseModel):
     severe_threshold: dict[str, Any] | None = None
     blocking: bool | None = None
     checklist: list[str] | None = None
+
+
+# --- tenant-defined project configurations -----------------------------------
+# docs/PROJECT_CONFIGURATIONS_PLAN.md §5. A configuration is created by CLONING an
+# existing one and edited by PUBLISHING a new immutable version (D1) — there is no
+# server-side draft, so a publish always carries the full edited set.
+
+
+class ProjectConfigurationCreate(BaseModel):
+    """Create by cloning a base configuration's current version (§5)."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+    base_configuration_id: str | None = None  # None → the tenant's default config
+
+
+class ProjectConfigurationPatch(BaseModel):
+    """Rename / set default / activate-deactivate. The stages and gates of a
+    configuration are NOT edited here — that is a version publish."""
+
+    name: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+
+
+class EntryDocumentSpec(BaseModel):
+    """One document a stage requires before it can leave `waiting` (§4)."""
+
+    key: str = Field(min_length=1)
+    label: str | None = None
+    blocking: bool = True
+
+
+class StageVersionSpec(BaseModel):
+    """A stage's editable surface within a published version.
+
+    D2 fixes the 9-stage skeleton: `key` identifies which stage this tunes, and
+    the stage's order, name, approver position and integrations are NOT editable —
+    that is what keeps the Production/Finance/Inventory key-hooks safe (G-2).
+    """
+
+    key: str = Field(min_length=1)
+    entry_documents: list[EntryDocumentSpec] = Field(default_factory=list)
+    quality_gates: list[str] = Field(default_factory=list)  # gate_catalog keys
+
+
+class GateVersionSpec(BaseModel):
+    """A gate's tuning within this version — a COPY of the catalog definition,
+    never a write-back to it (G-3)."""
+
+    key: str = Field(min_length=1)
+    threshold: dict[str, Any] | None = None
+    severe_threshold: dict[str, Any] | None = None
+    blocking: bool | None = None
+    checklist: list[str] | None = None
+
+
+class ConfigurationVersionPublish(BaseModel):
+    """The full edited set, published as an immutable new version (D1)."""
+
+    workflow_shape: WorkflowType | None = None  # None → keep the current shape
+    stages: list[StageVersionSpec] = Field(default_factory=list)
+    gates: list[GateVersionSpec] = Field(default_factory=list)
+
+
+class GateCatalogCreate(BaseModel):
+    """A tenant's own reusable gate definition, attachable to any stage of any
+    configuration. Built-ins are seeded and read-only."""
+
+    key: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=1)
+    type: Literal["measurement", "inspection"] = "measurement"
+    blocking: bool = True
+    threshold: dict[str, Any] | None = None
+    severe_threshold: dict[str, Any] | None = None
+    checklist: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _needs_its_criterion(self) -> GateCatalogCreate:
+        if self.type == "inspection" and not self.checklist:
+            raise ValueError("an inspection gate needs a checklist")
+        if self.type == "measurement" and not self.threshold:
+            raise ValueError("a measurement gate needs a threshold")
+        return self

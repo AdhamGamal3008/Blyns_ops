@@ -61,11 +61,13 @@ async def test_onboarding_creates_seeded_tenant_db(engine_db):
     assert "test_tenant_acme1" in dbs_after
 
     t = engine_db.tenant("test_tenant_acme1")
-    # the projects seed ran: the 9-stage machine in BOTH templates (sequential +
-    # concurrent, docs/CONCURRENT_WORKFLOW_PLAN.md) + gates etc.
+    # the projects seed ran: the two seeded system CONFIGURATIONS — Standard
+    # (sequential) and Concurrent — each holding its own full copy of the 9-stage
+    # machine and the 8 gate rules (docs/PROJECT_CONFIGURATIONS_PLAN.md §3)
+    assert await t.project_configurations.count_documents({"is_system": True}) == 2
     assert await t.stage_definitions.count_documents({}) == 18
     assert await t.stage_definitions.count_documents({"workflow_type": "sequential"}) == 9
-    assert await t.gate_rules.count_documents({}) == 8
+    assert await t.gate_rules.count_documents({}) == 16
     assert await t.report_types.count_documents({}) == 8
     assert await t.approver_role_map.count_documents({}) == 6
     # other module seeds

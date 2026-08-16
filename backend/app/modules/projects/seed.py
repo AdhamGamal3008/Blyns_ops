@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -25,13 +26,41 @@ from pymongo.errors import OperationFailure
 
 _SEED_FILE = Path(__file__).with_name("stage_definitions.json")
 
+# The two non-deletable configurations every tenant gets, reproducing the two
+# workflow shapes exactly (docs/PROJECT_CONFIGURATIONS_PLAN.md §3, D-1). Tenant-
+# defined configurations are cloned from these in Phase 2.
+_SYSTEM_CONFIGS: tuple[dict, ...] = (
+    {
+        "system_key": "standard",
+        "name": "Standard",
+        "description": "The default 9-stage pipeline — each stage opens when the "
+                       "one before it is approved.",
+        "workflow_shape": "sequential",
+        "is_default": True,
+    },
+    {
+        "system_key": "concurrent",
+        "name": "Concurrent",
+        "description": "Stages 2-8 open together off Stage 1 and run in parallel; "
+                       "Stage 9 waits for every one of them.",
+        "workflow_shape": "concurrent",
+        "is_default": False,
+    },
+)
+
+# The machine version at which the stage SKELETON (keys, orders, the stage set
+# itself) last changed. Only a bump across this line invalidates a tenant's
+# definitions and warrants the destructive reset below; later bumps — v4 scopes
+# the same 9 stages to a configuration — adopt what is already there.
+_SKELETON_VERSION = 3
+
 
 def _load_seed() -> dict:
     with _SEED_FILE.open(encoding="utf-8") as fh:
         return json.load(fh)
 
 
-def _concurrent_variant(seq_defs: list[dict]) -> list[dict]:
+def concurrent_variant(seq_defs: list[dict]) -> list[dict]:
     """Derive the 'concurrent' template from the 'sequential' one
     (docs/CONCURRENT_WORKFLOW_PLAN.md): the same stages, but every stage between the
     first and the last depends only on the first stage, and the last (Handover)
@@ -64,11 +93,36 @@ def _concurrent_variant(seq_defs: list[dict]) -> list[dict]:
 
 
 async def _drop_legacy_index(collection, name: str) -> None:
-    """Drop a pre-workflow_type single-field unique index if present (no-op else)."""
+    """Drop a superseded unique index if present (no-op else)."""
     try:
         await collection.drop_index(name)
     except OperationFailure:
         pass
+
+
+async def _drop_superseded_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
+    """Definition uniqueness is now per config-version, so every narrower unique
+    index has to go BEFORE the scoped docs are written — the second configuration's
+    copy of a stage/gate collides with any of them."""
+    for name in ("key_1", "order_1", "workflow_type_1_key_1", "workflow_type_1_order_1"):
+        await _drop_legacy_index(tenant_db.stage_definitions, name)
+    await _drop_legacy_index(tenant_db.gate_rules, "key_1")
+
+
+async def _build_definition_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
+    """Created only AFTER the scoped docs are written, so a tenant mid-adoption
+    never trips a unique constraint the new scoping is about to satisfy."""
+    for field in ("key", "order"):
+        await tenant_db.stage_definitions.create_index(
+            [("configuration_id", ASCENDING), ("config_version", ASCENDING),
+             (field, ASCENDING)],
+            unique=True,
+        )
+    await tenant_db.gate_rules.create_index(
+        [("configuration_id", ASCENDING), ("config_version", ASCENDING),
+         ("key", ASCENDING)],
+        unique=True,
+    )
 
 
 async def _upsert_by(collection, docs: list[dict], key_field: str) -> None:
@@ -84,30 +138,110 @@ async def _upsert_by(collection, docs: list[dict], key_field: str) -> None:
         )
 
 
-async def _upsert_stage_defs(collection, docs: list[dict]) -> None:
-    """Stage defs are unique per (workflow_type, key); upsert on both so the two
-    templates coexist and a re-run never clobbers a tenant's edits."""
+async def _upsert_scoped(collection, docs: list[dict], key_field: str) -> None:
+    """Definition docs are unique per (configuration_id, config_version, key) —
+    upsert on the full scope so every configuration keeps its own copy (G-3) and a
+    re-run never clobbers a tenant's edits."""
     for doc in docs:
         await collection.update_one(
-            {"workflow_type": doc["workflow_type"], "key": doc["key"]},
+            {
+                "configuration_id": doc["configuration_id"],
+                "config_version": doc["config_version"],
+                key_field: doc[key_field],
+            },
             {"$setOnInsert": doc},
             upsert=True,
         )
 
 
+async def _ensure_system_configs(tenant_db: AsyncIOMotorDatabase) -> dict[str, dict]:
+    """Seed (idempotently) the two system configurations and return them by
+    system_key. Their _ids are what every definition doc and every project pins,
+    so they must stay stable across re-runs — hence $setOnInsert on system_key."""
+    await tenant_db.project_configurations.create_index(
+        "system_key", unique=True, sparse=True
+    )
+    now = datetime.now(UTC)
+    for spec in _SYSTEM_CONFIGS:
+        await tenant_db.project_configurations.update_one(
+            {"system_key": spec["system_key"]},
+            {"$setOnInsert": {
+                **spec,
+                "current_version": 1,
+                "is_system": True,
+                "is_active": True,
+                "is_deleted": False,
+                "created_at": now,
+                "updated_at": now,
+                "created_by": "system",
+            }},
+            upsert=True,
+        )
+    return {
+        c["system_key"]: c
+        async for c in tenant_db.project_configurations.find({"is_system": True})
+    }
+
+
+async def _adopt_legacy_definitions(
+    tenant_db: AsyncIOMotorDatabase, standard_id, concurrent_id
+) -> None:
+    """v3 → v4: definitions a tenant already carries — including any edits it made
+    to stage names, approvers or gate thresholds — are adopted into the matching
+    system configuration at version 1 rather than being wiped and re-seeded. v4
+    changes no stage key and no stage order, so nothing about a running project
+    moves; only the scoping fields are added."""
+    # pre-v3 docs predate workflow_type entirely; those are the sequential machine
+    await tenant_db.stage_definitions.update_many(
+        {"workflow_type": {"$exists": False}},
+        {"$set": {"workflow_type": "sequential"}},
+    )
+    for workflow_type, config_id in (
+        ("sequential", standard_id), ("concurrent", concurrent_id)
+    ):
+        await tenant_db.stage_definitions.update_many(
+            {"workflow_type": workflow_type, "configuration_id": {"$exists": False}},
+            {"$set": {"configuration_id": config_id, "config_version": 1}},
+        )
+    # Gate rules were one tenant-wide set; it becomes Standard's. The Concurrent
+    # configuration gets its own inserted copies below — never a shared doc (G-3).
+    await tenant_db.gate_rules.update_many(
+        {"configuration_id": {"$exists": False}},
+        {"$set": {"configuration_id": standard_id, "config_version": 1}},
+    )
+
+
+def gate_label(key: str) -> str:
+    """A human label for a gate key — the catalog needs one and the seed data
+    carries none. `timber_moisture_content` → `Timber moisture content`."""
+    words = key.replace("_", " ").strip()
+    return words[:1].upper() + words[1:] if words else key
+
+
+async def _seed_gate_catalog(tenant_db: AsyncIOMotorDatabase, rules: list[dict]) -> None:
+    """The tenant's library of reusable gate DEFINITIONS
+    (docs/PROJECT_CONFIGURATIONS_PLAN.md §3). Attaching one to a stage copies it
+    into that config-version's gate_rules, where the threshold is then tuned —
+    the catalog entry itself is never written back to (G-3).
+
+    The 8 seeded gates are built-ins: they may be attached and tuned per
+    configuration, but not edited or deleted here.
+    """
+    await tenant_db.gate_catalog.create_index("key", unique=True)
+    for rule in rules:
+        await tenant_db.gate_catalog.update_one(
+            {"key": rule["key"]},
+            {"$setOnInsert": {
+                **rule,
+                "name": gate_label(rule["key"]),
+                "is_builtin": True,
+                "is_deleted": False,
+            }},
+            upsert=True,
+        )
+
+
 async def _build_indexes(tenant_db: AsyncIOMotorDatabase) -> None:
-    # Definition/config collections. Stage definitions are scoped by workflow_type
-    # (docs/CONCURRENT_WORKFLOW_PLAN.md), so key/order are unique *per type* — drop
-    # the legacy single-field unique indexes and make them compound.
-    await _drop_legacy_index(tenant_db.stage_definitions, "key_1")
-    await _drop_legacy_index(tenant_db.stage_definitions, "order_1")
-    await tenant_db.stage_definitions.create_index(
-        [("workflow_type", ASCENDING), ("key", ASCENDING)], unique=True
-    )
-    await tenant_db.stage_definitions.create_index(
-        [("workflow_type", ASCENDING), ("order", ASCENDING)], unique=True
-    )
-    await tenant_db.gate_rules.create_index("key", unique=True)
     await tenant_db.foundational_phases.create_index("key", unique=True)
     await tenant_db.report_types.create_index("type", unique=True)
     await tenant_db.approver_role_map.create_index("approver_role", unique=True)
@@ -165,7 +299,7 @@ async def _applied_version(tenant_db: AsyncIOMotorDatabase) -> int:
 
 
 async def _reset_definitions(tenant_db: AsyncIOMotorDatabase) -> None:
-    """Wipe the DEFINITION collections so a machine-version bump doesn't leave the
+    """Wipe the DEFINITION collections so a SKELETON version bump doesn't leave the
     superseded machine's stages/roles/gates behind (a plain $setOnInsert re-seed
     can neither update nor remove them, and the unique `order` index would collide
     on insert). Runtime collections — projects, stage_instances, gate_results,
@@ -183,29 +317,55 @@ async def seed(tenant_db: AsyncIOMotorDatabase) -> None:
     target_version = int(data.get("machine_version", 1))
 
     await _build_indexes(tenant_db)
+    await _drop_superseded_indexes(tenant_db)
 
+    # A bump that redraws the stage skeleton invalidates what is there; a bump that
+    # only re-scopes it (v3 → v4) must NOT — the reset would also discard the
+    # tenant's approver_role_map, which Settings lets it edit.
     current = await _applied_version(tenant_db)
-    if 1 <= current < target_version:
+    if 1 <= current < min(target_version, _SKELETON_VERSION):
         await _reset_definitions(tenant_db)
 
     await _upsert_by(tenant_db.foundational_phases, data["foundational_phases"], "key")
-    await _upsert_by(tenant_db.gate_rules, data["gate_rules"], "key")
     await _upsert_by(tenant_db.report_types, data["report_types"], "type")
     await _upsert_by(tenant_db.approver_role_map, data["approver_role_map"], "approver_role")
 
-    # Stage definitions: the JSON set is the 'sequential' template; the 'concurrent'
-    # template is derived (docs/CONCURRENT_WORKFLOW_PLAN.md). Backfill first so any
-    # legacy docs (seeded before workflow_type existed) join the sequential set and
-    # the compound unique index stays consistent.
-    await tenant_db.stage_definitions.update_many(
-        {"workflow_type": {"$exists": False}},
-        {"$set": {"workflow_type": "sequential"}},
-    )
-    sequential = [{**d, "workflow_type": "sequential"} for d in data["stage_definitions"]]
-    await _upsert_stage_defs(tenant_db.stage_definitions, sequential)
-    await _upsert_stage_defs(
-        tenant_db.stage_definitions, _concurrent_variant(data["stage_definitions"])
-    )
+    # Every stage definition and gate rule belongs to one version of one
+    # configuration (docs/PROJECT_CONFIGURATIONS_PLAN.md §3). Seed the two system
+    # configs first — their _ids are the scope everything below is written under —
+    # then adopt whatever the tenant already carries into them.
+    configs = await _ensure_system_configs(tenant_db)
+    standard_id = configs["standard"]["_id"]
+    concurrent_id = configs["concurrent"]["_id"]
+    await _adopt_legacy_definitions(tenant_db, standard_id, concurrent_id)
+
+    # Stage definitions: the JSON set is the 'sequential' template and belongs to
+    # Standard; the 'concurrent' template is derived (docs/CONCURRENT_WORKFLOW_PLAN.md)
+    # and belongs to Concurrent. Both are seeded at version 1.
+    sequential = [
+        {**d, "workflow_type": "sequential",
+         "configuration_id": standard_id, "config_version": 1}
+        for d in data["stage_definitions"]
+    ]
+    concurrent = [
+        {**d, "configuration_id": concurrent_id, "config_version": 1}
+        for d in concurrent_variant(data["stage_definitions"])
+    ]
+    await _upsert_scoped(tenant_db.stage_definitions, sequential, "key")
+    await _upsert_scoped(tenant_db.stage_definitions, concurrent, "key")
+
+    # Each configuration holds its OWN copies of the gate rules, so tuning a
+    # threshold on one can never reach another (G-3).
+    for config_id in (standard_id, concurrent_id):
+        await _upsert_scoped(
+            tenant_db.gate_rules,
+            [{**g, "configuration_id": config_id, "config_version": 1}
+             for g in data["gate_rules"]],
+            "key",
+        )
+
+    await _seed_gate_catalog(tenant_db, data["gate_rules"])
+    await _build_definition_indexes(tenant_db)
 
     await tenant_db.pm_meta.update_one(
         {"_id": "state_machine"},

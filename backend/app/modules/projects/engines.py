@@ -114,12 +114,13 @@ async def evaluate_stage(
     Pure — it reports, it does not write. `run_decision_engine` applies it.
     """
     supplied: set[str] = set(instance.get("documents_supplied") or [])
-    # Dependencies vary by workflow_type; a caller may hand us another template's
-    # copy of this stage (same key/order), so evaluate against the project's own
-    # template (docs/CONCURRENT_WORKFLOW_PLAN.md).
-    workflow_type = project.get("workflow_type", "sequential")
-    if definition.get("workflow_type") != workflow_type:
-        own = await repo.stage_def_by_key(db, definition["key"], workflow_type)
+    # Gates, documents and dependencies all vary per configuration, and a caller
+    # may hand us another configuration's copy of this stage (same key/order), so
+    # everything below is read from the configuration VERSION this project pinned
+    # at creation — never the tenant's current one (D1/G-5).
+    scope = await repo.scope_for_project(db, project)
+    if not repo.in_scope(definition, scope):
+        own = await repo.stage_def_by_key(db, definition["key"], scope)
         if own is not None:
             definition = own
     entry_gates = definition.get("entry_gates") or []
@@ -139,7 +140,9 @@ async def evaluate_stage(
         if gate.get("type") != "dependency" or not gate.get("blocking"):
             continue
         depends_on = gate.get("depends_on")
-        dep_def = await repo.stage_def_by_key(db, depends_on) if depends_on else None
+        dep_def = (
+            await repo.stage_def_by_key(db, depends_on, scope) if depends_on else None
+        )
         if dep_def is None:
             # a phase reference (e.g. acclimation) rather than a stage: it is
             # satisfied by supplying its document/gate evidence
@@ -159,7 +162,7 @@ async def evaluate_stage(
     gate_failures: list[dict] = []
     severe = False
     for gate_key in quality_gates:
-        rule = await repo.gate_rule(db, gate_key)
+        rule = await repo.gate_rule(db, gate_key, scope)
         if rule is None or not rule.get("blocking", True):
             continue
         result = await repo.latest_gate_result(db, instance["_id"], gate_key)

@@ -96,11 +96,70 @@ async def _project(principal: ClientPrincipal, project_id: str) -> dict:
     )
 
 
-async def _definition(principal: ClientPrincipal, order: int) -> dict:
-    definition = await repo.stage_def_by_order(principal.tenant_db, order)
-    if definition is None:
-        raise DomainError(TENANT_NOT_FOUND, f"Stage {order} is not defined.", 404)
-    return definition
+async def _definition_in(db: Any, scope: repo.ConfigScope, order: int) -> dict:
+    definition = await repo.stage_def_by_order(db, order, scope)
+    if definition is not None:
+        return definition
+    # A missing stage and a missing CONFIGURATION are different failures: the
+    # second means this workspace was never migrated (or a version was pruned out
+    # from under a live project), and telling the caller "stage 1 is not defined"
+    # sends them looking in the wrong place (G-1).
+    if not await repo.stage_defs(db, scope):
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"The '{scope.workflow_type}' workflow is not seeded on this "
+            "workspace — re-seed the Projects module "
+            "(scripts/migrate_projects_v4.py) before working on this project.",
+            409,
+        )
+    raise DomainError(TENANT_NOT_FOUND, f"Stage {order} is not defined.", 404)
+
+
+async def _definition(principal: ClientPrincipal, project: dict, order: int) -> dict:
+    """The stage definition a PROJECT runs at `order`.
+
+    Read from the configuration VERSION the project pinned at creation, never the
+    tenant's current default: two configurations can define the same stage with
+    different documents, gates and thresholds, and a published version must not
+    move a running project (D1/G-5).
+    """
+    db = principal.tenant_db
+    return await _definition_in(db, await repo.scope_for_project(db, project), order)
+
+
+async def _resolve_configuration(db: Any, payload: ProjectCreate) -> dict | None:
+    """Which project configuration a new project runs against (Stage 1).
+
+    Resolution order:
+      1. an explicit `configuration_id` — what the Stage-1 picker sends;
+      2. `workflow_type: "concurrent"` — back-compat for callers that predate
+         configurations, mapped onto the Concurrent system config;
+      3. the tenant's **default** configuration, which is what "I didn't choose"
+         means once a tenant has built its own (G-4).
+
+    Returns None on a tenant the v4 migration has not reached — that project
+    carries no pin and resolves through the legacy workflow_type template, which
+    still works (docs/PROJECT_CONFIGURATIONS_PLAN.md G-1).
+    """
+    if payload.configuration_id:
+        config = await repo.project_config(
+            db, _oid(payload.configuration_id, "Project configuration")
+        )
+        if config is None:
+            raise DomainError(
+                TENANT_NOT_FOUND, "Project configuration not found.", 404
+            )
+        if config.get("is_active") is False:
+            raise DomainError(
+                VALIDATION_ERROR,
+                f"The '{config['name']}' configuration is deactivated and cannot "
+                "be used for new projects.",
+                422,
+            )
+        return config
+    if payload.workflow_type != "sequential":
+        return await repo.system_config(db, payload.workflow_type)
+    return await repo.default_project_config(db)
 
 
 # --- projects & portfolio (§12) ----------------------------------------------
@@ -133,18 +192,27 @@ async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> 
     """
     db = principal.tenant_db
 
-    # A non-default workflow needs its stage template seeded on this tenant, or the
-    # project would be stranded at Stage 1 (nothing to unlock). Tenants seeded
-    # before the concurrent template existed must be migrated first
-    # (scripts/migrate_projects_v3.py).
-    if payload.workflow_type != "sequential" and not await repo.stage_defs(
-        db, payload.workflow_type
-    ):
+    configuration = await _resolve_configuration(db, payload)
+    workflow_type = (
+        configuration["workflow_shape"] if configuration else payload.workflow_type
+    )
+
+    # The chosen configuration must actually have its stages seeded on this tenant,
+    # or the project would be stranded at Stage 1 with nothing to unlock. A tenant
+    # the v4 migration has not reached has no configurations at all and falls back
+    # to the legacy workflow_type template (G-1).
+    scope = (
+        repo.scope_of(configuration) if configuration
+        else repo.ConfigScope(workflow_type=workflow_type)
+    )
+    if not await repo.stage_defs(db, scope):
+        label = configuration["name"] if configuration else workflow_type
         raise DomainError(
             VALIDATION_ERROR,
-            f"The '{payload.workflow_type}' workflow is not available on this "
-            "workspace yet — the Projects module must be re-seeded before "
-            "concurrent projects can be created.",
+            f"The '{label}' workflow is not available on this "
+            "workspace yet — the Projects module must be re-seeded "
+            "(scripts/migrate_projects_v4.py) before projects can be created "
+            "against it.",
             422,
         )
 
@@ -159,13 +227,19 @@ async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> 
             raise DomainError(TENANT_NOT_FOUND, "CRM account not found.", 404)
         crm_account_id = account["_id"]
 
-    first = await _definition(principal, FIRST_STAGE_ORDER)
+    first = await _definition_in(db, scope, FIRST_STAGE_ORDER)
     code = await repo.next_code(db)
     doc = await repo.insert(db, repo.PROJECTS, {
         "code": code,
         "name": payload.name,
         "scope": payload.scope,
-        "workflow_type": payload.workflow_type,  # engine honours this in Phase 1
+        "workflow_type": workflow_type,
+        # Pin the configuration VERSION current right now: publishing a new version
+        # later must not move this project's stages or gates (D1/G-5).
+        "configuration_id": configuration["_id"] if configuration else None,
+        "config_version": (
+            int(configuration["current_version"]) if configuration else None
+        ),
         "crm_account_id": crm_account_id,
         "current_stage_order": first["order"],
         "current_stage_key": first["key"],
@@ -227,8 +301,7 @@ async def _enter_unlocked_stages(
     concurrent one can open several at once (docs/CONCURRENT_WORKFLOW_PLAN.md).
     Returns the (definition, instance) pairs newly entered, lowest order first."""
     db = principal.tenant_db
-    workflow_type = project.get("workflow_type", "sequential")
-    defs = await repo.stage_defs(db, workflow_type)
+    defs = await repo.stage_defs(db, await repo.scope_for_project(db, project))
     instances = {
         i["stage_order"]: i for i in await repo.stage_instances(db, project["_id"])
     }
@@ -292,7 +365,8 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
     """§12 — stages + milestones for the Gantt view."""
     project = await _project(principal, project_id)
     db = principal.tenant_db
-    definitions = await repo.stage_defs(db, project.get("workflow_type", "sequential"))
+    scope = await repo.scope_for_project(db, project)
+    definitions = await repo.stage_defs(db, scope)
     instances = {
         i["stage_order"]: i for i in await repo.stage_instances(db, project["_id"])
     }
@@ -300,7 +374,11 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
         "project_id": project_id,
         # tolerate legacy/partial docs that predate the stage machine
         "code": project.get("code"),
+        # the shape drives the pipeline view; the pin tells the UI which
+        # configuration version it is actually looking at
         "workflow_type": project.get("workflow_type", "sequential"),
+        "configuration_id": scope.configuration_id,
+        "config_version": scope.config_version,
         "current_stage_order": project.get("current_stage_order"),
         "milestones": project.get("milestone_schedule") or [],
         "stages": [
@@ -328,7 +406,7 @@ async def board(principal: ClientPrincipal, project_id: str) -> dict:
                 "waiting_on": [], "blocked_by": [], "blocking_reason": None,
                 "open_reports": []}
     order = int(project["current_stage_order"])
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     instance = await repo.stage_instance(principal.tenant_db, project["_id"], order)
     if instance is None:
         instance = await _enter_stage(principal, project, definition)
@@ -358,7 +436,7 @@ async def list_stages(principal: ClientPrincipal, project_id: str) -> list[dict]
 
 async def get_stage(principal: ClientPrincipal, project_id: str, order: int) -> dict:
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
@@ -384,7 +462,7 @@ async def supply_document(
     submission may optionally reference a project document (deliverable) as its
     evidence — recorded on the stage with who attached it and when."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
@@ -457,13 +535,15 @@ async def record_gate_result(
     tenant's seeded threshold. A caller never declares `passed` itself.
     """
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
         raise DomainError(TENANT_NOT_FOUND, f"Stage {order} not reached.", 404)
 
-    rule = await repo.gate_rule(db, gate_key)
+    # The threshold is the one THIS project pinned — another configuration may
+    # define the same gate with a different tolerance (G-3, G-5).
+    rule = await repo.gate_rule(db, gate_key, await repo.scope_for_project(db, project))
     if rule is None:
         raise DomainError(TENANT_NOT_FOUND, f"Gate '{gate_key}' is not defined.", 404)
     attach = rule.get("attach_to_stages") or []
@@ -545,13 +625,15 @@ async def waive_gate(
     passing gate result as satisfied, the waiver clears the gate with no engine
     change, and the record surfaces in the Stage-9 technical defence file."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
         raise DomainError(TENANT_NOT_FOUND, f"Stage {order} not reached.", 404)
 
-    rule = await repo.gate_rule(db, gate_key)
+    # The threshold is the one THIS project pinned — another configuration may
+    # define the same gate with a different tolerance (G-3, G-5).
+    rule = await repo.gate_rule(db, gate_key, await repo.scope_for_project(db, project))
     if rule is None:
         raise DomainError(TENANT_NOT_FOUND, f"Gate '{gate_key}' is not defined.", 404)
     if not rule.get("blocking", True):
@@ -618,7 +700,7 @@ async def mark_checklist_section(
     complete (or reopen it). `run_auto_validation` blocks release until every
     seeded section is complete."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
@@ -673,7 +755,7 @@ async def run_task(
 ) -> dict:
     """§6 — re-run the decision engine. Deterministic and idempotent."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
@@ -706,7 +788,7 @@ async def submit_stage(
     in_progress; it never reaches an approver.
     """
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is None:
@@ -821,18 +903,18 @@ async def _finalize_stage(
     """
     db = principal.tenant_db
     order = int(definition["order"])
-    workflow_type = project.get("workflow_type", "sequential")
+    scope = await repo.scope_for_project(db, project)
 
-    # Fail BEFORE any mutation if this project's stage template isn't seeded — else
-    # the approval marks the stage done but can't open what it unlocks, stranding
-    # the project (a tenant not yet migrated to the concurrent template). Sequential
-    # always resolves (a missing workflow_type reads as sequential).
-    if not await repo.stage_defs(db, workflow_type):
+    # Fail BEFORE any mutation if this project's pinned configuration isn't seeded —
+    # else the approval marks the stage done but can't open what it unlocks,
+    # stranding the project (a tenant not yet migrated, or a version whose
+    # definitions were pruned out from under a live project).
+    if not await repo.stage_defs(db, scope):
         raise DomainError(
             VALIDATION_ERROR,
-            f"The '{workflow_type}' workflow is not seeded on this workspace — "
-            "re-seed the Projects module (scripts/migrate_projects_v3.py) before "
-            "approving stages.",
+            f"The '{project.get('workflow_type', 'sequential')}' workflow is not "
+            "seeded on this workspace — re-seed the Projects module "
+            "(scripts/migrate_projects_v4.py) before approving stages.",
             409,
         )
 
@@ -877,7 +959,7 @@ async def _finalize_stage(
 
     # Point the single representative cursor at the lowest-order stage still in
     # flight (entered, not yet approved); fall back to the stage just approved.
-    defs_by_order = {int(d["order"]): d for d in await repo.stage_defs(db, workflow_type)}
+    defs_by_order = {int(d["order"]): d for d in await repo.stage_defs(db, scope)}
     instances = await repo.stage_instances(db, updated["_id"])
     active = sorted(
         int(i["stage_order"]) for i in instances if i.get("status") != "approved"
@@ -909,7 +991,7 @@ async def approve_stage(
 ) -> dict:
     """§5.4 — approved → stage approved, project moves to the next stage."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     await _assert_may_approve(principal, definition)
 
     db = principal.tenant_db
@@ -956,7 +1038,9 @@ async def _rollback_to(
         await repo.set_stage_fields(db, current["_id"], {
             "status": "rejected", "blocking_reason": reason,
         })
-    target_def = await repo.stage_def_by_key(db, target_key)
+    target_def = await repo.stage_def_by_key(
+        db, target_key, await repo.scope_for_project(db, project)
+    )
     if target_def is not None:
         await repo.update(db, repo.PROJECTS, project["_id"], {
             "status": "active",
@@ -984,7 +1068,7 @@ async def reject_stage(
     """§5.5 — generate the typed report, assign an owner, increment
     recovery_loops, reopen the stage (acceptance #5)."""
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     await _assert_may_approve(principal, definition)
 
     db = principal.tenant_db
@@ -1027,7 +1111,9 @@ async def reject_stage(
     # or reopening the current stage.
     target_key = recovery.get("target")
     target_def = (
-        await repo.stage_def_by_key(db, target_key)
+        await repo.stage_def_by_key(
+            db, target_key, await repo.scope_for_project(db, project)
+        )
         if recovery.get("action") == "return_to_stage" and target_key else None
     )
     rollback = target_def is not None and int(target_def["order"]) < order
@@ -1295,13 +1381,15 @@ async def _decorate_deliverables(db, docs: list[dict]) -> list[dict]:
 
 
 async def _resolve_doc_stage(
-    principal: ClientPrincipal, stage_key: str | None
+    principal: ClientPrincipal, project: dict, stage_key: str | None
 ) -> str | None:
     """A document may belong to a stage or be a general project doc (None). A
-    provided stage must be a real stage key."""
+    provided stage must be a real stage key in the project's own configuration."""
     if not stage_key:
         return None
-    if await repo.stage_def_by_key(principal.tenant_db, stage_key) is None:
+    db = principal.tenant_db
+    scope = await repo.scope_for_project(db, project)
+    if await repo.stage_def_by_key(db, stage_key, scope) is None:
         raise DomainError(VALIDATION_ERROR, f"Unknown stage '{stage_key}'.", 422)
     return stage_key
 
@@ -1397,7 +1485,7 @@ async def create_deliverable(
     project = await _project(principal, project_id)
     db = principal.tenant_db
     actor = str(principal.user["_id"])
-    stage_key = await _resolve_doc_stage(principal, payload.stage_key)
+    stage_key = await _resolve_doc_stage(principal, project, payload.stage_key)
     version = await _make_version(
         db, v=1, payload=payload, author=actor, note=payload.note or "initial"
     )
@@ -1438,7 +1526,7 @@ async def attach_gate_document(
     for: the kind is derived from the gate and the stage is the gate's own.
     """
     project = await _project(principal, project_id)
-    definition = await _definition(principal, order)
+    definition = await _definition(principal, project, order)
     db = principal.tenant_db
 
     gate = next(
@@ -1740,25 +1828,32 @@ async def list_job_costs(
 
 
 # --- config (§12) ------------------------------------------------------------
+# These browse and tune the tenant's DEFAULT configuration at its current version.
+# Phase 2 re-homes them into the per-configuration editor, where a change becomes a
+# published version instead of an in-place edit; until then they keep working, and
+# they only ever touch the default config — never a version some project has pinned
+# other than through that default.
 
 async def list_stage_config(principal: ClientPrincipal) -> list[dict]:
-    return await repo.stage_defs(principal.tenant_db)
+    db = principal.tenant_db
+    return await repo.stage_defs(db, await repo.default_scope(db))
 
 
 async def patch_stage_config(
     principal: ClientPrincipal, key: str, patch: StageConfigPatch
 ) -> dict:
     db = principal.tenant_db
-    definition = await repo.stage_def_by_key(db, key)
+    scope = await repo.default_scope(db)
+    definition = await repo.stage_def_by_key(db, key, scope)
     if definition is None:
         raise DomainError(TENANT_NOT_FOUND, f"Stage '{key}' is not defined.", 404)
     fields = {k: v for k, v in patch.model_dump(exclude_unset=True).items() if v is not None}
     if not fields:
         return definition
     # update the exact doc we read (by _id) — key alone is ambiguous now that the
-    # collection carries one stage set per workflow_type.
+    # collection carries one stage set per configuration version.
     await db[repo.STAGE_DEFS].update_one({"_id": definition["_id"]}, {"$set": fields})
-    updated = await repo.stage_def_by_key(db, key)
+    updated = await repo.stage_def_by_key(db, key, scope)
     assert updated is not None
     await _log(principal, "projects.stage_config_updated",
                {"type": "stage_definition", "id": key, "label": updated["name"]},
@@ -1767,7 +1862,8 @@ async def patch_stage_config(
 
 
 async def list_gate_config(principal: ClientPrincipal) -> list[dict]:
-    return await repo.gate_rules(principal.tenant_db)
+    db = principal.tenant_db
+    return await repo.gate_rules(db, await repo.default_scope(db))
 
 
 async def patch_gate_config(
@@ -1775,14 +1871,17 @@ async def patch_gate_config(
 ) -> dict:
     """§8: thresholds are seeded defaults, editable per tenant."""
     db = principal.tenant_db
-    rule = await repo.gate_rule(db, key)
+    scope = await repo.default_scope(db)
+    rule = await repo.gate_rule(db, key, scope)
     if rule is None:
         raise DomainError(TENANT_NOT_FOUND, f"Gate '{key}' is not defined.", 404)
     fields = {k: v for k, v in patch.model_dump(exclude_unset=True).items() if v is not None}
     if not fields:
         return rule
-    await db[repo.GATE_RULES].update_one({"key": key}, {"$set": fields})
-    updated = await repo.gate_rule(db, key)
+    # Update the exact doc we read (by _id) — `key` alone is ambiguous now that
+    # every configuration version carries its own copy of the gate rules (G-3).
+    await db[repo.GATE_RULES].update_one({"_id": rule["_id"]}, {"$set": fields})
+    updated = await repo.gate_rule(db, key, scope)
     assert updated is not None
     await _log(principal, "projects.gate_config_updated",
                {"type": "gate_rule", "id": key, "label": key},

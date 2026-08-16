@@ -7,12 +7,15 @@ reads (`projects.milestone_schedule`).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 PROJECTS = "projects"
+PROJECT_CONFIGS = "project_configurations"
+GATE_CATALOG = "gate_catalog"
 STAGE_DEFS = "stage_definitions"
 STAGE_INSTANCES = "stage_instances"
 TASKS = "pm_tasks"
@@ -83,49 +86,219 @@ async def next_code(db: AsyncIOMotorDatabase) -> str:
     return f"PRJ-{int(doc['seq']):04d}"
 
 
-# --- stage definitions / config (seeded, tenant-editable) --------------------
+# --- project configurations & definition scope -------------------------------
 
-# Stage definitions are scoped by workflow_type — a tenant carries one full set
-# per type (docs/CONCURRENT_WORKFLOW_PLAN.md). Callers default to "sequential",
-# which is every existing project; concurrent projects pass their own type.
+# Stage definitions and gate rules belong to ONE VERSION OF ONE CONFIGURATION
+# (docs/PROJECT_CONFIGURATIONS_PLAN.md §3). A tenant carries a full immutable copy
+# of both per config-version, so every lookup must say which set it means — that
+# is a ConfigScope. This generalises the workflow_type scoping the concurrent
+# workflow introduced: the two shapes survive as the two seeded system configs.
 
-def _wf_query(workflow_type: str) -> dict:
+
+@dataclass(frozen=True)
+class ConfigScope:
+    """Which definition set a lookup reads.
+
+    A tenant on machine_version 4+ scopes by `(configuration_id, config_version)`.
+    A tenant the v4 migration has not reached yet has neither field on its
+    definition docs, so `configuration_id is None` degrades the scope to the
+    legacy workflow_type filter — that is what keeps live tenants working before
+    the migration runs (PROJECT_CONFIGURATIONS_PLAN.md G-1).
+    """
+
+    configuration_id: ObjectId | None = None
+    config_version: int | None = None
+    workflow_type: str = "sequential"
+
+    @property
+    def is_legacy(self) -> bool:
+        return self.configuration_id is None
+
+
+def _legacy_wf_query(workflow_type: str) -> dict:
     """A tenant seeded before workflow_type existed carries stage docs with no such
-    field; those are the sequential machine, so a missing field reads as sequential.
-    This lets live tenants work before the backfill re-seed reaches them."""
+    field; those are the sequential machine, so a missing field reads as sequential."""
     if workflow_type == "sequential":
         return {"$or": [{"workflow_type": "sequential"},
                         {"workflow_type": {"$exists": False}}]}
     return {"workflow_type": workflow_type}
 
 
+def _config_query(scope: ConfigScope) -> dict:
+    return {
+        "configuration_id": scope.configuration_id,
+        "config_version": scope.config_version,
+    }
+
+
+def _stage_scope_query(scope: ConfigScope) -> dict:
+    return _legacy_wf_query(scope.workflow_type) if scope.is_legacy else _config_query(scope)
+
+
+def _gate_scope_query(scope: ConfigScope) -> dict:
+    # Pre-v4 gate rules were one tenant-wide set with no scoping field at all.
+    return {} if scope.is_legacy else _config_query(scope)
+
+
+def _as_scope(scope: ConfigScope | str) -> ConfigScope:
+    """Accept a bare workflow_type from call sites the Phase-1 threading has not
+    reached yet — those still resolve through the legacy filter, which the seeded
+    system configs keep answering correctly."""
+    return scope if isinstance(scope, ConfigScope) else ConfigScope(workflow_type=scope)
+
+
+def in_scope(definition: dict, scope: ConfigScope) -> bool:
+    """Whether a definition doc belongs to `scope` — how a caller detects it was
+    handed another configuration's copy of the same stage (same key, same order,
+    different gates)."""
+    if scope.is_legacy:
+        return definition.get("workflow_type", "sequential") == scope.workflow_type
+    return (
+        definition.get("configuration_id") == scope.configuration_id
+        and definition.get("config_version") == scope.config_version
+    )
+
+
+def scope_of(config: dict) -> ConfigScope:
+    """The scope reading a configuration's CURRENT version — what a project pins
+    at creation, and what the config editor loads."""
+    return ConfigScope(
+        config["_id"],
+        int(config.get("current_version", 1)),
+        config.get("workflow_shape", "sequential"),
+    )
+
+
+async def project_configs(
+    db: AsyncIOMotorDatabase, active_only: bool = False
+) -> list[dict]:
+    query: dict = {**_LIVE}
+    if active_only:
+        query["is_active"] = {"$ne": False}
+    return [
+        d async for d in db[PROJECT_CONFIGS].find(query).sort([("name", 1)])
+    ]
+
+
+async def project_config(db: AsyncIOMotorDatabase, oid: ObjectId) -> dict | None:
+    return await db[PROJECT_CONFIGS].find_one({"_id": oid, **_LIVE})
+
+
+async def default_project_config(db: AsyncIOMotorDatabase) -> dict | None:
+    """The configuration a project gets when none is chosen. Falls back to the
+    Standard system config so a tenant is never left without one (G-4)."""
+    return await db[PROJECT_CONFIGS].find_one(
+        {"is_default": True, **_LIVE}
+    ) or await db[PROJECT_CONFIGS].find_one(
+        {"is_system": True, "workflow_shape": "sequential", **_LIVE}
+    )
+
+
+async def system_config(
+    db: AsyncIOMotorDatabase, workflow_shape: str
+) -> dict | None:
+    """The seeded, non-deletable configuration reproducing one of the two original
+    workflow shapes — how a pre-v4 `workflow_type` maps onto a configuration."""
+    return await db[PROJECT_CONFIGS].find_one(
+        {"is_system": True, "workflow_shape": workflow_shape, **_LIVE}
+    )
+
+
+async def projects_on_config(
+    db: AsyncIOMotorDatabase, config_id: ObjectId
+) -> int:
+    """How many live projects pin a configuration — the delete guard (G-4)."""
+    return await db[PROJECTS].count_documents({"configuration_id": config_id, **_LIVE})
+
+
+async def active_config_count(db: AsyncIOMotorDatabase) -> int:
+    return await db[PROJECT_CONFIGS].count_documents(
+        {"is_active": {"$ne": False}, **_LIVE}
+    )
+
+
+# --- gate catalog (the tenant's reusable gate definitions) --------------------
+
+async def gate_catalog(db: AsyncIOMotorDatabase) -> list[dict]:
+    return [
+        d async for d in db[GATE_CATALOG].find(_LIVE).sort([("name", 1)])
+    ]
+
+
+async def gate_catalog_entry(db: AsyncIOMotorDatabase, key: str) -> dict | None:
+    return await db[GATE_CATALOG].find_one({"key": key, **_LIVE})
+
+
+async def default_scope(db: AsyncIOMotorDatabase) -> ConfigScope:
+    """The scope for reads with no project context — the /config/* browsing
+    endpoints. Legacy (unscoped) on a tenant with no configurations yet."""
+    config = await default_project_config(db)
+    return scope_of(config) if config else ConfigScope()
+
+
+async def scope_for_project(
+    db: AsyncIOMotorDatabase, project: dict
+) -> ConfigScope:
+    """The definition set a project runs against — the configuration VERSION it
+    pinned at creation, never the config's current version (D1/G-5): a published
+    version is immutable, so a running project's stages and gates cannot shift.
+
+    A project created before v4 carries no pin. It falls back to the system config
+    matching its workflow_type at **version 1** — the version the v4 migration
+    stamps existing definitions with — so a later publish cannot move it either.
+    """
+    workflow_type = project.get("workflow_type", "sequential")
+    config_id = project.get("configuration_id")
+    if config_id is not None:
+        return ConfigScope(config_id, int(project.get("config_version", 1)), workflow_type)
+    config = await system_config(db, workflow_type)
+    return ConfigScope(config["_id"], 1, workflow_type) if config else ConfigScope(
+        workflow_type=workflow_type
+    )
+
+
+# --- stage definitions / config (seeded, tenant-editable) --------------------
+
 async def stage_defs(
-    db: AsyncIOMotorDatabase, workflow_type: str = "sequential"
+    db: AsyncIOMotorDatabase, scope: ConfigScope | str = "sequential"
 ) -> list[dict]:
     return [
         d async for d in
-        db[STAGE_DEFS].find(_wf_query(workflow_type)).sort([("order", 1)])
+        db[STAGE_DEFS].find(_stage_scope_query(_as_scope(scope))).sort([("order", 1)])
     ]
 
 
 async def stage_def_by_order(
-    db: AsyncIOMotorDatabase, order: int, workflow_type: str = "sequential"
+    db: AsyncIOMotorDatabase, order: int, scope: ConfigScope | str = "sequential"
 ) -> dict | None:
-    return await db[STAGE_DEFS].find_one({**_wf_query(workflow_type), "order": order})
+    return await db[STAGE_DEFS].find_one(
+        {**_stage_scope_query(_as_scope(scope)), "order": order}
+    )
 
 
 async def stage_def_by_key(
-    db: AsyncIOMotorDatabase, key: str, workflow_type: str = "sequential"
+    db: AsyncIOMotorDatabase, key: str, scope: ConfigScope | str = "sequential"
 ) -> dict | None:
-    return await db[STAGE_DEFS].find_one({**_wf_query(workflow_type), "key": key})
+    return await db[STAGE_DEFS].find_one(
+        {**_stage_scope_query(_as_scope(scope)), "key": key}
+    )
 
 
-async def gate_rules(db: AsyncIOMotorDatabase) -> list[dict]:
-    return [d async for d in db[GATE_RULES].find({})]
+async def gate_rules(
+    db: AsyncIOMotorDatabase, scope: ConfigScope | None = None
+) -> list[dict]:
+    resolved = scope if scope is not None else await default_scope(db)
+    return [d async for d in db[GATE_RULES].find(_gate_scope_query(resolved))]
 
 
-async def gate_rule(db: AsyncIOMotorDatabase, key: str) -> dict | None:
-    return await db[GATE_RULES].find_one({"key": key})
+async def gate_rule(
+    db: AsyncIOMotorDatabase, key: str, scope: ConfigScope | None = None
+) -> dict | None:
+    """A gate rule is only unique WITHIN a config-version, so an unscoped lookup
+    would pick an arbitrary copy — callers with a project in hand must pass its
+    scope. `None` means "the tenant's default configuration"."""
+    resolved = scope if scope is not None else await default_scope(db)
+    return await db[GATE_RULES].find_one({**_gate_scope_query(resolved), "key": key})
 
 
 async def approver_map(db: AsyncIOMotorDatabase) -> list[dict]:

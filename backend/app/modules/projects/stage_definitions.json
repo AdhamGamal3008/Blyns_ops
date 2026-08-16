@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "machine_version": 3,
-  "description": "Seed data for the Project Management state machine, v2.0 (9-stage workflow per docs/modules/PROJECT_WORKFLOW_V2_SOP.md). Consumed by modules/projects/seed.py. machine_version 3 (docs/CONCURRENT_WORKFLOW_PLAN.md) adds a per-stage workflow_type: the 9 stages here are the 'sequential' template; the loader also derives a 'concurrent' template (stages 2-8 run in parallel, stage 9 waits for all). The bump reseeds definitions on existing tenants; stage keys/orders are unchanged so in-flight sequential projects are unaffected.",
+  "machine_version": 4,
+  "description": "Seed data for the Project Management state machine, v2.0 (9-stage workflow per docs/modules/PROJECT_WORKFLOW_V2_SOP.md). Consumed by modules/projects/seed.py. machine_version 3 (docs/CONCURRENT_WORKFLOW_PLAN.md) added a per-stage workflow_type: the 9 stages here are the 'sequential' template; the loader also derives a 'concurrent' template (stages 2-8 run in parallel, stage 9 waits for all). machine_version 4 (docs/PROJECT_CONFIGURATIONS_PLAN.md) makes those two templates the seeded 'Standard' and 'Concurrent' SYSTEM CONFIGURATIONS: every stage definition and gate rule below is stamped with a (configuration_id, config_version) and a tenant may define more configurations of its own. The stage skeleton is unchanged in v4 — same keys, same orders — so the bump adopts a tenant's existing (possibly edited) definitions in place instead of resetting them, and in-flight projects are unaffected.",
 
   "foundational_phases": [
     {
