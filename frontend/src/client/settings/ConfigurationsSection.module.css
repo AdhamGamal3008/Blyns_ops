@@ -1,0 +1,141 @@
+/* Project configurations: the list, and the per-stage version editor. */
+
+.list {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+}
+.card[data-inactive="true"] {
+  opacity: 0.62;
+}
+
+.name {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.meta {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+}
+
+/* --- the editor ---------------------------------------------------------- */
+
+.stage {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.stageHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+.stageHead:hover {
+  background: var(--surface-sunken);
+}
+
+.stageOrder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--r-full, 999px);
+  background: var(--surface-sunken);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.stageName {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  flex: 1;
+}
+
+.stageSummary {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stageBody {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.docRow > :first-child {
+  flex: 1;
+}
+
+.gateBox {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.thresholds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.thresholds > * {
+  min-width: 8rem;
+}
+
+.fixed {
+  font-family: var(--font-ui);
+  font-size: var(--step--2);
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .card {
+    flex-direction: column;
+  }
+  .actions {
+    justify-content: flex-start;
+  }
+}

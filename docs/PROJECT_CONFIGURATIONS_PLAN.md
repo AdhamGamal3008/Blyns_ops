@@ -220,4 +220,128 @@ READ (anyone who can create a project).
   avoid moving goalposts mid-project.
 
 ## Build status
-_not built yet._
+
+### Phase 0 — DONE (2026-08-16)
+Data foundation shipped; sequential + concurrent regression green (41 tests),
+15 new/updated configuration + seed tests, ruff + mypy clean.
+
+- `repository.py` — `ConfigScope` value object + `_stage_scope_query`/`_gate_scope_query`
+  (generalising `_wf_query`), `project_configurations` accessors, `scope_of`,
+  `default_scope`, `scope_for_project`. `stage_defs`/`stage_def_by_order`/
+  `stage_def_by_key` take a `ConfigScope | str`; `gate_rule(s)` take an optional
+  scope defaulting to the tenant's default config.
+- `seed.py` — `_ensure_system_configs` (Standard + Concurrent, keyed by a unique
+  sparse `system_key` so re-runs never mint new `_id`s), `_adopt_legacy_definitions`,
+  `_upsert_scoped`, `_drop_superseded_indexes` + `_build_definition_indexes`
+  (compound unique on `(configuration_id, config_version, key|order)`).
+  `machine_version` 4.
+- `models.py` / `service.py` — `ProjectCreate.configuration_id`; `_resolve_configuration`
+  (explicit id wins, else the system config for the requested shape); projects
+  persist `configuration_id` + `config_version`. `patch_gate_config` now updates by
+  `_id` — `key` alone became ambiguous once each config carries its own copies.
+- `scripts/migrate_projects_v4.py` — re-seed + pin existing projects at version 1.
+
+**One deviation from §6 as written, deliberate:** the v3 → v4 bump does **NOT** run
+`_reset_definitions`. That reset also wipes `approver_role_map`, which tenants edit
+through Settings, and v4 changes no stage key or order. `_SKELETON_VERSION = 3` now
+gates the reset to skeleton bumps only; v4 adopts a tenant's existing (possibly
+edited) definitions in place.
+
+### Phase 1 — DONE (2026-08-16)
+The engine reads the configuration version each project pinned. `engines.py` no
+longer mentions `workflow_type` at all.
+
+- `engines.evaluate_stage` resolves `repo.scope_for_project(db, project)` once and
+  uses it for the definition re-fetch (via the new `repo.in_scope`), the dependency
+  `stage_def_by_key` lookup and every `gate_rule` lookup. `run_decision_engine` and
+  `run_auto_validation` inherit it.
+- `service._definition(principal, project, order)` now takes the **project** and
+  resolves through its pinned scope — all 11 call sites updated. `_definition_in`
+  distinguishes an undefined stage (404) from an unseeded configuration (409 with
+  the migration hint), so the G-1 guard fires at every entry point rather than only
+  at approve.
+- Threaded: `_enter_unlocked_stages`, `timeline` (which now also returns
+  `configuration_id` + `config_version`), the `_finalize_stage` guard and its
+  `defs_by_order`, both rollback-target lookups, `record_gate_result` / `waive_gate`
+  gate lookups, `_resolve_doc_stage`.
+- `/config/stages|gates` now read the tenant's **default** configuration explicitly
+  via `repo.default_scope` instead of falling through the legacy filter.
+- 3 new tests prove the pin is honoured end-to-end: publishing a v2 that adds a
+  document gate changes what NEW projects wait on and leaves a running project
+  untouched; gate thresholds resolve per pinned version; timeline reports the pin.
+
+**Correction to the Phase-0 note above:** `workflow_type` should NOT be fully retired.
+It has two remaining legitimate jobs — on a **project** it is a denormalised mirror of
+the pinned config's `workflow_shape` that the frontend renders (retire with the
+frontend in Phase 4, if at all), and on **stage docs** it is the legacy-tolerance path
+that keeps an un-migrated tenant working (G-1), so it must survive until every tenant
+has run the v4 migration.
+
+### Phase 2 — DONE (2026-08-16)
+Configuration CRUD, version publishing and the gate catalog, all audited.
+21 new tests in `tests/integration/test_projects_configurations_crud.py`.
+
+- **New module `configurations.py`** (service, alongside `analytics.py`) — list /
+  get / create-by-clone / patch / delete-guarded / publish-version / gate catalog.
+- **`gate_catalog` collection**, seeded with the 8 built-ins (`is_builtin`,
+  undeletable) + tenant-created custom gates. Attaching copies the definition into
+  the config-version's `gate_rules` (G-3); deleting a catalog entry leaves
+  published versions working.
+- **Endpoints** under `/api/v1/projects/config/…`: `configurations`,
+  `configurations/{id}`, `configurations/{id}/versions`, `gate-catalog`.
+  `GET /configurations` is **`projects` READ** (the Stage-1 picker); everything
+  else is **`settings` WRITE** — no new RBAC resource, exactly as §4 predicted.
+- **G-4 invariants enforced:** exactly one default (setting one demotes the other);
+  the default can be neither cleared nor deactivated; at least one active config;
+  system configs are never deletable; a config a live project pins is never
+  deletable (deactivate instead, which leaves running projects alone).
+- **Publish semantics:** stages the payload omits carry over unchanged; dependency
+  edges are carried over and re-derived **only** when `workflow_shape` changes
+  (the seeded sequential chain uses semantic gate keys — `design_frozen`,
+  `goods_released` — that cannot be regenerated, so they must not be rebuilt on
+  every publish). Unknown stage keys and uncatalogued gates are rejected (D2/G-2).
+
+**Behaviour change worth knowing:** `create_project` with no `configuration_id`
+now resolves to the tenant's **default configuration** rather than always the
+Standard system config. `workflow_type: "concurrent"` still maps to the Concurrent
+system config for back-compat. Without this, setting a custom config as default had
+no effect on project creation.
+
+### Phase 3 — DONE (2026-08-16)
+Settings → **Project configurations**. 14 new frontend tests; 207 frontend tests
+green; `tsc --noEmit` clean.
+
+- `client/settings/configurationTypes.ts` — shared types + `humanize` (mirrors the
+  backend's `seed.gate_label`).
+- `ConfigurationsSection.tsx` — the list (name, shape, version, default/built-in/
+  inactive badges) with Edit stages / Set default / Activate-Deactivate / Delete,
+  plus the clone modal. Every mutating control is hidden without `settings` WRITE.
+- `ConfigurationEditor.tsx` — the per-stage editor. Loads the current version,
+  edits **entirely in local state**, and Save publishes the whole set as the next
+  version (§3 publish-from-payload — nothing is half-saved server-side). Per stage:
+  entry documents (add/rename/blocking/remove) and quality gates attached from the
+  catalog with their thresholds tuned inline. Workflow shape is a top-level select.
+  A banner states that the 9 stages are fixed (D2), and each stage shows its
+  approver position read-only.
+- `GateCatalogModal` — create a tenant's own measurement/inspection gate.
+
+**Prove — done in the real UI against the local `acme` tenant:** cloned Standard →
+"Flooring — ASTM" (v1) → added an `astm_f2170_report` document to Stage 1, attached
+`concrete_rh_astm_f2170` to it, retuned `max_rh_pct` 75 → 70 → published v2.
+Verified in Mongo: v1 untouched (3 docs, no gates, threshold 75); v2 has 4 docs, the
+attached gate, threshold 70, still 9 stages, and Stage 5 carried over with its
+approver and dependency chain intact.
+
+**Bug found and fixed during the prove:** a threshold is a free-form object mixing
+numbers, strings and booleans (`{max_rh_pct: 75, method: "ASTM F2170", configurable:
+true}`). Rendering every field as a text input coerced `true` → `"true"` and
+`75` → `"75"` on edit, which would silently stop the gate evaluating. `ThresholdField`
+now picks its control from the seeded value's type and preserves it; a test pins it.
+
+**Phase 4 starts here:** the Stage-1 picker. `ProjectsPage.tsx`'s ProjectModal still
+sends `workflow_type`; it should list `GET /projects/config/configurations?active_only=true`
+(that route is `projects` READ precisely so a PM can use it without Settings access)
+and send `configuration_id`. `ProjectDetail` should show the pinned config name +
+version — `GET /projects/{id}/timeline` already returns `configuration_id` and
+`config_version`. Back-compat is already in place, so the current picker keeps
+working until then.

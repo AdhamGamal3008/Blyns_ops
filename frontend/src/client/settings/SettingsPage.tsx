@@ -6,6 +6,7 @@ import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
 import { Stack, Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui";
 import { ApproversSection } from "./ApproversSection";
+import { ConfigurationsSection } from "./ConfigurationsSection";
 import { EmployeesSection } from "./EmployeesSection";
 import { EventsSection } from "./EventsSection";
 import { InfoSection } from "./InfoSection";
@@ -18,6 +19,7 @@ const SECTIONS = [
   { key: "roles", label: "Roles" },
   { key: "events", label: "Calendar events" },
   { key: "approvers", label: "Approvers" },
+  { key: "configurations", label: "Project configurations" },
   { key: "info", label: "Security & modules" },
 ] as const;
 
@@ -44,6 +46,9 @@ export function SettingsPage() {
         <TabsContent value="roles"><RolesSection canWrite={canWrite} /></TabsContent>
         <TabsContent value="events"><EventsSection canWrite={canWrite} /></TabsContent>
         <TabsContent value="approvers"><ApproversSection canWrite={canWrite} /></TabsContent>
+        <TabsContent value="configurations">
+          <ConfigurationsSection canWrite={canWrite} />
+        </TabsContent>
         <TabsContent value="info"><InfoSection /></TabsContent>
       </Tabs>
     </Stack>
