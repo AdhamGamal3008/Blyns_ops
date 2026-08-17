@@ -1,5 +1,6 @@
-# Build/run targets (docs/ENVIRONMENTS.md §5)
-.PHONY: dev seed demo test test-fast lint build-prod
+# Build/run targets (docs/ENVIRONMENTS.md §5, docs/DEPLOYMENT_PLAN.md)
+.PHONY: dev seed demo test test-fast lint build-prod \
+        build-image run-prod-local stop-prod-local migrate migrate-dry
 
 dev:            ## docker mongo + backend reload + frontend dev
 	docker compose up -d mongo
@@ -26,3 +27,23 @@ lint:           ## ruff + mypy (+ eslint once frontend lands)
 build-prod:     ## frontend build + backend image
 	@if [ -f frontend/package.json ]; then cd frontend && npm run build; fi
 	cd backend && docker build -t erp-backend:$(shell cd backend && python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])") -t erp-backend:latest .
+
+# --- deployment (docs/DEPLOYMENT_PLAN.md) -------------------------------------
+
+build-image:    ## build the single production image (SPA + API), from the repo root
+	docker build -t blyns-erp:local .
+
+run-prod-local: ## run the full production stack locally to prove it before deploying
+	@test -f .env.production || { \
+	  echo "missing .env.production — cp .env.production.example .env.production and fill it in"; \
+	  exit 1; }
+	docker compose -f docker-compose.prod.yml up -d --build
+
+stop-prod-local: ## stop the local production stack (keeps volumes)
+	docker compose -f docker-compose.prod.yml down
+
+migrate-dry:    ## show which migrations would run; changes nothing
+	cd backend && python ../scripts/migrate.py --dry-run
+
+migrate:        ## apply every pending migration (idempotent; run after each deploy)
+	cd backend && python ../scripts/migrate.py

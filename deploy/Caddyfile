@@ -1,0 +1,41 @@
+# TLS termination + reverse proxy (docs/DEPLOYMENT_PLAN.md Phase E).
+# Caddy obtains and renews a Let's Encrypt certificate automatically; there is no
+# certbot, no renewal timer and no reload hook to forget.
+#
+# DNS must already resolve {$ERP_DOMAIN} to this host BEFORE first start, or the
+# ACME challenge fails — and Let's Encrypt allows only 5 failures per hostname per
+# hour (G-8). While experimenting, uncomment the staging endpoint below.
+
+{
+	# email {$ACME_EMAIL}          # expiry notices; optional but recommended
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$ERP_DOMAIN}, www.{$ERP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# HSTS: once a browser sees this it refuses plain HTTP for the domain.
+		# Only safe because Caddy serves HTTPS for everything below.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The app is not meant to be framed by anyone.
+		Content-Security-Policy "frame-ancestors 'none'"
+		X-Frame-Options "DENY"
+		# Don't advertise the server.
+		-Server
+	}
+
+	# One upstream serves everything: the landing page at /, the client app at
+	# /app, the admin portal at /admin and the API at /api/v1. Same origin, so
+	# CORS is never exercised in production.
+	reverse_proxy app:8000 {
+		# The backend reads the real client IP from X-Forwarded-For, but ONLY
+		# from proxies listed in ERP_IP_TRUSTED_PROXIES. If that list does not
+		# include this container, every request looks like it came from Caddy —
+		# all users then share ONE rate-limit bucket and IP rules match the proxy
+		# (docs/DEPLOYMENT_PLAN.md §3 gap #4, G-2).
+		header_up X-Real-IP {remote_host}
+	}
+}

@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     # CORS — exact frontend origin(s)
     cors_origins: list[str] = ["http://localhost:5173"]
 
+    # Where the built SPA lives, when SERVE_FRONTEND is on (docs/DEPLOYMENT_PLAN.md
+    # §3 gap #1). Unset → the repo layout `<repo>/frontend/dist`, which is right for
+    # a local checkout and WRONG inside the container, where the backend is copied
+    # to /app and there is no sibling frontend/ tree. The production image sets this
+    # explicitly; nothing else needs to.
+    frontend_dist: str | None = None
+
     # Platform metrics collector (docs/ADMIN_PORTAL.md §4): in-process loop
     # writing dbStats/activity snapshots. 0 disables (tests).
     metrics_interval_sec: int = 300

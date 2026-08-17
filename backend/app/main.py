@@ -175,9 +175,19 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     app.include_router(production_router)
 
     # Opt-in: serve the production React build from the API origin (same-origin ⇒
-    # no CORS, works behind the tunnel). Greedy mount at "/" ⇒ MUST be last.
-    # No-op unless SERVE_FRONTEND is set (docs/DEMO_SHARING_PLAN.md).
-    mount_built_frontend(app, Path(__file__).resolve().parents[2] / "frontend" / "dist")
+    # no CORS, works behind a tunnel or a reverse proxy). Greedy mount at "/" ⇒
+    # MUST be last. No-op unless SERVE_FRONTEND is set (docs/DEMO_SHARING_PLAN.md).
+    #
+    # The default is the REPO layout — `<repo>/frontend/dist`, two levels up from
+    # this file. That is wrong inside the production image, where only `app/` is
+    # copied and there is no sibling frontend tree, so the image sets
+    # ERP_FRONTEND_DIST (docs/DEPLOYMENT_PLAN.md §3 gap #1).
+    dist_dir = (
+        Path(cfg.frontend_dist)
+        if cfg.frontend_dist
+        else Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    )
+    mount_built_frontend(app, dist_dir)
 
     return app
 

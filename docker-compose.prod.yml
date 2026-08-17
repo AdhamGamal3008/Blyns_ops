@@ -1,0 +1,85 @@
+# Production stack (docs/DEPLOYMENT_PLAN.md Phases B/C/E).
+#
+# Three services on one host: the app (SPA + API in one image), MongoDB as a
+# single-node replica set, and Caddy terminating TLS. Everything talks over an
+# internal Docker network; only Caddy publishes ports.
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Config comes from .env.production (chmod 600, never committed). Start from
+# .env.production.example.
+
+services:
+  app:
+    image: ${ERP_IMAGE:-blyns-erp:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks: [internal]
+    # NOT published. Caddy reaches it as http://app:8000 over the internal
+    # network; exposing it would let anyone bypass TLS by hitting the host IP.
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Single-node replica set (D2): same resource cost as standalone, but
+    # transactions and change streams become available without a migration later.
+    command: ["--replSet", "rs0", "--bind_ip_all", "--auth", "--keyFile", "/etc/mongo/keyfile"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
+      - ./deploy/mongo-keyfile:/etc/mongo/keyfile:ro
+      - ./deploy/mongo-init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    # DELIBERATELY no `ports:`. A Contabo VPS is on the public internet and an
+    # exposed 27017 is found by scanners within minutes. Mongo is reachable only
+    # from this network; administer it with `docker compose exec mongo mongosh`.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    networks: [internal]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    environment:
+      # The domain Caddy issues a certificate for (Q3).
+      ERP_DOMAIN: ${ERP_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # certificates — losing this re-issues them
+      - caddy_config:/config
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  mongo_config:
+  caddy_data:
+  caddy_config:

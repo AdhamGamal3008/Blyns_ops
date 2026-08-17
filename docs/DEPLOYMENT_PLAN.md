@@ -148,11 +148,17 @@ exists.
   scripts in as the first registered entries.
 - **`Makefile`** targets: `build-image`, `run-prod-local`, `migrate`, `deploy`.
 
-**Prove:** `docker compose -f docker-compose.prod.yml up` on your Mac with
-`ERP_ENV=production` and a strong secret serves the landing page at `/`, the app
-at `/app`, the admin portal at `/admin`, and `/api/v1/health` returns `ok` —
-while `/docs` returns 404. `scripts/migrate.py --dry-run` reports pending
-migrations, and running it twice is a no-op the second time.
+**Prove:** the image running with `ERP_ENV=production` and a strong secret serves
+the landing page at `/`, the app at `/app`, the admin portal at `/admin`, and
+`/health` returns `ok`; `scripts/migrate.py --dry-run` reports pending migrations
+and running it twice is a no-op the second time.
+
+> **On `/docs`:** the original wording here said it must return **404**. That is
+> wrong for a same-origin SPA. The SPA is mounted catch-all at `/`, so *any*
+> unmatched path returns `index.html` with **200** — that is what client-side
+> routing needs. The check that actually matters is that **no Swagger UI is
+> served**: `curl /docs` must return the SPA shell with zero occurrences of
+> "swagger" or "redoc". FastAPI's `docs_url` really is `None` in production.
 
 ### Phase C — MongoDB server prep  **(S)**
 - `mongo:7` container, single-node **replica set** (`--replSet rs0`), initiated
@@ -349,8 +355,59 @@ ruff + mypy + tsc clean.
 the deliberately untracked lifecycle doc; lint, typecheck and the full batched
 suite green.
 
-**Phase B starts here** — and it is the one with real engineering in it. Read §3
-gap #1 first: the current image genuinely cannot serve the SPA, and that must be
-fixed and proved locally before a VPS is worth paying for. Blocked on **Q3**
-(domain) only for the CORS/Caddy values; the Dockerfile, dist-path fix, compose
-file, env template and migration runner can all be built and proved without it.
+### Phase B — Local code prep + Docker prep — DONE (2026-08-17)
+The image now builds, runs in production mode and serves the whole product. Gap #1
+is closed. Everything below was proved on the Mac; no VPS involved.
+
+- **`Dockerfile` (repo root), multi-stage.** `node:22-alpine` builds the SPA →
+  `python:3.12-slim` runtime. Non-root (uid 10001), `HEALTHCHECK` on `/health`,
+  4 uvicorn workers. **322 MB**, reports `healthy`.
+- **Gap #1 fixed** via a new `ERP_FRONTEND_DIST` setting. The default stays the
+  repo layout (`<repo>/frontend/dist`); the image sets `/app/frontend_dist`, which
+  is what it actually copies. Both layouts work.
+- **`.dockerignore` at the root** — the root build does NOT consult
+  `backend/.dockerignore`, so the whole context needed covering.
+- **`docker-compose.prod.yml`** — app + mongo + caddy on an internal network.
+  Mongo publishes **no port at all** (a Contabo VPS is public; an exposed 27017 is
+  found by scanners in minutes) and the app is only reachable through Caddy.
+- **`deploy/Caddyfile`**, **`deploy/mongo-init/01-init-replica-set.js`**,
+  **`.env.production.example`** (every var the startup guard demands, with
+  generation commands and the `ERP_IP_TRUSTED_PROXIES` warning spelled out).
+- **`scripts/migrate.py`** — the versioned runner `ENVIRONMENTS.md` §4 has always
+  promised. Ordered, append-only registry; applied ids recorded in the control DB;
+  `--dry-run`, `--list`, `--force <id>`; stops at the first failure and does not
+  record it, so a re-run retries. The three ad-hoc scripts are folded in as
+  `0001_backfill_client_roles` and `0002_projects_machine_v4`.
+- **Makefile**: `build-image`, `run-prod-local`, `stop-prod-local`, `migrate`,
+  `migrate-dry`.
+
+**Two problems found while proving, both of which would have broken the deploy:**
+
+1. **`frontend/.env.production` was gitignored and untracked.** It exists only on
+   the owner's machine, so any fresh clone or CI build would run `npm run build`
+   without `VITE_API_BASE`, and `api.ts` falls back to
+   `http://localhost:8000/api/v1` — shipping a bundle that points **every
+   visitor's browser at its own machine**. A build that succeeds and an app that
+   cannot reach its server. Now tracked via a `.gitignore` exception (it is
+   build-time public config — anything in a `VITE_` var is compiled into the
+   downloaded bundle, so it can never hold a secret), **plus** a build-time guard
+   that greps the built bundle for `localhost:8000` and fails the image build.
+2. **`frontend/package-lock.json` was out of sync with `package.json`**, so
+   `npm ci` refused outright — CI in Phase D would have hit the same wall.
+   Regenerating on macOS was not enough: `@napi-rs/wasm-runtime` is an *optional*
+   package whose `@emnapi/*` peers npm resolves differently per platform, so the
+   darwin lockfile still failed on linux. Fixed by regenerating the lockfile
+   **inside `node:22-alpine`**; `npm ci` now succeeds on both, and all 213
+   frontend tests pass against the refreshed tree.
+
+**Verified:** `/`, `/app`, `/app/projects`, `/admin` all serve the SPA; hashed
+assets serve as real files with correct MIME types; `/api/v1/auth/login` returns
+the application's own error envelope (so the API is not shadowed by the greedy
+mount); `/health` reports `{"status":"ok","mongo":true,"env":"production"}`; logs
+are structured JSON; the bundle contains no `localhost`; the container reaches
+`healthy`; `migrate.py` applies, is a no-op on re-run, and `--force` re-applies.
+
+**Phase C/D can start.** Phase E remains blocked on **Q3** (domain) and **Q4**
+(VPS). Note the compose file's Caddy service needs `ERP_DOMAIN`, and Mongo's
+`--keyFile` path (`deploy/mongo-keyfile`) is generated on the server in Phase C —
+it is deliberately not in the repo.

@@ -1,0 +1,41 @@
+# Keep the build context small and secret-free (docs/DEPLOYMENT_PLAN.md Phase B).
+# The image is built from the repo root because it needs both trees, so this must
+# cover the whole repo — backend/.dockerignore is NOT consulted for a root build.
+
+# Secrets — never enter the build context.
+**/.env
+**/.env.*
+!**/.env.example
+!frontend/.env.production
+
+# Dependencies and build output (both are produced inside the image).
+node_modules/
+**/node_modules/
+frontend/dist/
+.venv/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Tests and tooling caches — not shipped.
+backend/tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# VCS, docs and editor noise.
+.git/
+.github/
+.gitignore
+docs/
+*.md
+.claude/
+.DS_Store
+.idea/
+.vscode/
+**/*.log
+
+# Storybook / local-only extras.
+frontend/storybook-static/

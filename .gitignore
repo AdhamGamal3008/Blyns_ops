@@ -20,6 +20,13 @@ dist/
 .env.demo
 .demo-backend.log
 
+# EXCEPTION: frontend/.env.production is build-time PUBLIC config, not a secret —
+# anything in a VITE_ var is compiled into the bundle the browser downloads, so it
+# can never hold one. It must be tracked: without it `npm run build` leaves
+# VITE_API_BASE undefined and the SPA falls back to http://localhost:8000/api/v1,
+# which means every visitor's browser calls its own machine instead of the server.
+!frontend/.env.production
+
 # OS / editor
 .DS_Store
 .idea/
