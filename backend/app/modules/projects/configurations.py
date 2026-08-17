@@ -25,6 +25,7 @@ from copy import deepcopy
 from typing import Any
 
 from bson import ObjectId
+from pymongo.errors import BulkWriteError, DuplicateKeyError
 
 from app.core.audit import write_activity
 from app.core.errors import TENANT_NOT_FOUND, VALIDATION_ERROR, DomainError
@@ -298,7 +299,9 @@ async def publish_version(
     config = await _require_config(principal, config_id)
     scope = repo.scope_of(config)
     assert scope.config_version is not None
-    version = scope.config_version + 1
+    version = max(
+        scope.config_version, await repo.highest_config_version(db, config["_id"])
+    ) + 1
     shape = payload.workflow_shape or config.get("workflow_shape", "sequential")
 
     catalog = {g["key"]: g for g in await repo.gate_catalog(db)}
@@ -359,7 +362,22 @@ async def publish_version(
                     rule[field] = value
         gates.append(rule)
 
-    await _write_version(db, config["_id"], version, stages, gates)
+    try:
+        await _write_version(db, config["_id"], version, stages, gates)
+    # insert_many reports a duplicate key as BulkWriteError, NOT DuplicateKeyError —
+    # they are siblings, so catching only the latter would let this escape as a 500.
+    except (BulkWriteError, DuplicateKeyError) as exc:
+        # Two publishes raced: both read the same current_version, and the compound
+        # unique index caught the loser. Nothing of theirs was adopted — the config
+        # still points at the winner's version — so ask them to reload and redo it
+        # rather than silently overwriting what the winner just published.
+        raise DomainError(
+            VALIDATION_ERROR,
+            f"'{config['name']}' was published by someone else a moment ago — "
+            "reload the configuration and re-apply your changes.",
+            409,
+        ) from exc
+
     updated = await repo.update(db, repo.PROJECT_CONFIGS, config["_id"], {
         "current_version": version,
         "workflow_shape": shape,
@@ -389,11 +407,17 @@ async def create_gate_catalog_entry(
         raise DomainError(
             VALIDATION_ERROR, f"A gate named '{payload.key}' already exists.", 422
         )
-    doc = await repo.insert(db, repo.GATE_CATALOG, {
-        **payload.model_dump(),
-        "is_builtin": False,
-        "created_by": str(principal.user["_id"]),
-    })
+    try:
+        doc = await repo.insert(db, repo.GATE_CATALOG, {
+            **payload.model_dump(),
+            "is_builtin": False,
+            "created_by": str(principal.user["_id"]),
+        })
+    except DuplicateKeyError as exc:
+        # The check above is not atomic; the unique index is the real arbiter.
+        raise DomainError(
+            VALIDATION_ERROR, f"A gate named '{payload.key}' already exists.", 422
+        ) from exc
     await write_activity(
         db,
         actor_id=str(principal.user["_id"]),

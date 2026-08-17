@@ -211,6 +211,22 @@ async def projects_on_config(
     return await db[PROJECTS].count_documents({"configuration_id": config_id, **_LIVE})
 
 
+async def highest_config_version(
+    db: AsyncIOMotorDatabase, config_id: ObjectId
+) -> int:
+    """The largest version number this configuration has stage definitions for.
+
+    Normally equal to its `current_version`, but a publish that failed partway
+    leaves docs at a version the config never adopted. Numbering the next publish
+    above THAT (rather than above current_version) means a retry lands on a free
+    version instead of colliding with the debris forever.
+    """
+    doc = await db[STAGE_DEFS].find_one(
+        {"configuration_id": config_id}, sort=[("config_version", -1)]
+    )
+    return int(doc["config_version"]) if doc else 0
+
+
 async def active_config_count(db: AsyncIOMotorDatabase) -> int:
     return await db[PROJECT_CONFIGS].count_documents(
         {"is_active": {"$ne": False}, **_LIVE}

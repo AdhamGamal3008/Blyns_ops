@@ -182,6 +182,9 @@ READ (anyone who can create a project).
   guard; RBAC; migration idempotency; batched suite green.
 
 ## 7. Verification checklist
+> **All seven pass as of 2026-08-17** — the results table is under
+> "Build status → Phase 5" at the end of this document.
+
 | # | Check | Expected |
 |---|---|---|
 | 1 | Sequential + concurrent regression | green (system configs = today) |
@@ -338,10 +341,83 @@ true}`). Rendering every field as a text input coerced `true` → `"true"` and
 `75` → `"75"` on edit, which would silently stop the gate evaluating. `ThresholdField`
 now picks its control from the seeded value's type and preserves it; a test pins it.
 
-**Phase 4 starts here:** the Stage-1 picker. `ProjectsPage.tsx`'s ProjectModal still
-sends `workflow_type`; it should list `GET /projects/config/configurations?active_only=true`
-(that route is `projects` READ precisely so a PM can use it without Settings access)
-and send `configuration_id`. `ProjectDetail` should show the pinned config name +
-version — `GET /projects/{id}/timeline` already returns `configuration_id` and
-`config_version`. Back-compat is already in place, so the current picker keeps
-working until then.
+### Phase 4 — DONE (2026-08-16)
+Selection at Stage 1. 213 frontend tests green (6 new/rewritten); backend
+configuration suite 40 green; ruff + mypy + tsc clean.
+
+- `ProjectsPage.tsx` — the Workflow select is now a **Configuration** picker fed by
+  `GET /projects/config/configurations?active_only=true`, with the tenant's default
+  preselected and the shape + description + pinned version spelled out in the hint.
+  It sends `configuration_id`; `workflow_type` is no longer sent from the UI at all.
+- `ProjectDetail.tsx` — the header carries a `"<name> v<version>"` badge. The
+  version is part of the identity, not a footnote: two projects on the same
+  configuration can be running different versions.
+- `service.timeline` also returns `configuration_name`, resolved server-side so the
+  detail header needs no second round-trip to turn an id into a label.
+- The picker **hides itself** when the workspace has no configurations (an
+  un-migrated tenant), and the create payload then omits `configuration_id` so the
+  legacy fallback still applies (G-1) — the form never blocks.
+
+**Prove — done in the running app against the local `acme` tenant:** created
+"ASTM Flooring — Block C" on the custom "Flooring — ASTM" configuration. Its header
+reads `Flooring — ASTM v2`, Stage 1 lists four entry requirements including the
+`astm_f2170_report` added in the Phase-3 prove, and its Quality Gates show
+`Concrete rh astm f2170` — a gate the Standard configuration does not put on Stage 1
+at all. A backend test pins the same thing plus the converse: a project on the
+default configuration sees none of it.
+
+`ProjectCreateWorkflow.test.tsx` was rewritten for the picker. Note for whoever
+touches it: Radix's `SelectValue` does not render its label in jsdom until the
+listbox mounts, so preselection is asserted through the hint (which names the
+default's version) and the submitted payload, not the trigger's text.
+
+### Phase 5 — DONE (2026-08-17) · **the feature is complete**
+7 new hardening tests in `test_projects_configurations_hardening.py`; the whole
+suite green in batches: **391 backend integration + 110 unit + 213 frontend**.
+
+Hardening applied to `publish_version`:
+- **Numbering steps over debris.** The next version is `max(current_version,
+  highest version present) + 1`, so a publish that died partway no longer blocks
+  every retry at that number forever.
+- **A racing publish is rejected, not silently lost.** Two editors reading the same
+  `current_version` both compute the same next one; the compound unique index
+  catches the loser, who now gets a 409 telling them to reload. Overwriting would
+  have destroyed the winner's published version with nobody the wiser.
+  *`insert_many` reports a duplicate key as `BulkWriteError`, **not**
+  `DuplicateKeyError` — they are siblings, so catching only the latter lets it
+  escape as a 500. The first version of this fix had exactly that bug; the race
+  test is what found it.*
+- `create_gate_catalog_entry` likewise falls back to the unique index, since its
+  pre-check is not atomic.
+
+Tests added:
+- **Version-pin isolation across a full lifecycle** — a project is driven through
+  all nine stages while a v2 adding a blocking document *and* a quality gate to
+  Stage 5 is published mid-flight. It completes on v1 throughout; a project started
+  after the publish gets both additions. This is the strongest statement of D1.
+- **Delete guard covers completed projects**, whose definitions are still needed to
+  render their history.
+- **Migration idempotency** — the real `scripts/migrate_projects_v4.py` is loaded
+  and run twice: stable config ids, no duplicated definitions, nothing re-pinned.
+- **Migration maps each project to its own shape** — concurrent projects land on
+  Concurrent (and resolve the 7-edge parallel DAG), sequential and pre-v3 projects
+  on Standard.
+- **Every management route is `settings` WRITE** (8 routes asserted), while the
+  Stage-1 picker stays readable on `projects` READ alone.
+
+#### Verification checklist (§7) results — ALL PASSING (2026-08-17)
+| # | Check | Result |
+|---|---|---|
+| 1 | Sequential + concurrent regression | green — 41 tests, system configs reproduce today |
+| 2 | Clone + edit + publish | green — new version; catalog gate attached to a stage |
+| 3 | Version-pin isolation | green — holds across a full nine-stage lifecycle |
+| 4 | Delete guard | green — system configs and pinned configs both refused |
+| 5 | Create picker | green — project pins the chosen config + current version |
+| 6 | Migration | green — idempotent; 2 system configs; projects pinned by shape |
+| 7 | Lint | green — ruff + mypy + tsc clean |
+
+### Known follow-ups (deliberately not in v1)
+- **Orphaned definitions.** Deleting a configuration soft-deletes the config doc
+  but leaves its `stage_definitions` / `gate_rules` behind. §3 calls pruning
+  hardening-only and not needed for correctness; it stays unbuilt.
+- The migration has **only been run against the local dev tenants** so far.
