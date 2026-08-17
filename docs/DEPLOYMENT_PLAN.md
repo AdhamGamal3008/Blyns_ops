@@ -51,7 +51,60 @@ only from the Docker network. Deploys are `git push` → build → `docker compo
 | D4 | Image build location | **GitHub Actions → GHCR** · build on the VPS | **Actions → GHCR** (free for private repos). Building on a 2-core VPS competes with the running app; a pull is seconds. Fallback documented if you'd rather not use Actions. |
 | D5 | Frontend delivery | **baked into the backend image** · separate nginx container | **Baked in.** `VITE_API_BASE=/api/v1` already assumes same origin; a second container adds a proxy hop and a CORS surface for no gain at this size. |
 | D6 | Deploy trigger | **manual `make deploy` over SSH** · auto-deploy on push to main | **Manual.** With one environment and no staging, auto-deploy on green means a bad merge is live before you look at it. |
-| D7 | Backup destination | local disk only · **local + off-box** | **Local + off-box.** A backup on the same disk does not survive the failure it exists for. Needs an answer to Q6. |
+| D7 | Backup destination | local disk only · **local + off-box** | **Local + off-box.** A backup on the same disk does not survive the failure it exists for. Answered 2026-08-17 — see §1a. |
+
+## 1a. Q5 and Q6, answered (2026-08-17)
+
+### Q5 — **GHCR**, decided
+The `image` CI job already builds and smoke-tests what we ship; `release.yml` adds
+tag-and-push. Why a registry rather than building on the VPS, even at 6 vCPU:
+
+- **Rollback is a one-liner.** Images are tagged `sha-<commit>`, so reverting is
+  pointing `ERP_IMAGE` at the previous SHA and `up -d` — no rebuild, no git state
+  to reason about, and the exact bytes that were working before.
+- **No build toolchain, no source tree, and no `node_modules` on the production
+  box.** Less to patch and less to leak.
+- **The build is already happening in CI.** Building again on the server duplicates
+  it, and does so on the machine serving customers.
+- **No extra secret to publish** — `GITHUB_TOKEN` pushes to the repo's own registry.
+
+The one cost: the package is **private** (it contains the source), so the server
+needs a **read-only** token to pull. Create a classic PAT with only
+`read:packages`, and on the server `docker login ghcr.io`. That credential can
+only read packages — it cannot touch the repository.
+
+### Q6 — **not a second database on the same Mongo**
+The proposal was a backup DB inside the same MongoDB. That is a *copy*, not a
+backup, and it fails exactly when a backup is needed:
+
+| Failure | Second DB on the same Mongo | Off-box dump |
+|---|---|---|
+| Someone deletes a record by mistake | ✅ recovers | ✅ recovers |
+| Disk fails / volume corrupts | ❌ both gone | ✅ |
+| VPS lost, terminated, or unpaid | ❌ both gone | ✅ |
+| Server compromised / ransomware | ❌ both encrypted | ✅ if pulled off-box |
+| A bad script runs `dropDatabase` with prod credentials | ❌ same credentials reach both | ✅ |
+
+Anything that can write to production can destroy a copy sitting beside it. A
+backup has to live in a **different failure domain**. The standard shape is 3-2-1:
+three copies, two media, one off-site.
+
+**Recommended, staged:**
+
+1. **Now, free, no third party** — the nightly dump already lands on the VPS disk;
+   add a **pull to a machine you own** (your Mac) over SSH. Different provider,
+   different building, zero cost. Its only weakness is needing that machine on,
+   which is why it is step one and not the end state.
+2. **Then, ~€3–4/month** — a **Hetzner Storage Box** (1 TB, rsync/SFTP/borg) or
+   **Contabo Object Storage**. Contabo is simpler but shares a provider with the
+   VPS, so an account-level problem takes both; Hetzner is a genuinely separate
+   blast radius.
+
+**Encrypt before it leaves the box, whichever you choose.** These dumps contain
+every tenant's business data. `backup_mongo.sh` supports `BACKUP_ENCRYPT_TO`
+(a GPG recipient) so the remote holds only ciphertext — which also keeps the spirit
+of rule 1: no third party is trusted with readable customer data. Guard the private
+key like the database itself; without it the backups are landfill.
 
 ---
 

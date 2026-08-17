@@ -25,6 +25,21 @@ SERVICE="mongo"
 BACKUP_ROOT="${BACKUP_ROOT:-backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 
+# --- off-box copy (both OPT-IN; unset = the old behaviour, exactly) -----------
+#
+# A backup on the same disk as the database does not survive the failure it
+# exists for. These two settings move it somewhere else, encrypted.
+#
+#   BACKUP_ENCRYPT_TO  GPG recipient (key id or email). Set it and every archive
+#                      is encrypted BEFORE it leaves the machine, so whatever
+#                      holds the copy never sees a tenant's data. Without the
+#                      matching private key the backups are unrecoverable —
+#                      guard it as carefully as the database.
+#   BACKUP_REMOTE      rsync destination, e.g. user@host:/srv/blyns-backups or a
+#                      local path on a mounted volume.
+BACKUP_ENCRYPT_TO="${BACKUP_ENCRYPT_TO:-}"
+BACKUP_REMOTE="${BACKUP_REMOTE:-}"
+
 if [[ ! -f .env.production ]]; then
   echo "missing .env.production — cannot read database credentials" >&2
   exit 1
@@ -91,6 +106,33 @@ cmd_backup() {
     exit 1
   fi
 
+  # Encrypt in place, before anything can be copied anywhere. --yes so a re-run
+  # overwrites; --trust-model always so an unsigned-but-known key does not stall
+  # an unattended cron run waiting for input.
+  if [[ -n "$BACKUP_ENCRYPT_TO" ]]; then
+    command -v gpg >/dev/null || { echo "BACKUP_ENCRYPT_TO is set but gpg is not installed" >&2; exit 1; }
+    local f
+    for f in "$dest"/*.archive.gz; do
+      gpg --yes --batch --trust-model always \
+          --encrypt --recipient "$BACKUP_ENCRYPT_TO" --output "$f.gpg" "$f"
+      rm -f "$f"          # never leave the plaintext beside the ciphertext
+    done
+    echo "encrypted to $BACKUP_ENCRYPT_TO"
+  fi
+
+  if [[ -n "$BACKUP_REMOTE" ]]; then
+    echo "copying to $BACKUP_REMOTE"
+    # Trailing slash on the source copies the directory's CONTENTS into a
+    # matching timestamped directory at the destination.
+    rsync -a --mkpath "$dest/" "$BACKUP_REMOTE/$(basename "$dest")/"
+    echo "off-box copy complete"
+  else
+    echo
+    echo "REMINDER: this backup is on the same disk as the database it protects."
+    echo "Set BACKUP_REMOTE (and BACKUP_ENCRYPT_TO) or copy $dest off-box yourself,"
+    echo "or it will not survive the failure it exists for."
+  fi
+
   # Retention. Deliberately prunes only inside BACKUP_ROOT and only directories
   # matching the timestamp shape this script creates.
   if [[ -d "$BACKUP_ROOT" ]]; then
@@ -98,9 +140,6 @@ cmd_backup() {
       -exec rm -rf {} + 2>/dev/null || true
   fi
 
-  echo
-  echo "REMINDER: this backup is on the same disk as the database it protects."
-  echo "Copy $dest off-box, or it will not survive the failure it exists for."
 }
 
 cmd_list() {
@@ -124,16 +163,39 @@ cmd_restore() {
     exit 2
   fi
   local archive="$dir/$db.archive.gz"
-  [[ -f "$archive" ]] || { echo "no such archive: $archive" >&2; exit 1; }
+  local encrypted="$archive.gpg"
+  local decrypt=false
 
-  echo "About to restore '$db' from $archive."
+  if [[ -f "$archive" ]]; then
+    :
+  elif [[ -f "$encrypted" ]]; then
+    # Encrypted backups are useless without a restore path that knows about them,
+    # so handle them here rather than leaving a manual gpg step to be remembered
+    # during an outage.
+    command -v gpg >/dev/null || { echo "$encrypted is encrypted but gpg is not installed" >&2; exit 1; }
+    decrypt=true
+  else
+    echo "no such archive: $archive (or $encrypted)" >&2
+    exit 1
+  fi
+
+  echo "About to restore '$db' from ${decrypt:+$encrypted}${decrypt:-$archive}."
   echo "--drop is used: the CURRENT contents of '$db' will be replaced."
   read -r -p "Type the database name again to confirm: " confirm
   [[ "$confirm" == "$db" ]] || { echo "aborted"; exit 1; }
 
-  mongo_exec mongorestore \
-    -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
-    --archive --gzip --drop --nsInclude "$db.*" < "$archive"
+  # Streamed, never written to disk: a decrypted copy left lying around beside the
+  # ciphertext would defeat the point of encrypting it.
+  if $decrypt; then
+    gpg --quiet --decrypt "$encrypted" \
+      | mongo_exec mongorestore \
+          -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+          --archive --gzip --drop --nsInclude "$db.*"
+  else
+    mongo_exec mongorestore \
+      -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+      --archive --gzip --drop --nsInclude "$db.*" < "$archive"
+  fi
 
   echo "restored $db"
 }
