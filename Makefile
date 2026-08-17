@@ -1,6 +1,7 @@
 # Build/run targets (docs/ENVIRONMENTS.md §5, docs/DEPLOYMENT_PLAN.md)
 .PHONY: dev seed demo test test-fast lint build-prod \
-        build-image run-prod-local stop-prod-local migrate migrate-dry
+        build-image run-prod-local stop-prod-local \
+        migrate migrate-dry migrate-remote backup
 
 dev:            ## docker mongo + backend reload + frontend dev
 	docker compose up -d mongo
@@ -37,13 +38,22 @@ run-prod-local: ## run the full production stack locally to prove it before depl
 	@test -f .env.production || { \
 	  echo "missing .env.production — cp .env.production.example .env.production and fill it in"; \
 	  exit 1; }
-	docker compose -f docker-compose.prod.yml up -d --build
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 
 stop-prod-local: ## stop the local production stack (keeps volumes)
-	docker compose -f docker-compose.prod.yml down
+	docker compose --env-file .env.production -f docker-compose.prod.yml down
 
-migrate-dry:    ## show which migrations would run; changes nothing
+migrate-dry:    ## show which migrations would run; changes nothing (local checkout)
 	cd backend && python ../scripts/migrate.py --dry-run
 
 migrate:        ## apply every pending migration (idempotent; run after each deploy)
 	cd backend && python ../scripts/migrate.py
+
+# On a SERVER there is no local venv — the app image carries the scripts and the
+# dependencies, so migrations run inside the container.
+migrate-remote: ## apply pending migrations inside the running app container
+	docker compose --env-file .env.production -f docker-compose.prod.yml \
+	  exec -T app python scripts/migrate.py
+
+backup:         ## dump the control plane + every tenant to ./backups
+	./scripts/backup_mongo.sh backup

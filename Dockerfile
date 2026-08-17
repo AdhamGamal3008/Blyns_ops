@@ -44,7 +44,12 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Running `python scripts/migrate.py` puts scripts/ on sys.path, NOT the
+    # working directory, so `from app.core...` fails without this. uvicorn is
+    # unaffected (it imports app.main from cwd), which is exactly why the gap only
+    # shows up when you try to migrate a deployed database.
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -60,6 +65,14 @@ RUN pip install --upgrade pip && pip install .
 
 # Application code, then the SPA built in stage 1.
 COPY backend/app ./app
+
+# Operational scripts must ship WITH the image: after a deploy you need to run
+# migrations and seed the control plane, and the only place the app package and
+# its dependencies exist is in here. Without this there is no way to migrate a
+# production database short of installing Python and the deps on the host.
+#   docker compose exec app python scripts/migrate.py
+COPY scripts ./scripts
+
 COPY --from=frontend /frontend/dist ./frontend_dist
 
 # The app resolves the SPA from the repo layout by default, which does not exist

@@ -20,6 +20,13 @@ dist/
 .env.demo
 .demo-backend.log
 
+# MongoDB replica-set keyfile — a shared secret, generated per deployment by
+# scripts/init_mongo_keyfile.sh. Never commit it.
+deploy/mongo-keyfile
+
+# Backups may contain every tenant's data — never let them into the repo.
+backups/
+
 # EXCEPTION: frontend/.env.production is build-time PUBLIC config, not a secret —
 # anything in a VITE_ var is compiled into the bundle the browser downloads, so it
 # can never hold one. It must be tracked: without it `npm run build` leaves

@@ -27,6 +27,20 @@ only from the Docker network. Deploys are `git push` → build → `docker compo
 
 ---
 
+## 0a. Locked answers (2026-08-17)
+
+| | Answer | Consequence |
+|---|---|---|
+| **Domain (Q3)** | **`blyns-eg.com`** — chosen, **not yet purchased** | Buy it *before* Phase E. DNS must resolve to the VPS before Caddy's first start or the ACME challenge fails, and Let's Encrypt allows only 5 failures per hostname per hour (G-8). It costs nothing to own it early while it points nowhere. |
+| **VPS (Q4)** | Contabo **6 vCPU · 12 GB RAM · 200 GB SSD · 300 Mbit/s**, unlimited traffic | Comfortable. Mongo's WiredTiger cache defaults to ~50% of RAM which would take ~5.5 GB, so it is **capped explicitly** (§Phase C) to leave the app and Caddy predictable headroom. 200 GB is ample: GridFS uploads live in the tenant databases, so disk is the thing to watch long-term (Phase F). |
+| **Q5 / Q6** | still open | Phase D's image-push step and Phase C's off-box backup destination wait on these. Everything else proceeds. |
+
+> **On Q5, given the specs:** the original recommendation (Actions → GHCR) partly
+> assumed a small VPS where an image build would compete with serving traffic. At
+> 6 vCPU that no longer holds and building on the box is viable. GHCR still wins
+> on reproducible SHA-tagged images, one-command rollback, and keeping a build
+> toolchain off production — but it is now a preference, not a necessity.
+
 ## 1. Decisions to lock before Phase B  (my recommendation in **bold**)
 
 | # | Decision | Options | Recommendation |
@@ -178,6 +192,11 @@ and running it twice is a no-op the second time.
 **Prove:** `rs.status()` shows a healthy single-node set; the app connects with
 the least-privilege user; `docker compose down && up` preserves data; a backup
 taken, one tenant dropped, and that tenant restored from the dump alone.
+
+> **Every compose command needs `--env-file .env.production`.** `env_file:` only
+> populates a *container's* environment; `${VAR}` interpolation in the compose
+> file itself reads the shell or a file named exactly `.env`. Without the flag,
+> `MONGO_ROOT_USER`, `ERP_DOMAIN` and friends silently become empty strings.
 
 ### Phase D — GitHub sync + CI  **(S)**
 - **CI** (`.github/workflows/ci.yml`) on push and PR to `main`: ruff, mypy, `tsc`,
@@ -407,7 +426,63 @@ mount); `/health` reports `{"status":"ok","mongo":true,"env":"production"}`; log
 are structured JSON; the bundle contains no `localhost`; the container reaches
 `healthy`; `migrate.py` applies, is a no-op on re-run, and `--force` re-applies.
 
-**Phase C/D can start.** Phase E remains blocked on **Q3** (domain) and **Q4**
-(VPS). Note the compose file's Caddy service needs `ERP_DOMAIN`, and Mongo's
-`--keyFile` path (`deploy/mongo-keyfile`) is generated on the server in Phase C —
-it is deliberately not in the repo.
+### Phase C — MongoDB server prep — DONE (2026-08-17)
+An authenticated single-node replica set, the app connecting as a least-privilege
+user, and a backup/restore proved by actually destroying and recovering a tenant.
+
+- **`scripts/init_mongo_keyfile.sh`** — generates the replica-set keyfile (mode
+  400). A set running `--auth` needs one even with a single member. mongod is
+  fussy: the file must also be owned by **uid 999**, and a bind mount keeps the
+  *host's* ownership, so the script says so loudly when it cannot chown.
+- **`deploy/mongo-init/01-create-app-user.js`** — creates `erpapp` with
+  `readWriteAnyDatabase` (needed because tenant databases are created on demand
+  and their names are not known ahead of time). Not root: it cannot manage users
+  or the replica set.
+- **A one-shot `mongo-init` service** initiates the set. **This cannot be done
+  from `/docker-entrypoint-initdb.d`** — the entrypoint runs those scripts against
+  a temporary mongod started *without* `--replSet`, so `rs.initiate()` there
+  configures nothing and the real server comes up with `--replSet` and no config.
+  That was the first attempt, and it left the set permanently uninitialised.
+- **Mongo's healthcheck asserts PRIMARY**, not merely that it answers a ping. The
+  app connects with `replicaSet=rs0`, so `depends_on: service_healthy` must mean
+  "a primary exists" — a ping goes green while the driver would still hang in
+  server selection.
+- **WiredTiger cache capped** (`MONGO_CACHE_GB`, default 4). Left alone it takes
+  ~50% of total host RAM — ~5.5 GB of the 12 GB — without knowing the app and
+  Caddy share the box.
+- **`scripts/backup_mongo.sh`** — per-database dump/list/restore, running
+  mongodump *inside* the container so the host needs no MongoDB tooling and the
+  database stays unpublished. Restore is guarded by typing the database name.
+
+**Four bugs found by proving rather than assuming:**
+
+1. **Compose interpolation ignored `.env.production`** — `env_file:` fills a
+   container's environment, but `${VAR}` in the compose file itself reads the
+   shell or a file named exactly `.env`. Every credential silently became an empty
+   string. Every compose invocation now passes `--env-file`.
+2. **`ERP_MONGO_URI` could not be `source`d** — the `&` between query parameters
+   is a shell metacharacter, and `backup_mongo.sh` reads the file with `source`.
+   Now quoted in the example (Compose strips quotes).
+3. **The app-user script never received its variables.** It correctly refused to
+   create a half-configured user — but the Mongo entrypoint logs that and *carries
+   on starting*, so the only symptom was an app that could not authenticate.
+   `MONGO_APP_USER`/`MONGO_APP_PASSWORD` are now passed to the service.
+4. **The backup silently dumped only the FIRST database.** `docker compose exec`
+   inherits the `while read` loop's stdin and consumes it, so the loop ran once and
+   still reported success — a failure you would discover at restore time. Now the
+   list is read into an array first, with a count assertion as a second guard.
+
+**Verified:** `rs0` PRIMARY with auth and keyfile; app healthy connecting as
+`erpapp`; control plane seeded and a tenant provisioned; `migrate.py` applied both
+migrations **inside the container**; backup produced 2 archives; `erp_tenant_acme`
+dropped (control plane untouched) and restored from its archive alone — 41
+collections, correct document counts, indexes rebuilt; a full `down`/`up` cycle
+preserved everything and `mongo-init` reported "already initiated".
+
+**Also fixed in the image** (found here, belongs to Phase B): `scripts/` was not
+copied into it and `PYTHONPATH` was unset, so there was **no way to run a
+migration or seed the control plane on a server**. Both corrected; `docker compose
+exec app python scripts/migrate.py` now works.
+
+**Phase D can start.** Phase E remains blocked on the VPS existing and
+`blyns-eg.com` being purchased with DNS pointed at it.

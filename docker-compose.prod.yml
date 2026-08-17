@@ -37,10 +37,29 @@ services:
     restart: unless-stopped
     # Single-node replica set (D2): same resource cost as standalone, but
     # transactions and change streams become available without a migration later.
-    command: ["--replSet", "rs0", "--bind_ip_all", "--auth", "--keyFile", "/etc/mongo/keyfile"]
+    #
+    # --wiredTigerCacheSizeGB is capped deliberately. Left alone, WiredTiger takes
+    # ~50% of TOTAL host RAM (≈5.5 GB of 12 GB) whether or not it needs it, and it
+    # does not know the app and Caddy share the box. 4 GB is generous for this
+    # workload and leaves predictable headroom. Raise it if the working set grows.
+    command:
+      - "--replSet"
+      - "rs0"
+      - "--bind_ip_all"
+      - "--auth"
+      - "--keyFile"
+      - "/etc/mongo/keyfile"
+      - "--wiredTigerCacheSizeGB"
+      - "${MONGO_CACHE_GB:-4}"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      # Read by deploy/mongo-init/01-create-app-user.js via process.env. Without
+      # these the init script refuses (by design) and the application user is
+      # never created — and the entrypoint logs that but carries on starting, so
+      # the only symptom is an app that cannot authenticate.
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
     volumes:
       - mongo_data:/data/db
       - mongo_config:/data/configdb
@@ -50,12 +69,75 @@ services:
     # DELIBERATELY no `ports:`. A Contabo VPS is on the public internet and an
     # exposed 27017 is found by scanners within minutes. Mongo is reachable only
     # from this network; administer it with `docker compose exec mongo mongosh`.
+    #
+    # Healthy means PRIMARY, not merely "answers a ping". The app connects with
+    # replicaSet=rs0 in its URI, so an initiated set with an elected primary is
+    # what it actually needs; a plain ping goes green while the driver would still
+    # hang in server selection.
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
-      interval: 20s
+      test:
+        - "CMD"
+        - "mongosh"
+        - "--quiet"
+        - "-u"
+        - "${MONGO_ROOT_USER}"
+        - "-p"
+        - "${MONGO_ROOT_PASSWORD}"
+        - "--authenticationDatabase"
+        - "admin"
+        - "--eval"
+        - "rs.status().myState === 1 ? 0 : quit(1)"
+      interval: 10s
       timeout: 5s
-      start_period: 30s
-      retries: 5
+      start_period: 40s
+      retries: 12
+
+  # One-shot: initiate the replica set, then exit. This CANNOT be done from
+  # /docker-entrypoint-initdb.d — the entrypoint runs those scripts against a
+  # temporary mongod started without --replSet, so rs.initiate() there configures
+  # nothing and the real server comes up with --replSet and no config.
+  mongo-init:
+    image: mongo:7
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_started
+    networks: [internal]
+    environment:
+      MONGO_ROOT_USER: ${MONGO_ROOT_USER}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "waiting for mongod to answer..."
+        until mongosh --host mongo --quiet \
+              -u "$$MONGO_ROOT_USER" -p "$$MONGO_ROOT_PASSWORD" \
+              --authenticationDatabase admin --eval 'db.adminCommand("ping")' \
+              >/dev/null 2>&1; do sleep 2; done
+        mongosh --host mongo --quiet \
+          -u "$$MONGO_ROOT_USER" -p "$$MONGO_ROOT_PASSWORD" \
+          --authenticationDatabase admin --eval '
+            try {
+              rs.status();
+              print("replica set already initiated — nothing to do");
+            } catch (e) {
+              if (e.codeName !== "NotYetInitialized") { throw e; }
+              printjson(rs.initiate({
+                _id: "rs0",
+                members: [{ _id: 0, host: "mongo:27017" }],
+              }));
+              print("waiting to become PRIMARY...");
+              var waited = 0;
+              while (rs.status().myState !== 1 && waited < 60000) {
+                sleep(500); waited += 500;
+              }
+              if (rs.status().myState !== 1) {
+                throw new Error("did not become PRIMARY within 60s");
+              }
+              print("replica set rs0 is PRIMARY");
+            }'
 
   caddy:
     image: caddy:2-alpine
