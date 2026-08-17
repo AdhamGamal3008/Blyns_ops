@@ -343,6 +343,8 @@ async def test_timeline_reports_the_pinned_configuration(
 
     assert timeline["configuration_id"] == str(standard["_id"])
     assert timeline["config_version"] == 1
+    # the NAME is resolved server-side so the detail header needs no second call
+    assert timeline["configuration_name"] == "Standard"
     assert len(timeline["stages"]) == 9
 
 

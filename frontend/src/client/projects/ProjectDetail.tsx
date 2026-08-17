@@ -125,6 +125,14 @@ export function ProjectDetail() {
               {(project.status ?? "—").replace("_", " ")}
             </Badge>
             {isConcurrent && <Badge tone="info">Concurrent</Badge>}
+            {/* Which configuration VERSION this project is pinned to. Two projects
+                on the same configuration can be running different versions, so the
+                version is part of the identity, not a footnote. */}
+            {timeline.configuration_name && (
+              <Badge tone="neutral">
+                {timeline.configuration_name} v{timeline.config_version}
+              </Badge>
+            )}
             <span>
               {!project.current_stage_order
                 ? "No stage machine (legacy record)"

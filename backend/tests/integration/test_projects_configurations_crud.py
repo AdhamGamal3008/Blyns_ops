@@ -305,6 +305,84 @@ async def test_unpinned_configuration_can_be_deleted(client_client):
     assert "Never used" not in await _configs(client_client)
 
 
+# --- selection at Stage 1 (Phase 4) --------------------------------------------
+
+async def test_project_started_on_a_custom_configuration_runs_it(client_client):
+    """The Phase-4 'prove': pick a custom configuration at Stage 1 and the project's
+    own timeline and stage gates come from THAT configuration, not the default."""
+    clone = await _clone(client_client, name="Flooring — ASTM")
+    await _publish(client_client, clone["id"], stages=[{
+        "key": "project_initiation",
+        "entry_documents": [{"key": "astm_f2170_report", "blocking": True}],
+        "quality_gates": ["concrete_rh_astm_f2170"],
+    }])
+
+    project = await _create_project(
+        client_client, "ASTM tower", configuration_id=clone["id"]
+    )
+
+    timeline = (await client_client.get(f"{BASE}/{project['id']}/timeline")).json()["data"]
+    assert timeline["configuration_id"] == clone["id"]
+    assert timeline["config_version"] == 2
+    assert timeline["configuration_name"] == "Flooring — ASTM"
+    assert len(timeline["stages"]) == 9
+
+    # Stage 1 runs the custom configuration's documents and gate — and only those
+    stage = (await client_client.get(f"{BASE}/{project['id']}/stages/1")).json()["data"]
+    docs = {g["key"] for g in stage["definition"]["entry_gates"]
+            if g["type"] == "document"}
+    assert docs == {"astm_f2170_report"}
+    assert stage["definition"]["quality_gates"] == ["concrete_rh_astm_f2170"]
+    assert stage["evaluation"]["waiting_on"] == ["doc:astm_f2170_report"]
+
+    # a project on the DEFAULT configuration is unaffected by any of it
+    other = await _create_project(client_client, "Standard tower")
+    other_stage = (
+        await client_client.get(f"{BASE}/{other['id']}/stages/1")
+    ).json()["data"]
+    other_docs = {g["key"] for g in other_stage["definition"]["entry_gates"]
+                  if g["type"] == "document"}
+    assert "astm_f2170_report" not in other_docs
+    assert other_stage["definition"]["quality_gates"] == []
+
+
+async def test_picker_lists_only_configurations_that_can_start_a_project(
+    client_client, onboarded_company
+):
+    """`active_only=true` is what the Stage-1 picker sends: a deactivated
+    configuration keeps its running projects but must not start new ones."""
+    clone = await _clone(client_client, name="Retired workflow")
+    await client_client.patch(f"{CONFIGS}/{clone['id']}", json={"is_active": False})
+
+    offered = (await client_client.get(f"{CONFIGS}?active_only=true")).json()["data"]
+    assert clone["id"] not in [c["id"] for c in offered]
+    assert {c["name"] for c in offered} == {"Standard", "Concurrent"}
+
+    # the unfiltered list still shows it, so Settings can reactivate it
+    everything = (await client_client.get(CONFIGS)).json()["data"]
+    assert clone["id"] in [c["id"] for c in everything]
+
+
+async def test_picker_is_readable_without_settings_access(
+    client_client, onboarded_company
+):
+    """§4 — a PM creating a project needs `projects` READ only; building
+    configurations is what needs `settings` WRITE."""
+    db = _tenant_db(onboarded_company)
+    await db.roles.update_one({"name": "Owner"}, {"$set": {"permissions.settings": 0}})
+
+    res = await client_client.get(f"{CONFIGS}?active_only=true")
+    assert res.status_code == 200, res.text
+    assert len(res.json()["data"]) == 2
+
+    # and the project can still be created against one of them
+    standard = next(c for c in res.json()["data"] if c["is_default"])
+    created = await _create_project(
+        client_client, "No settings access", configuration_id=standard["id"]
+    )
+    assert created["configuration_id"] == standard["id"]
+
+
 # --- gate catalog --------------------------------------------------------------
 
 async def test_catalog_seeds_the_builtin_gates(client_client):

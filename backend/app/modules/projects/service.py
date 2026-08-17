@@ -370,6 +370,12 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
     instances = {
         i["stage_order"]: i for i in await repo.stage_instances(db, project["_id"])
     }
+    # The detail header names the configuration this project is pinned to; resolving
+    # it here saves the client a second round-trip just to turn an id into a label.
+    configuration = (
+        await repo.project_config(db, scope.configuration_id)
+        if scope.configuration_id is not None else None
+    )
     return {
         "project_id": project_id,
         # tolerate legacy/partial docs that predate the stage machine
@@ -379,6 +385,7 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
         "workflow_type": project.get("workflow_type", "sequential"),
         "configuration_id": scope.configuration_id,
         "config_version": scope.config_version,
+        "configuration_name": configuration["name"] if configuration else None,
         "current_stage_order": project.get("current_stage_order"),
         "milestones": project.get("milestone_schedule") or [],
         "stages": [

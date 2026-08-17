@@ -40,12 +40,20 @@ function stages(workflow: "sequential" | "concurrent") {
   ];
 }
 
-function stubFetch(workflow: "sequential" | "concurrent") {
+function stubFetch(
+  workflow: "sequential" | "concurrent",
+  configuration: { name: string | null; version: number | null } = {
+    name: "Standard", version: 1,
+  },
+) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
     const u = String(url);
     if (u.includes("/timeline")) {
       return okJson({ data: {
         project_id: "p1", code: "PRJ-0001", workflow_type: workflow,
+        configuration_id: configuration.name ? "c1" : null,
+        config_version: configuration.version,
+        configuration_name: configuration.name,
         current_stage_order: 2, milestones: [], stages: stages(workflow),
       } });
     }
@@ -109,5 +117,24 @@ describe("ProjectDetail — concurrent pipeline", () => {
     await waitFor(() =>
       expect(screen.getByText(/Stage 2 of 9/)).toBeInTheDocument());
     expect(screen.queryByText("Concurrent")).not.toBeInTheDocument();
+  });
+
+  // --- the pinned configuration (PROJECT_CONFIGURATIONS_PLAN.md Phase 4) ------
+
+  it("names the configuration VERSION the project is pinned to", async () => {
+    // Two projects on the same configuration can be running different versions,
+    // so the version belongs in the header alongside the name, not in a footnote.
+    stubFetch("sequential", { name: "Flooring — ASTM", version: 2 });
+    renderDetail();
+    expect(await screen.findByText("Flooring — ASTM v2")).toBeInTheDocument();
+  });
+
+  it("shows no configuration badge on an un-migrated workspace", async () => {
+    // A project created before v4 carries no pin; the header simply omits it (G-1).
+    stubFetch("sequential", { name: null, version: null });
+    renderDetail();
+    await waitFor(() =>
+      expect(screen.getByText(/Stage 2 of 9/)).toBeInTheDocument());
+    expect(screen.queryByText(/ v\d+$/)).not.toBeInTheDocument();
   });
 });

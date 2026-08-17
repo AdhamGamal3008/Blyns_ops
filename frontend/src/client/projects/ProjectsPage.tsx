@@ -27,7 +27,13 @@ import {
   TabsTrigger,
 } from "../../shared/ui";
 import { ProjectsAnalytics } from "./ProjectsAnalytics";
-import { PROJECT_TONE, humanize, money, type Project } from "./types";
+import {
+  PROJECT_TONE,
+  humanize,
+  money,
+  type Project,
+  type ProjectConfigurationOption,
+} from "./types";
 
 export function ProjectsPage() {
   const me = useOutletContext<ClientMe>();
@@ -188,8 +194,8 @@ const NO_ACCOUNT = "__none";
 function ProjectModal(props: { open: boolean; onDone: (createdId: string | null) => void }) {
   const [name, setName] = useState("");
   const [scope, setScope] = useState("");
-  const [workflowType, setWorkflowType] =
-    useState<"sequential" | "concurrent">("sequential");
+  const [configurationId, setConfigurationId] = useState("");
+  const [configurations, setConfigurations] = useState<ProjectConfigurationOption[]>([]);
   const [budget, setBudget] = useState("0");
   const [accountId, setAccountId] = useState(NO_ACCOUNT);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
@@ -201,7 +207,21 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
     // linking a CRM account is optional (§1); offer it only if CRM is readable
     api<AccountOption[]>("/crm/accounts?page_size=100")
       .then((r) => setAccounts(r.data)).catch(() => setAccounts([]));
+
+    // Which workflows this workspace offers. Deactivated ones are excluded — they
+    // stay valid for projects already running on them, but cannot start new ones.
+    api<ProjectConfigurationOption[]>("/projects/config/configurations?active_only=true")
+      .then((r) => {
+        setConfigurations(r.data);
+        const preferred = r.data.find((c) => c.is_default) ?? r.data[0];
+        if (preferred) setConfigurationId(preferred.id);
+      })
+      // A workspace the v4 migration has not reached has no configurations; the
+      // backend still accepts a create without one, so the field simply hides.
+      .catch(() => setConfigurations([]));
   }, [props.open]);
+
+  const chosen = configurations.find((c) => c.id === configurationId);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -213,7 +233,10 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
         body: {
           name,
           scope: scope || null,
-          workflow_type: workflowType,
+          // The project pins this configuration's current version for life (D1).
+          // Omitted on an un-migrated workspace, where the backend falls back to
+          // the legacy template.
+          ...(configurationId ? { configuration_id: configurationId } : {}),
           crm_account_id: accountId === NO_ACCOUNT ? null : accountId,
           planned_budget: Number(budget),
         },
@@ -246,17 +269,29 @@ function ProjectModal(props: { open: boolean; onDone: (createdId: string | null)
         <Input value={scope} onChange={(e) => setScope(e.target.value)}
           placeholder="Short description of the works" />
       </Field>
-      <Field label="Workflow"
-        hint="Sequential runs the stages in order. Concurrent opens stages 2–8 for teams to work in parallel; only Handover waits for all of them. Chosen now, not changed later.">
-        <Select
-          value={workflowType}
-          onValueChange={(v) => setWorkflowType(v as "sequential" | "concurrent")}
-          options={[
-            { value: "sequential", label: "Sequential — one stage at a time" },
-            { value: "concurrent", label: "Concurrent — stages 2–8 in parallel" },
-          ]}
-        />
-      </Field>
+      {configurations.length > 0 && (
+        <Field
+          label="Configuration"
+          hint={
+            chosen
+              ? `${chosen.workflow_shape === "concurrent"
+                  ? "Stages 2–8 run in parallel; only Handover waits for all of them."
+                  : "Stages run one at a time, in order."} ${
+                  chosen.description ?? ""
+                } The project keeps version ${chosen.current_version} for its whole life — later edits to this configuration will not affect it.`.trim()
+              : "Which set of stage documents, quality gates and thresholds this project runs on. Chosen now, not changed later."
+          }
+        >
+          <Select
+            value={configurationId}
+            onValueChange={setConfigurationId}
+            options={configurations.map((c) => ({
+              value: c.id,
+              label: c.is_default ? `${c.name} — default` : c.name,
+            }))}
+          />
+        </Field>
+      )}
       <Field label="Client account (CRM)">
         <Select
           value={accountId}

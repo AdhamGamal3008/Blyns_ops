@@ -14,12 +14,30 @@ export interface Budget {
 
 export type WorkflowType = "sequential" | "concurrent";
 
+/** A named workflow a project can be started on, from
+ *  `GET /projects/config/configurations` (docs/PROJECT_CONFIGURATIONS_PLAN.md).
+ *  That route is `projects` READ precisely so a PM can pick one at Stage 1
+ *  without Settings access; building them is `settings` WRITE. */
+export interface ProjectConfigurationOption {
+  id: string;
+  name: string;
+  description?: string;
+  workflow_shape: WorkflowType;
+  current_version: number;
+  is_default: boolean;
+  is_active: boolean;
+}
+
 export interface Project {
   id: string;
   code: string;
   name: string;
   scope?: string | null;
   workflow_type?: WorkflowType;
+  /** The configuration VERSION this project pinned at creation. It runs against
+   *  that version for life — publishing a new one never moves it (D1). */
+  configuration_id?: string | null;
+  config_version?: number | null;
   crm_account_id?: string | null;
   current_stage_order: number;
   current_stage_key: string;
@@ -46,6 +64,9 @@ export interface Timeline {
   project_id: string;
   code: string;
   workflow_type?: WorkflowType;
+  configuration_id?: string | null;
+  config_version?: number | null;
+  configuration_name?: string | null;
   current_stage_order: number;
   milestones: { key: string; name: string; due_date: string }[];
   stages: TimelineStage[];
