@@ -594,10 +594,35 @@ build is already proved by the `image` job; publishing is only the extra step of
 tagging and pushing, and the choice between GHCR and building on the VPS does not
 change anything above.
 
+**First green run: `de6c436`, all 8 jobs** — ruff+mypy, tsc+vitest, docker build
+with smoke test, and the four pytest shards. The first two runs had failed with
+*zero jobs*: GitHub rejects an invalid workflow file before scheduling anything,
+so there is no log — only a red tick. The cause was `join(needs.*.result, ",")`;
+Actions expressions take **single**-quoted string literals only. `yaml.safe_load`
+cannot catch that (it is valid YAML), so workflows are now checked with
+**actionlint** before pushing.
+
+### The repository is PUBLIC
+Discovered while reading the run status (2026-08-17). Worth stating plainly since
+much of this plan was written assuming otherwise:
+
+- **History was scanned and is clean.** No `.env` with real values was ever
+  committed; every credential-shaped match in the full history is a variable name,
+  a generation call, or a test fixture. The `.gitignore` discipline held.
+- **CI logs are public too.** Never echo a secret in a workflow step — the smoke
+  tests deliberately print only `/health` output.
+- **Actions minutes are free on public repos**, so the 4-shard matrix costs
+  nothing.
+- **Check the GHCR package's visibility after the first release.** If the
+  repository is ever made private, a package left public would keep serving an
+  image containing the source.
+- If public was not a deliberate choice for a proprietary multitenant ERP, it is
+  worth revisiting *before* real tenant data exists — the code is not the risk
+  (the design assumes no security-by-obscurity), but it is a business decision.
+
 **Owner actions (in GitHub's UI, nothing I can do):**
 1. Settings → Branches → add a rule for `main` requiring the **`CI`** check.
-2. Decide **Q5**; if GHCR, no secret is needed — `GITHUB_TOKEN` can push to the
-   repo's own package registry.
+2. Create a classic PAT with only `read:packages` for the server to pull images.
 
 **Phase E is the only phase left before go-live**, and it is blocked purely on the
 VPS existing. `blyns-eg.com` is registered; its DNS records need the server's IP.
