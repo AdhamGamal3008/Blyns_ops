@@ -508,5 +508,43 @@ copied into it and `PYTHONPATH` was unset, so there was **no way to run a
 migration or seed the control plane on a server**. Both corrected; `docker compose
 exec app python scripts/migrate.py` now works.
 
-**Phase D can start.** Phase E remains blocked on the VPS existing and
-`blyns-eg.com` being purchased with DNS pointed at it.
+### Phase D — CI — DONE (2026-08-17), image publishing deferred
+`.github/workflows/ci.yml` runs on every push and PR to `main`: ruff, mypy, tsc,
+the frontend suite, a **production image build with a smoke test**, and the whole
+backend suite.
+
+- **The backend suite is sharded across 4 runners**, and the split is computed
+  from the directory listing rather than hardcoded. Two reasons, both learned the
+  hard way: a single serial run OOM-kills the ephemeral mongod ~70% through, and a
+  hardcoded file list lets a newly added test file silently never run. Proved
+  locally — 123 + 101 + 148 + 63 = **435 integration tests**, every file covered
+  exactly once, longest shard 5m15s.
+  - Worth noting: that is **more than the 391** the hand-written batches had been
+    running. The computed split immediately picked up files the manual batching
+    was skipping, `test_rbac_matrix.py` among them.
+- **`mongod` presence is asserted before pytest runs.** `conftest.mongo_uri` calls
+  `pytest.skip()` when the binary is missing, so a failed install would otherwise
+  produce a green run that executed **zero** integration tests. MongoDB is
+  installed from its own apt repository, not a third-party action.
+- **The image job builds what we actually ship** and smoke-tests it: starts with
+  `ERP_ENV=production` (so a clean start also proves `validate_for_production` is
+  satisfied), asserts `/health` is `ok`, asserts the SPA is served, and asserts
+  `scripts/migrate.py` is runnable inside the container. This is the only job that
+  can catch a broken Dockerfile, a lockfile that fails only on linux, or the
+  bundled-`localhost` guard.
+- **Python 3.12 / Node 22 pinned to match the image** (G-7).
+- **A single `CI` gate job** aggregates the rest, so branch protection can require
+  one check and adding a shard later does not mean editing the rule.
+
+**Deferred, pending Q5:** publishing the image to GHCR on a tagged release. The
+build is already proved by the `image` job; publishing is only the extra step of
+tagging and pushing, and the choice between GHCR and building on the VPS does not
+change anything above.
+
+**Owner actions (in GitHub's UI, nothing I can do):**
+1. Settings → Branches → add a rule for `main` requiring the **`CI`** check.
+2. Decide **Q5**; if GHCR, no secret is needed — `GITHUB_TOKEN` can push to the
+   repo's own package registry.
+
+**Phase E is the only phase left before go-live**, and it is blocked purely on the
+VPS existing. `blyns-eg.com` is registered; its DNS records need the server's IP.
