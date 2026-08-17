@@ -66,9 +66,19 @@ services:
       - ./deploy/mongo-keyfile:/etc/mongo/keyfile:ro
       - ./deploy/mongo-init:/docker-entrypoint-initdb.d:ro
     networks: [internal]
-    # DELIBERATELY no `ports:`. A Contabo VPS is on the public internet and an
-    # exposed 27017 is found by scanners within minutes. Mongo is reachable only
-    # from this network; administer it with `docker compose exec mongo mongosh`.
+    # Published to the host's LOOPBACK ONLY — never 0.0.0.0. This is what lets an
+    # SSH tunnel (and therefore Compass or a local mongosh) reach the database
+    # without opening anything to the internet:
+    #
+    #   ssh -N -L 27018:127.0.0.1:27017 blyns@<server>
+    #
+    # The "127.0.0.1:" prefix is load-bearing. A bare "27017:27017" would bind
+    # 0.0.0.0, and Docker publishes ports by writing DOCKER-chain iptables rules
+    # that BYPASS ufw — so the port would be open to the internet while
+    # `ufw status` still showed it closed. A Contabo address is scanned within
+    # minutes of allocation.
+    ports:
+      - "127.0.0.1:27017:27017"
     #
     # Healthy means PRIMARY, not merely "answers a ping". The app connects with
     # replicaSet=rs0 in its URI, so an initiated set with an elected primary is
