@@ -31,7 +31,7 @@ only from the Docker network. Deploys are `git push` → build → `docker compo
 
 | | Answer | Consequence |
 |---|---|---|
-| **Domain (Q3)** | **`blyns-eg.com`** — chosen, **not yet purchased** | Buy it *before* Phase E. DNS must resolve to the VPS before Caddy's first start or the ACME challenge fails, and Let's Encrypt allows only 5 failures per hostname per hour (G-8). It costs nothing to own it early while it points nowhere. |
+| **Domain (Q3)** | **`blyns-eg.com`** — **purchased from GoDaddy 2026-08-17** | Config is wired for it (`ERP_DOMAIN`, CORS, Caddy serves apex + `www`). **No DNS record can be created until the VPS has an IPv4**, so this is a Phase E step — the exact records are in Phase E. Registrar credentials are never needed by me. |
 | **VPS (Q4)** | Contabo **6 vCPU · 12 GB RAM · 200 GB SSD · 300 Mbit/s**, unlimited traffic | Comfortable. Mongo's WiredTiger cache defaults to ~50% of RAM which would take ~5.5 GB, so it is **capped explicitly** (§Phase C) to leave the app and Caddy predictable headroom. 200 GB is ample: GridFS uploads live in the tenant databases, so disk is the thing to watch long-term (Phase F). |
 | **Q5 / Q6** | still open | Phase D's image-push step and Phase C's off-box backup destination wait on these. Everything else proceeds. |
 
@@ -217,9 +217,33 @@ release produces a pullable GHCR image; `docker run` of that image starts.
   `fail2ban` on sshd, unattended security upgrades, hostname + timezone.
 - **Docker Engine + compose plugin** from Docker's own apt repo (not the distro's
   older packages).
-- **DNS**: `A` record for the apex and `www` → the VPS IPv4, and `AAAA` if Contabo
-  gives you IPv6. Wait for propagation *before* first Caddy start, or the ACME
-  challenge fails and you burn Let's Encrypt rate limit.
+- **DNS at GoDaddy** — `blyns-eg.com` is registered (2026-08-17). Nothing can be
+  configured until the VPS exists and has an IPv4, because these records point at
+  it. Once it does, in GoDaddy's **Domain → DNS → Manage Zones**:
+
+  | Type | Name | Value | TTL |
+  |---|---|---|---|
+  | `A` | `@` | *the VPS IPv4* | 600 |
+  | `A` | `www` | *the VPS IPv4* | 600 |
+  | `AAAA` | `@` | *the VPS IPv6*, if Contabo provides one | 600 |
+  | `AAAA` | `www` | *the VPS IPv6*, if provided | 600 |
+
+  Then **delete GoDaddy's default parking records** — a fresh domain ships with an
+  `A @` pointing at GoDaddy's parking page and often a `CNAME www`. Both conflict
+  with the records above; a leftover `CNAME www` in particular silently wins over
+  the `A www`.
+
+  - **Use GoDaddy's own nameservers.** Putting Cloudflare in front would add a
+    third party to every request (rule 1), and its proxy mode changes which IP the
+    backend sees — which is exactly the `ERP_IP_TRUSTED_PROXIES` trap in G-2.
+  - **TTL 600, not the 1-hour default**, so a mistake is 10 minutes to fix rather
+    than an hour. Raise it after go-live.
+  - **Verify before starting Caddy:** `dig +short blyns-eg.com` and
+    `dig +short www.blyns-eg.com` must both return the VPS IP. Starting Caddy
+    early fails the ACME challenge and burns Let's Encrypt's 5-failures-per-
+    hostname-per-hour budget (G-8).
+  - **Email is unaffected.** No MX records are involved, so adding mail on this
+    domain later is independent of anything here — see G-4 and **Q8**.
 - **Caddyfile**: the domain, `reverse_proxy app:8000`, automatic HTTPS, HTTP→HTTPS
   redirect, compression, and security headers (HSTS, `X-Content-Type-Options`,
   `Referrer-Policy`, a frame-ancestors policy).
