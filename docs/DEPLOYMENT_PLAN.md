@@ -624,5 +624,56 @@ much of this plan was written assuming otherwise:
 1. Settings → Branches → add a rule for `main` requiring the **`CI`** check.
 2. Create a classic PAT with only `read:packages` for the server to pull images.
 
-**Phase E is the only phase left before go-live**, and it is blocked purely on the
-VPS existing. `blyns-eg.com` is registered; its DNS records need the server's IP.
+### Phase E — Server deployment — DONE (2026-08-17) · **LIVE at https://blyns-eg.com**
+
+VPS `169.58.194.160`, Ubuntu 24.04.4, 6 vCPU / 11 GB / 193 GB. Driven over SSH;
+every secret was generated on the box.
+
+| | |
+|---|---|
+| Host | non-root `blyns`, key-only SSH — **root login refused, password auth off** |
+| Firewall | ufw 22/80/443 only; fail2ban (sshd jail) + unattended-upgrades active |
+| Docker | 29.7.2 / Compose 5.5.0, log rotation 20 MB × 5 |
+| Mongo | `rs0` PRIMARY, auth + keyfile, least-privilege `erpapp`, **no published port** |
+| App | `ghcr.io/adhamgamal3008/blyns-erp:v1.0.0`, healthy, `ERP_ENV=production` |
+| TLS | Let's Encrypt certs for apex **and** `www`, obtained first attempt |
+| Data | control plane seeded, both migrations applied, nightly backup cron 03:15 |
+
+**Verified from outside:** HTTPS 200 on `/`, `/app`, `/admin`, `/app/projects`;
+`/health` `{"status":"ok","mongo":true,"env":"production"}`; HTTP→HTTPS 308; all
+four security headers; **zero** swagger occurrences on `/docs`; ports 27017 and
+8000 refused from the internet; and a **full reboot brought everything back
+unattended**.
+
+**Things that bit, and what they teach:**
+
+1. **`sshd` silently ignored the hardening.** Ubuntu ships
+   `/etc/ssh/sshd_config.d/50-cloud-init.conf` with `PasswordAuthentication yes`,
+   and OpenSSH takes the **first** value across drop-ins read in lexical order —
+   so a `99-` file loses. Renamed to `00-hardening.conf`. *Always confirm with
+   `sshd -T`, never by reading the file you just wrote.*
+2. **The deploy user could not `sudo`.** Created with `--disabled-password`, so it
+   was in the `sudo` group but had no password to give — which would have left
+   nobody able to administer the box once root login was disabled. Resolved with a
+   validated `NOPASSWD` drop-in. **Consequence: the SSH key now effectively grants
+   root.** Not a downgrade (that key had *direct* root before), but if
+   password-protected sudo is wanted: `sudo passwd blyns` and delete
+   `/etc/sudoers.d/90-blyns`.
+3. **GoDaddy's `CNAME www → @` had to go before `A www` could be added** — exactly
+   as G-2 predicted. The apex `A` had also been deleted, leaving the domain
+   resolving nowhere.
+4. **Port 80 was proved reachable with a throwaway listener before starting
+   Caddy.** Cheap insurance: had it been blocked, discovering that via ACME would
+   have burned one of five attempts per hour.
+5. **The access log is misleading here.** `logging.py:102` records the raw socket
+   peer, so every proxied request logs Caddy's `172.18.0.4`. The **resolved** IP is
+   what the rate limiter and IP filter actually use — verified by inspecting
+   `rate_limit_windows`, which keys on real client addresses (`45.98.194.111`
+   etc.). Cosmetic, but it misleads exactly when diagnosing proxy problems.
+   *Worth fixing: make the access log use `client_ip()`.*
+
+**Remaining (Phase F):** off-box backup destination (`BACKUP_ENCRYPT_TO` /
+`BACKUP_REMOTE` are implemented but unset — backups are on the same disk as the
+database), uptime monitoring (**Q7**), a rehearsed restore drill, and disk
+alerting. Plus the two GitHub UI actions: branch protection requiring `CI`, and
+deciding **Q8** (nobody is watching discovery bookings).
