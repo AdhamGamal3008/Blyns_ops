@@ -96,20 +96,25 @@ Each phase ends with a **Prove** that must pass before the next begins.
 Housekeeping only; no behaviour changes. Doing it first means everything after is
 built on a tree you can reason about.
 
-- **Branches.** Delete the 9 branches already merged into `main` (`design-system`,
-  `fix/backend-startup`, `fix/stage14-phase-gate`, `ip-access-control`,
-  `landing-redesign`, `pm-v2-workflow`, `production-module`, `projects-analytics`,
-  `quick-actions-personalization`) locally and on `origin`. `landing-page` is 3
-  commits ahead but **superseded** — its content is in `main` under different SHAs
-  (e.g. `e9762af` → `ece3798`); confirm, then delete. Answer to **Q1** required.
-- **`docs/PROJECT_MANAGEMENT_LIFECYCLE.md`** — untracked since 2026-07-24 and
-  describes the *old 16-stage* machine (current is 9-stage v2.0). Either delete it
-  or rewrite it against the current seed. Answer to **Q2** required.
-- **Local dev database** — remove the demo artifacts from my proves (the
-  "Flooring — ASTM" configuration and `PRJ-0002` in the `acme` tenant), or keep
-  them deliberately as demo data. Local only; does not affect production.
+- **Branches** *(decided 2026-08-17)*. All 9 merged branches were `ahead=0` —
+  no commit on any of them was missing from `main`. **Remote copies of the 4 that
+  had them are deleted** (`pm-v2-workflow` `0f090fc`,
+  `quick-actions-personalization` `2ea47ca`, `projects-analytics` `9679f43`,
+  `landing-redesign` `9662696`) so GitHub shows only `main` once CI lands in
+  Phase D; **all 9 local branches are kept** as the owner's personal history.
+  `landing-page` was 3 commits ahead but superseded — `git cherry` marked all
+  three patch-equivalent to commits in `main` — and is **deleted** local + remote
+  (recovery SHA `e9762af`).
+- **`docs/PROJECT_MANAGEMENT_LIFECYCLE.md`** *(decided 2026-08-17)*: **stays
+  untracked on the owner's machine.** It describes the old 16-stage machine
+  (current is 9-stage v2.0), so it must never be committed as if it were current.
+  Every commit in this repo must continue to exclude it.
+- **Local dev database** — the demo artifacts from the configurations proves (the
+  "Flooring — ASTM" configuration and `PRJ-0002` in the `acme` tenant). Local
+  only; does not affect production. Owner's call whether to keep them as demo
+  data.
 - **`.demo-backend.log`** is gitignored but present — delete.
-- Confirm `make lint` and the batched test suite are green on a clean tree.
+- Confirm lint and the batched test suite are green on a clean tree.
 
 **Prove:** `git branch -a` lists only `main` plus anything you intend to keep;
 working tree clean apart from deliberate files; lint + tests green.
@@ -316,4 +321,36 @@ domain purchase, and DNS propagation. Phases A–D are entirely local: everythin
 proved on your Mac before you spend money on a server.
 
 ## Build status
-_not built yet._
+
+### Phase A — Local code cleanup — DONE (2026-08-17)
+Housekeeping only; no behaviour changed. Whole suite re-verified on the clean
+tree: **501 backend (110 unit + 391 integration, batched) + 213 frontend**;
+ruff + mypy + tsc clean.
+
+- **Branches.** `origin` now carries **only `main`** — the 4 stale remote branches
+  were deleted (`pm-v2-workflow` `0f090fc`, `quick-actions-personalization`
+  `2ea47ca`, `projects-analytics` `9679f43`, `landing-redesign` `9662696`), all of
+  them `ahead=0` against `main`. The 9 local branches are kept as the owner's
+  history. `landing-page` deleted local + remote (superseded; recovery `e9762af`).
+- **`UI_REFACTOR.md` moved to `docs/`.** It is a completed initiative's plan doc
+  and every other plan lives in `docs/` — and the file's own line 41 already
+  referred to itself as `docs/UI_REFACTOR.md`, so the root copy was the anomaly.
+  The two references in `frontend/src/__tests__/motion.test.ts` were repointed.
+- **Deleted:** a stale 6 MB `.demo-backend.log`, and a stray root `node_modules/`
+  holding nothing but an empty `.vite` cache (there is no root `package.json` —
+  it was left behind by running vite from the repo root once).
+- **`docs/PROJECT_MANAGEMENT_LIFECYCLE.md` stays untracked**, per the owner. It
+  documents the superseded 16-stage machine, so no commit may include it.
+- **Left alone:** the local dev database still holds the demo artifacts from the
+  configurations proves ("Flooring — ASTM" config + `PRJ-0002` in `acme`). Local
+  only, and the owner's data to keep or drop.
+
+**Prove:** `git branch -r` lists only `origin/main`; working tree clean apart from
+the deliberately untracked lifecycle doc; lint, typecheck and the full batched
+suite green.
+
+**Phase B starts here** — and it is the one with real engineering in it. Read §3
+gap #1 first: the current image genuinely cannot serve the SPA, and that must be
+fixed and proved locally before a VPS is worth paying for. Blocked on **Q3**
+(domain) only for the CORS/Caddy values; the Dockerfile, dist-path fix, compose
+file, env template and migration runner can all be built and proved without it.

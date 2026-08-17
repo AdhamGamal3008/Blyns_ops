@@ -1,4 +1,4 @@
-// Phase 6 acceptance (UI_REFACTOR.md): "no animation exceeds --dur-page", and
+// Phase 6 acceptance (docs/UI_REFACTOR.md): "no animation exceeds --dur-page", and
 // "disabling motion leaves every flow fully usable".
 //
 // These are enforced rather than eyeballed: the duration tokens are parsed out
@@ -28,7 +28,7 @@ function cssFiles(dir: string): string[] {
     // deliberately slower editorial motion language (cinematic reveals, an
     // infinite material marquee) and its own reduced-motion kill switch
     // (landing/theme/theme.css, asserted below). This app budget —
-    // UI_REFACTOR.md Phase 6 — governs the product, not the marketing page.
+    // docs/UI_REFACTOR.md Phase 6 — governs the product, not the marketing page.
     if (entry === "landing") return [];
     if (statSync(path).isDirectory()) return cssFiles(path);
     return path.endsWith(".css") ? [path] : [];
