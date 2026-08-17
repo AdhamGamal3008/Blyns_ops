@@ -370,6 +370,50 @@ blyns@vps$ docker compose --env-file .env.production -f docker-compose.prod.yml 
 Generate a new one, update `.env.production`, `up -d app`. **Every session is
 invalidated — everyone is logged out.** Do it deliberately, not casually.
 
+### Inspect the production database from your Mac
+
+The database is published on the server's **loopback only**, so it is reachable
+from your machine through an SSH tunnel and from nowhere else.
+
+Open the tunnel (leave it running; `-N` means "no remote command"):
+
+```bash
+you@laptop$ ssh -N -L 27018:127.0.0.1:27017 blyns@169.58.194.160
+```
+
+Get the application password — it never needs to leave the server except into your
+own client:
+
+```bash
+you@laptop$ ssh blyns@169.58.194.160 'grep ^MONGO_APP_PASSWORD= /opt/blyns/.env.production | cut -d= -f2'
+```
+
+**MongoDB Compass** — New Connection → paste, substituting the password:
+
+```
+mongodb://erpapp:<PASSWORD>@127.0.0.1:27018/?authSource=admin&directConnection=true
+```
+
+**mongosh:**
+
+```bash
+you@laptop$ mongosh "mongodb://erpapp:<PASSWORD>@127.0.0.1:27018/?authSource=admin&directConnection=true"
+```
+
+Notes that matter:
+
+- **`directConnection=true` is required.** Without it the driver reads the replica
+  set config, learns the primary is `mongo:27017`, and tries to connect to that
+  hostname — which does not resolve on your Mac. The symptom is a timeout that
+  looks like the tunnel is broken when it is fine.
+- **`erpapp` can read and write everything.** There is no read-only user; treat a
+  Compass window on production with the same care as a shell on it.
+- **`authSource=admin`** — the users live in `admin`, not in the database you open.
+- Percent-encode the password if it contains `@`, `:` or `/`. The generated ones
+  are hex, so they will not.
+- Compass can also manage the tunnel itself (Advanced → Proxy/SSH). Either way the
+  port is never open to the internet.
+
 ### Onboard a tenant
 
 Through the admin portal at `https://blyns-eg.com/admin`. Provisioning creates the
