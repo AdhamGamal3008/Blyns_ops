@@ -110,7 +110,7 @@ jobs:
             -e ERP_MONGO_URI="mongodb://mongo:27017" \
             -e ERP_CORS_ORIGINS='["https://blyns-eg.com"]' \
             blyns-erp:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then break; fi
             sleep 2
           done
@@ -170,13 +170,34 @@ jobs:
         working-directory: backend
         run: |
           set -euo pipefail
-          FILES=$(ls tests/integration/test_*.py | awk "NR % ${BACKEND_SHARDS} == ${{ matrix.shard }}")
-          if [ -z "$FILES" ]; then
-            echo "no test files in this shard — the split is wrong"; exit 1
+          # Glob rather than parse `ls`, and select this shard's slice by index.
+          # Sorted so the split is deterministic across runners. `while read`
+          # rather than `mapfile` so this is verifiable on bash 3.2 too — macOS
+          # ships that, and a step nobody can run locally is a step nobody checks.
+          ALL=()
+          while IFS= read -r f; do ALL+=("$f"); done \
+            < <(printf '%s\n' tests/integration/test_*.py | sort)
+
+          # If the glob matched nothing it expands to the literal pattern, which
+          # would hand pytest a nonexistent path and "pass" with 0 tests.
+          if (( ${#ALL[@]} == 0 )) || [ ! -f "${ALL[0]}" ]; then
+            echo "no integration test files found — is the working directory wrong?" >&2
+            exit 1
           fi
-          echo "$FILES" | sed 's/^/  /'
-          # shellcheck disable=SC2086
-          python -m pytest $FILES -q
+
+          FILES=()
+          for i in "${!ALL[@]}"; do
+            if (( i % BACKEND_SHARDS == ${{ matrix.shard }} )); then
+              FILES+=("${ALL[$i]}")
+            fi
+          done
+          if (( ${#FILES[@]} == 0 )); then
+            echo "no test files in this shard — the split is wrong" >&2
+            exit 1
+          fi
+          echo "${#FILES[@]} of ${#ALL[@]} files in shard ${{ matrix.shard }}:"
+          printf '  %s\n' "${FILES[@]}"
+          python -m pytest "${FILES[@]}" -q
 
   # A single required check for branch protection, so adding a shard later does
   # not mean editing the protected-branch rule.
@@ -186,10 +207,15 @@ jobs:
     needs: [lint-backend, frontend, image, backend]
     if: always()
     steps:
+      # NOTE: GitHub Actions expressions take SINGLE-quoted string literals only.
+      # A double-quoted one is a workflow-file syntax error, which GitHub rejects
+      # before scheduling anything — the run then fails with zero jobs, so there
+      # is no log to read and nothing looks broken except the red tick.
       - name: Verify every job succeeded
         run: |
-          if echo '${{ join(needs.*.result, ",") }}' | grep -qE 'failure|cancelled'; then
-            echo "a required job failed: ${{ join(needs.*.result, ',') }}"
+          results='${{ join(needs.*.result, ',') }}'
+          if echo "$results" | grep -qE 'failure|cancelled'; then
+            echo "a required job failed: $results"
             exit 1
           fi
-          echo "all green"
+          echo "all green: $results"
