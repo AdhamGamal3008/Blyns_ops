@@ -18,9 +18,10 @@ Have ready:
 
 - The VPS **IPv4** (and IPv6 if Contabo gave you one), and the initial root
   password from their email.
-- A **GitHub personal access token, classic, scoped to `read:packages` only** —
-  the container image is pulled from GHCR. It cannot touch the repository.
 - Access to **GoDaddy DNS** for `blyns-eg.com`.
+
+No GitHub token is needed: the repository is public and so is the published
+image (§5).
 
 Conventions below: `you@laptop$` runs on your Mac, `root@vps#` / `blyns@vps$` on
 the server.
@@ -126,14 +127,23 @@ blyns@vps$ cd /opt/blyns
 Only the compose file, `deploy/`, and `scripts/` are used at runtime — the
 application itself arrives as a prebuilt image.
 
-## 5. Log in to GHCR
+## 5. GHCR — no login needed (verified 2026-08-17)
 
-The image is private even though the repo is public.
+The published package is **public**, inheriting the repository's visibility, so
+the server pulls anonymously and needs no token:
 
 ```bash
-blyns@vps$ docker login ghcr.io -u AdhamGamal3008
-# paste the read:packages token at the password prompt
+blyns@vps$ docker pull ghcr.io/adhamgamal3008/blyns-erp:v1.0.0
 ```
+
+> **If the repository is ever made private, make the package private too** —
+> otherwise it keeps serving an image containing the source. GitHub → Packages →
+> `blyns-erp` → Package settings → Change visibility. At that point this step
+> becomes `docker login ghcr.io -u AdhamGamal3008` with a `read:packages` token.
+
+> **The image is `linux/amd64` only** — right for a Contabo VPS. It cannot be
+> pulled on an Apple Silicon Mac; that is expected, not a fault. Build locally
+> with `make build-image` if you need to run it on the Mac.
 
 ## 6. Secrets and configuration
 
