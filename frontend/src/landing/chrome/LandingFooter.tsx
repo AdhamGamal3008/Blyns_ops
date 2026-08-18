@@ -37,11 +37,6 @@ export function LandingFooter() {
               </a>
             ))}
           </nav>
-          <nav className={styles.nav} aria-label="Sign in">
-            <span className={styles.navHead}>Sign in</span>
-            <a href="/login">Company</a>
-            <a href="/admin/login">Operator</a>
-          </nav>
         </div>
       </div>
 
