@@ -50,6 +50,10 @@ export function App() {
         >
           <Route index element={<DashboardPage />} />
           <Route path="projects" element={<ProjectsPage />} />
+          {/* Static segment, so it outranks projects/:id — otherwise the
+              dashboard's "Create a project" shortcut opens a detail page
+              for a project literally called "new". */}
+          <Route path="projects/new" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="production/*" element={<ProductionPage />} />
           <Route path="crm/*" element={<CrmPage />} />

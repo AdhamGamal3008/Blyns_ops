@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CrmPage } from "../client/crm/CrmPage";
 import { FinancePage } from "../client/finance/FinancePage";
 import { InventoryPage } from "../client/inventory/InventoryPage";
+import { ProjectsPage } from "../client/projects/ProjectsPage";
 import type { ClientMe } from "../shared/types";
 
 const okJson = (body: unknown) =>
@@ -40,11 +41,11 @@ const ME: ClientMe = {
   id: "u1", email: "o@acme.com", name: "Owner", must_reset_password: false,
   company: {
     slug: "acme", name: "Acme",
-    enabled_modules: ["crm", "finance", "inventory"],
+    enabled_modules: ["crm", "finance", "inventory", "projects"],
   },
   role: {
     id: "r1", name: "Owner",
-    permissions: { crm: 3, finance: 3, inventory: 3 } as never,
+    permissions: { crm: 3, finance: 3, inventory: 3, projects: 3 } as never,
   },
 };
 
@@ -114,5 +115,23 @@ describe("quick-action deep links", () => {
       ).toBeInTheDocument());
     // the deal form must not spring open just because pipeline is the default tab
     expect(screen.queryByText("Create deal")).not.toBeInTheDocument();
+  });
+  // Projects was the one module that did NOT honour this contract: /app/projects/new
+  // matched the projects/:id route with id="new", so the dashboard's "Create a
+  // project" shortcut opened a DETAIL page for a project that does not exist.
+  it("Create a project opens the create form, not a project detail page", async () => {
+    stubFetch();
+    renderAt("/app/projects/new", <ProjectsPage />);
+    // "Create project" is the modal's submit; the header button reads "New project".
+    await waitFor(() =>
+      expect(screen.getByText("Create project")).toBeInTheDocument());
+  });
+
+  it("the plain projects route does not open the create form", async () => {
+    stubFetch();
+    renderAt("/app/projects", <ProjectsPage />);
+    await waitFor(() =>
+      expect(screen.getAllByText("New project").length).toBeGreaterThan(0));
+    expect(screen.queryByText("Create project")).not.toBeInTheDocument();
   });
 });

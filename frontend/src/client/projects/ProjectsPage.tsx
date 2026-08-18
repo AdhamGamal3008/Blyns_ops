@@ -3,7 +3,7 @@
 
 import { FolderKanban, Plus } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { api } from "../../shared/api";
 import { PageHeader } from "../../shared/shell";
 import type { ClientMe } from "../../shared/types";
@@ -38,6 +38,7 @@ import {
 export function ProjectsPage() {
   const me = useOutletContext<ClientMe>();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const canWrite = (me.role.permissions["projects"] ?? 0) >= 3;
   // The Analytics tab appears only for roles granted the separate analytics
   // resource (VIEW+); everyone else sees the portfolio exactly as before.
@@ -45,7 +46,13 @@ export function ProjectsPage() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [stageCount, setStageCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [creating, setCreating] = useState(false);
+  // Dashboard quick actions deep-link to /app/projects/new (the same contract
+  // CRM/Finance/Inventory already honour). Seed the modal from the URL so the
+  // shortcut opens the create form instead of landing on an empty portfolio.
+  // Guarded by canWrite: without it a read-only user could deep-link straight
+  // to the create form and only discover the 403 on submit.
+  const openNew = canWrite && pathname.endsWith("/new");
+  const [creating, setCreating] = useState(openNew);
 
   const load = useCallback(() => {
     setError(null);
@@ -100,7 +107,7 @@ export function ProjectsPage() {
       header: "Planned budget",
       numeric: true,
       sortable: true,
-      accessor: (p) => money(p.budget?.planned ?? 0, p.budget?.currency ?? "USD"),
+      accessor: (p) => money(p.budget?.planned ?? 0, p.budget?.currency),
       sortValue: (p) => p.budget?.planned ?? 0,
     },
   ];
@@ -180,7 +187,10 @@ export function ProjectsPage() {
         open={creating}
         onDone={(id) => {
           setCreating(false);
+          // Leave /new behind either way — staying on it means the modal cannot be
+          // reopened (the URL already says "new") and a refresh reopens it.
           if (id) navigate(`/app/projects/${id}`);
+          else if (openNew) navigate("/app/projects", { replace: true });
         }}
       />
     </Stack>
