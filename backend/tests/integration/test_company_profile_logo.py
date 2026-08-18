@@ -26,6 +26,11 @@ async def test_company_profile_reflects_the_core_fields(client_client):
     assert data["currency"] == "GBP"
     assert data["fiscal_year_start"] == "04-01"
 
+    # currency reaches /auth/me so the SPA formats every money value in the
+    # tenant's currency without granting Settings access to everyone
+    me = (await client_client.get("/api/v1/auth/me")).json()["data"]
+    assert me["company"]["currency"] == "GBP"
+
 
 async def test_logo_is_stored_and_surfaced_to_every_user(client_client):
     res = await client_client.patch("/api/v1/settings/company", json={"logo_ref": PNG})
@@ -72,3 +77,17 @@ async def test_logo_rejects_non_image_and_oversized(client_client):
     big = "data:image/png;base64," + "A" * 400_000
     res = await client_client.patch("/api/v1/settings/company", json={"logo_ref": big})
     assert res.status_code == 422, res.text
+
+
+async def test_blank_optional_fields_do_not_break_the_save(client_client):
+    """A profile whose fiscal-year (or any optional constrained field) is blank
+    must still save — the form re-sends every field, so an empty one used to 422
+    the whole PATCH and, when the user was changing currency, looked like a
+    currency error."""
+    res = await client_client.patch("/api/v1/settings/company", json={
+        "currency": "EGP", "fiscal_year_start": "", "legal_name": "",
+    })
+    assert res.status_code == 200, res.text
+    data = res.json()["data"]
+    assert data["currency"] == "EGP"           # the change the user wanted lands
+    assert data.get("fiscal_year_start") in (None, "")  # blank normalised, not rejected

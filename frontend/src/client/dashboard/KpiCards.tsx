@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../../shared/api";
 import type { KpiSet } from "../../shared/types";
 import { Grid, KpiCard } from "../../shared/ui";
+import { companyCurrency } from "../../shared/currency";
 
 const KPI_DEFS: {
   key: keyof KpiSet;
@@ -50,7 +51,7 @@ export function KpiCards() {
               d.money
                 ? n.toLocaleString(undefined, {
                     style: "currency",
-                    currency: "USD",
+                    currency: companyCurrency(),
                     maximumFractionDigits: 0,
                   })
                 : n.toLocaleString()

@@ -173,8 +173,12 @@ async def client_me(principal: ClientPrincipal = Depends(current_client_user)):
     # The company logo lives on the tenant's company_profile; surface it here so
     # every authenticated user (not just those with Settings access) can render
     # it in the shell.
+    # `currency` rides along on the same query: every money value in the SPA is
+    # formatted in the tenant's configured currency (Settings → Company profile),
+    # not a hardcoded default, and this is the only place the SPA can learn it
+    # without granting Settings access to everyone.
     profile = await principal.tenant_db.company_profile.find_one(
-        {"_id": "company_profile"}, {"logo_ref": 1}
+        {"_id": "company_profile"}, {"logo_ref": 1, "currency": 1}
     )
     return envelope({
         "id": str(principal.user["_id"]),
@@ -186,6 +190,7 @@ async def client_me(principal: ClientPrincipal = Depends(current_client_user)):
             "name": principal.tenant.company["name"],
             "enabled_modules": principal.tenant.company["enabled_modules"],
             "logo_ref": (profile or {}).get("logo_ref"),
+            "currency": (profile or {}).get("currency") or "USD",
         },
         "role": {
             "id": str(principal.role["_id"]),

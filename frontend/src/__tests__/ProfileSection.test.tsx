@@ -53,6 +53,29 @@ describe("ProfileSection logo", () => {
     });
   });
 
+  // The exact bug reported from production testing: changing the currency and
+  // saving must update every money value in the app WITHOUT a reload. The shell
+  // does that by listening for this event (see ClientShell), so the contract to
+  // protect is that saving dispatches it with the new currency.
+  it("broadcasts a currency change so money values update without a reload", async () => {
+    stubFetch();
+    const heard: (string | null)[] = [];
+    const listener = (e: Event) =>
+      heard.push((e as CustomEvent<string | null>).detail);
+    window.addEventListener("blyns:company-currency", listener);
+    try {
+      render(<ProfileSection canWrite />);
+      await waitFor(() => expect(screen.getByDisplayValue("USD")).toBeInTheDocument());
+
+      fireEvent.change(screen.getByDisplayValue("USD"), { target: { value: "EGP" } });
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => expect(heard).toContain("EGP"));
+    } finally {
+      window.removeEventListener("blyns:company-currency", listener);
+    }
+  });
+
   it("removes the logo by saving an explicit null", async () => {
     const mock = stubFetch();
     render(<ProfileSection canWrite />);

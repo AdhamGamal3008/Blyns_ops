@@ -73,7 +73,14 @@ export interface ClientMe {
   email: string;
   name: string;
   must_reset_password: boolean;
-  company: { slug: string; name: string; enabled_modules: string[]; logo_ref?: string | null };
+  company: {
+    slug: string;
+    name: string;
+    enabled_modules: string[];
+    logo_ref?: string | null;
+    /** ISO 4217 from Settings → Company profile; drives every money value. */
+    currency?: string;
+  };
   role: RoleInfo;
 }
 

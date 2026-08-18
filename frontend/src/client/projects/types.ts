@@ -1,4 +1,5 @@
 import type { BadgeTone } from "../../shared/ui";
+import { companyCurrency } from "../../shared/currency";
 
 // Shapes for the Project Management module (docs/modules/PROJECT_MANAGEMENT.md).
 // The v2.0 stage-gate machine (nine stages): a project holds current_stage_* + a
@@ -272,9 +273,12 @@ export const REPORT_TONE: Record<string, BadgeTone> = {
   closed: "neutral",
 };
 
-export function money(n: number, currency = "USD"): string {
+export function money(n: number, _currency?: string): string {
+  // Single-currency system: every amount displays in the company currency
+  // (Settings -> Company profile), never a per-record currency. The optional arg
+  // is ignored, kept only so existing call sites compile.
   return new Intl.NumberFormat(undefined, {
-    style: "currency", currency, maximumFractionDigits: 2,
+    style: "currency", currency: companyCurrency(), maximumFractionDigits: 2,
   }).format(n ?? 0);
 }
 

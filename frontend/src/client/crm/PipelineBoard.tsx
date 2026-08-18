@@ -20,6 +20,7 @@ import {
 import type { CsvGrants } from "../../shared/csv/access";
 import { DataTransfer } from "../../shared/csv/DataTransfer";
 import styles from "./PipelineBoard.module.css";
+import { companyCurrency } from "../../shared/currency";
 
 interface StageBucket {
   stage: string;
@@ -45,9 +46,10 @@ interface Deal {
   lost_reason?: string | null;
 }
 
-export function money(n: number, currency = "USD"): string {
+export function money(n: number, _currency?: string): string {
+  // Company currency only (see projects/types.ts money); the arg is ignored.
   return new Intl.NumberFormat(undefined, {
-    style: "currency", currency, maximumFractionDigits: 0,
+    style: "currency", currency: companyCurrency(), maximumFractionDigits: 0,
   }).format(n);
 }
 

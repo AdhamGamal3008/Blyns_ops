@@ -56,17 +56,26 @@ export function ProfileSection(props: { canWrite: boolean }) {
       const res = await api<Profile>("/settings/company", {
         method: "PATCH",
         body: {
-          name: profile.name, legal_name: profile.legal_name,
-          timezone: profile.timezone, currency: profile.currency,
-          fiscal_year_start: profile.fiscal_year_start, contact: profile.contact,
+          name: profile.name,
+          // Optional fields go up as null when blank, never "": an empty string
+          // fails the backend's length/pattern rules and 422s the whole save
+          // (e.g. a blank fiscal-year field would block a currency change).
+          legal_name: profile.legal_name || null,
+          timezone: profile.timezone || null,
+          currency: profile.currency || null,
+          fiscal_year_start: profile.fiscal_year_start || null,
+          contact: profile.contact,
           logo_ref: profile.logo_ref,
         },
       });
       setProfile(res.data);
       setSaved(true);
-      // keep the sidebar brand in sync without a reload
+      // keep the shell in sync without a reload: the sidebar brand tracks the
+      // logo, and every money value across the app tracks the currency.
       window.dispatchEvent(new CustomEvent("blyns:company-logo",
         { detail: res.data.logo_ref ?? null }));
+      window.dispatchEvent(new CustomEvent("blyns:company-currency",
+        { detail: res.data.currency ?? null }));
     } catch (err) {
       setError(err);
     } finally {

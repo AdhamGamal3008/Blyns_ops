@@ -24,6 +24,18 @@ class CompanyProfilePatch(BaseModel):
     # "company setting [that] may allow it".
     allow_negative_stock: bool | None = None
 
+    @field_validator("currency", "fiscal_year_start", "legal_name", "timezone",
+                     mode="before")
+    @classmethod
+    def _blank_to_none(cls, v: object) -> object:
+        # The profile form re-sends every field, so an optional field the user
+        # never filled arrives as "" — which fails a min_length or pattern rule
+        # and 422s the WHOLE save. An empty optional field means "unset", so
+        # normalise it to None before the constraints run.
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
     @field_validator("logo_ref")
     @classmethod
     def _valid_logo(cls, v: str | None) -> str | None:

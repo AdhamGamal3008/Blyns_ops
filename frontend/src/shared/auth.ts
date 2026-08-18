@@ -2,6 +2,7 @@
 // separate pools with separate tokens — never mixed.
 
 import { api, setTokens } from "./api";
+import { setCompanyCurrency } from "./currency";
 import type { AdminMe, ClientMe, Tokens } from "./types";
 
 interface LoginResult extends Tokens {
@@ -33,7 +34,11 @@ export async function changePassword(
 }
 
 export async function clientMe(): Promise<ClientMe> {
-  return (await api<ClientMe>("/auth/me")).data;
+  const me = (await api<ClientMe>("/auth/me")).data;
+  // Latch the tenant's currency before any screen renders a money value, so
+  // nothing is ever formatted with a placeholder and then corrected.
+  setCompanyCurrency(me.company?.currency);
+  return me;
 }
 
 export async function clientLogout(): Promise<void> {

@@ -34,6 +34,7 @@ import {
   type ApproverEntry, type Project, type Timeline,
 } from "./types";
 import styles from "./ProjectDetail.module.css";
+import { companyCurrency } from "../../shared/currency";
 
 const DIRECTOR_ROLE = "project_director";
 
@@ -98,7 +99,7 @@ export function ProjectDetail() {
   }
 
   // legacy/partial docs (pre-stage-machine) may lack a budget block
-  const b = project.budget ?? { planned: 0, committed: 0, actual: 0, currency: "USD" };
+  const b = project.budget ?? { planned: 0, committed: 0, actual: 0, currency: companyCurrency() };
   const current = timeline.current_stage_order;
   const activeOrder = selected ?? current;
   const activeStage = stages.find((s) => s.order === activeOrder);

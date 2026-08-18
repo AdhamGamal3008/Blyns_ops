@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 import { Card, CardHeader } from "../../shared/ui";
 import styles from "./parts.module.css";
+import { companyCurrency } from "../../shared/currency";
 
 // Brand chart palette (see shared/ui/Chart): oxblood leads, gold highlights,
 // info/success round it out. Assigned to entities in a fixed order, never cycled.
@@ -17,12 +18,19 @@ export const GOOD = "var(--success)";
 export const int = (n: number) => n.toLocaleString();
 export const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
-export const money = (n: number, currency = "USD") =>
-  n.toLocaleString(undefined, { style: "currency", currency, maximumFractionDigits: 0 });
+export const money = (n: number, _currency?: string) =>
+  n.toLocaleString(undefined, {
+    style: "currency", currency: companyCurrency(), maximumFractionDigits: 0,
+  });
 
-/** Compact currency for chart axes ($1.2k); full money() for tiles/tooltips. */
+/** Compact currency for chart axes in the company currency ("$1.2K", "EGP 1.2K").
+ *  notation:"compact" supplies both the symbol and the k/M suffix, so no currency
+ *  symbol is ever hardcoded. */
 export const moneyShort = (n: number) =>
-  Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(Math.abs(n) % 1000 ? 1 : 0)}k` : `$${Math.round(n)}`;
+  new Intl.NumberFormat(undefined, {
+    style: "currency", currency: companyCurrency(),
+    notation: "compact", maximumFractionDigits: 1,
+  }).format(n);
 
 // Chart data is a bag of keyed numbers/strings; our typed rows satisfy that shape.
 export type Rows = Array<Record<string, string | number>>;

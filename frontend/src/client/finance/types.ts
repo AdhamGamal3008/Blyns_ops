@@ -1,4 +1,5 @@
 import type { BadgeTone } from "../../shared/ui";
+import { companyCurrency } from "../../shared/currency";
 
 // Shared shapes for the Finance section (docs/modules/FINANCE.md §1).
 
@@ -109,8 +110,9 @@ export const STATUS_TONE: Record<string, BadgeTone> = {
   paid: "success", void: "danger",
 };
 
-export function money(n: number, currency = "USD"): string {
+export function money(n: number, _currency?: string): string {
+  // Company currency only (see projects/types.ts money); the arg is ignored.
   return new Intl.NumberFormat(undefined, {
-    style: "currency", currency, maximumFractionDigits: 2,
+    style: "currency", currency: companyCurrency(), maximumFractionDigits: 2,
   }).format(n ?? 0);
 }

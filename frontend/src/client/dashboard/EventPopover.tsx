@@ -12,6 +12,7 @@ import { Link } from "react-router-dom";
 import type { CalendarEvent } from "../../shared/types";
 import { Badge, Popover } from "../../shared/ui";
 import styles from "./EventPopover.module.css";
+import { companyCurrency } from "../../shared/currency";
 
 const HOVER_OPEN_MS = 140;
 const HOVER_CLOSE_MS = 120;
@@ -64,10 +65,11 @@ function formatWhen(event: CalendarEvent): string {
   return `${day} · ${time}`;
 }
 
-function money(value: number, currency?: string): string {
+function money(value: number, _currency?: string): string {
+  // Company currency only (see projects/types.ts money); the arg is ignored.
   try {
     return new Intl.NumberFormat(undefined, {
-      style: "currency", currency: currency || "USD", maximumFractionDigits: 0,
+      style: "currency", currency: companyCurrency(), maximumFractionDigits: 0,
     }).format(value);
   } catch {
     return `${value}`;

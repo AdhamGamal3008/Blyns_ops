@@ -15,6 +15,7 @@ import {
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { clientLogout, clientMe } from "../shared/auth";
+import { setCompanyCurrency } from "../shared/currency";
 import { AppShell, type CommandItem, RouteTransition, type ShellNavItem } from "../shared/shell";
 import type { ClientMe } from "../shared/types";
 import { Spinner } from "../shared/ui/Spinner/Spinner";
@@ -60,6 +61,21 @@ export function ClientShell() {
     }
     window.addEventListener("blyns:company-logo", onLogo);
     return () => window.removeEventListener("blyns:company-logo", onLogo);
+  }, []);
+
+  // ...and the same for currency: re-latch the module value money() reads, then
+  // update `me` so every mounted money value re-renders in the new currency
+  // without the user having to reload.
+  useEffect(() => {
+    function onCurrency(e: Event) {
+      const code = (e as CustomEvent<string | null>).detail;
+      setCompanyCurrency(code);
+      setMe((m) =>
+        m ? { ...m, company: { ...m.company, currency: code ?? m.company.currency } } : m,
+      );
+    }
+    window.addEventListener("blyns:company-currency", onCurrency);
+    return () => window.removeEventListener("blyns:company-currency", onCurrency);
   }, []);
 
   if (!me) {
