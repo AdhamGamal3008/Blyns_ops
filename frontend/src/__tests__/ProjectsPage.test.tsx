@@ -101,13 +101,17 @@ describe("ProjectsPage", () => {
     expect(screen.getByRole("tab", { name: "Analytics" })).toBeInTheDocument();
   });
 
-  it("hides the Analytics tab (no tabs at all) without analytics access", async () => {
+  it("hides the Analytics tab without analytics access, keeping Portfolio + Archived", async () => {
+    // Archived is not permission-gated — every role needs somewhere to find a
+    // parked project (docs/PROJECT_STATUS_PLAN.md rule 2), so the tab strip is
+    // always present now; only Analytics is gated.
     stubFetch();
     renderPage(3, 0);
     await waitFor(() =>
       expect(screen.getByText("Tower A Lobby Cladding")).toBeInTheDocument());
     expect(screen.queryByRole("tab", { name: "Analytics" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Portfolio" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Portfolio" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /archived/i })).toBeInTheDocument();
   });
 
   it("lets a WRITE user create a project", async () => {
