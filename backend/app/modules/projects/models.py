@@ -90,7 +90,21 @@ class ProjectPatch(BaseModel):
     milestone_schedule: list[Milestone] | None = None
     schedule: ProjectSchedule | None = None
     planned_budget: float | None = Field(default=None, ge=0)
-    status: ProjectStatus | None = None
+    # `status` is deliberately NOT patchable here — it is a managed field with a
+    # transition matrix behind POST /projects/{id}/status
+    # (docs/PROJECT_STATUS_PLAN.md §3.1). One door, or the rules are optional.
+
+
+# Only these can be requested by a human; `completed` is machine-only (D1) and
+# `cancelled` is vestigial.
+ManualProjectStatus = Literal["active", "on_hold", "archived"]
+
+
+class ProjectStatusChange(BaseModel):
+    """POST /projects/{id}/status — the one door for a managed status change."""
+
+    status: ManualProjectStatus
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class DocumentSupply(BaseModel):

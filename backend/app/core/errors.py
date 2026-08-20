@@ -32,6 +32,11 @@ VALIDATION_ERROR = "VALIDATION_ERROR"
 INVALID_CREDENTIALS = "INVALID_CREDENTIALS"  # generic login failure, reveals nothing
 INSUFFICIENT_STOCK = "INSUFFICIENT_STOCK"  # docs/modules/INVENTORY.md §2
 UNBALANCED_ENTRY = "UNBALANCED_ENTRY"  # docs/modules/FINANCE.md §1
+# 409: the requested project status is not reachable from the current one
+# (docs/PROJECT_STATUS_PLAN.md §3.2). `completed` is machine-only.
+INVALID_STATUS_TRANSITION = "INVALID_STATUS_TRANSITION"
+# 409: an archived project is frozen — restore it before mutating anything.
+PROJECT_ARCHIVED = "PROJECT_ARCHIVED"
 
 # Generic HTTP fallbacks (uniform envelope even for non-domain errors).
 _HTTP_STATUS_CODES: dict[int, str] = {

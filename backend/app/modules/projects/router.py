@@ -30,6 +30,7 @@ from app.modules.projects.models import (
     ProjectConfigurationPatch,
     ProjectCreate,
     ProjectPatch,
+    ProjectStatusChange,
     RejectBody,
     ReportCreate,
     ReportPatch,
@@ -226,6 +227,21 @@ async def patch_project(
     project_id: str, body: ProjectPatch, principal: ClientPrincipal = Depends(_write)
 ):
     return envelope(to_api(await service.patch_project(principal, project_id, body)))
+
+
+@router.post("/{project_id}/status")
+async def change_status(
+    project_id: str,
+    body: ProjectStatusChange,
+    principal: ClientPrincipal = Depends(_write),
+):
+    """Managed status change — the one door (docs/PROJECT_STATUS_PLAN.md §3.1).
+
+    Archive is available from any status at any stage; restore returns a project
+    to active or on hold, never to completed. `completed` itself is reachable
+    only by approving the last stage.
+    """
+    return envelope(to_api(await service.change_status(principal, project_id, body)))
 
 
 @router.delete("/{project_id}")

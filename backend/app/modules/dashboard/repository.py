@@ -100,7 +100,13 @@ async def calendar_projects(db, start: datetime, end: datetime) -> list[dict]:
     def _in_range(d: datetime | None) -> bool:
         return d is not None and start <= d <= end
 
-    async for doc in db.projects.find({"is_deleted": {"$ne": True}}):
+    # A parked or finished project should not keep pushing dates at people:
+    # archived is out of the portfolio entirely, and a completed project's
+    # deadlines are history (docs/PROJECT_STATUS_PLAN.md §3.6).
+    async for doc in db.projects.find({
+        "is_deleted": {"$ne": True},
+        "status": {"$nin": ["archived", "completed", "cancelled"]},
+    }):
         pid, name = doc["_id"], doc["name"]
         # Every project event shares the project's identity and where it has
         # got to — that is the context a reader wants before deciding to open it.
