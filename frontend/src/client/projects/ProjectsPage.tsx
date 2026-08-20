@@ -1,7 +1,7 @@
 // Project Management portfolio (docs/modules/PROJECT_MANAGEMENT.md §12). The
 // list is the entry point; a row opens the stage-gate detail view.
 
-import { FolderKanban, Plus } from "lucide-react";
+import { Archive, FolderKanban, Plus, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 import { api } from "../../shared/api";
@@ -14,6 +14,10 @@ import {
   DataState,
   DataTable,
   type DataTableColumn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   EmptyState,
   errorText,
   Field,
@@ -44,6 +48,8 @@ export function ProjectsPage() {
   // resource (VIEW+); everyone else sees the portfolio exactly as before.
   const canAnalytics = (me.role.permissions["projects_analytics"] ?? 0) >= 1;
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [archived, setArchived] = useState<Project[] | null>(null);
+  const [archivedError, setArchivedError] = useState<unknown>(null);
   const [stageCount, setStageCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
   // Dashboard quick actions deep-link to /app/projects/new (the same contract
@@ -60,7 +66,32 @@ export function ProjectsPage() {
       .then((r) => setProjects(r.data)).catch(setError);
   }, []);
 
+  // The portfolio query already excludes archived server-side; the tab asks for
+  // them explicitly (docs/PROJECT_STATUS_PLAN.md §3.6).
+  const loadArchived = useCallback(() => {
+    setArchivedError(null);
+    api<Project[]>("/projects?status=archived&page_size=100")
+      .then((r) => setArchived(r.data)).catch(setArchivedError);
+  }, []);
+
   useEffect(load, [load]);
+  useEffect(loadArchived, [loadArchived]);
+
+  const restore = useCallback(
+    async (project: Project, status: "active" | "on_hold") => {
+      setArchivedError(null);
+      try {
+        await api(`/projects/${project.id}/status`, {
+          method: "POST", body: { status },
+        });
+        load();
+        loadArchived();
+      } catch (err) {
+        setArchivedError(err);
+      }
+    },
+    [load, loadArchived],
+  );
   // the machine's length is data, not a constant — derive the "X/N" denominator
   useEffect(() => {
     api<{ order: number }[]>("/projects/config/stages")
@@ -111,6 +142,60 @@ export function ProjectsPage() {
       sortValue: (p) => p.budget?.planned ?? 0,
     },
   ];
+
+  // Rule 2: archived projects live in their own tab. Restoring asks where to
+  // land — active or on hold, never completed (rule 3).
+  const archivedColumns: DataTableColumn<Project>[] = [
+    ...columns.filter((c) => c.key !== "status"),
+    {
+      key: "restore",
+      header: "",
+      accessor: (p) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="compact">
+              <RotateCcw size={14} aria-hidden="true" />
+              Restore
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onSelect={() => restore(p, "active")}>
+              Restore to active
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => restore(p, "on_hold")}>
+              Restore on hold
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
+  const archivedView = (
+    <Stack>
+      <DataState
+        loading={!archived && !archivedError}
+        error={archived ? null : archivedError}
+        onRetry={loadArchived}
+        isEmpty={archived?.length === 0}
+        empty={
+          <EmptyState
+            icon={<Archive size={24} />}
+            title="Nothing archived"
+            description="Archived projects are parked here. They keep their stage progress and can be restored at any time."
+          />
+        }
+      >
+        <DataTable
+          data={archived ?? []}
+          columns={archivedColumns}
+          getRowId={(p) => p.id}
+          searchPlaceholder="Search archived…"
+          onRowClick={(p) => navigate(`/app/projects/${p.id}`)}
+        />
+      </DataState>
+    </Stack>
+  );
 
   const portfolio = (
     <Stack>
@@ -168,20 +253,22 @@ export function ProjectsPage() {
         }
       />
 
-      {canAnalytics ? (
-        <Tabs defaultValue="portfolio">
-          <TabsList>
-            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-            <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          </TabsList>
-          <TabsContent value="portfolio">{portfolio}</TabsContent>
+      <Tabs defaultValue="portfolio">
+        <TabsList>
+          <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+          <TabsTrigger value="archived">
+            Archived{archived?.length ? ` (${archived.length})` : ""}
+          </TabsTrigger>
+          {canAnalytics && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
+        </TabsList>
+        <TabsContent value="portfolio">{portfolio}</TabsContent>
+        <TabsContent value="archived">{archivedView}</TabsContent>
+        {canAnalytics && (
           <TabsContent value="analytics">
             <ProjectsAnalytics />
           </TabsContent>
-        </Tabs>
-      ) : (
-        portfolio
-      )}
+        )}
+      </Tabs>
 
       <ProjectModal
         open={creating}

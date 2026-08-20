@@ -35,6 +35,41 @@ SNAG_REPORT_TYPES = ["na"]
 
 PROJECT_STATUSES = ["active", "on_hold", "completed", "archived", "cancelled"]
 
+# --- managed status (docs/PROJECT_STATUS_PLAN.md) ----------------------------
+#
+# Status is a MANAGED field: one guarded endpoint, one transition matrix. The
+# generic project PATCH deliberately cannot set it.
+#
+# `completed` appears in no row's value set — it is machine-only, reached solely
+# by approving the last stage. Putting it here would make the whole stage-gate
+# system optional (D1), and rule 3 ("recall to any state other than completed")
+# says the same thing from the other side.
+STATUS_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    # hold a running project, or park it in the archive
+    "active": ("on_hold", "archived"),
+    # resume, or archive while held
+    "on_hold": ("active", "archived"),
+    # D2: a finished project can be re-opened for post-handover rework in one
+    # step. Not to `on_hold` — re-open first, then hold.
+    "completed": ("active", "archived"),
+    # rule 3: recall to any state EXCEPT completed
+    "archived": ("active", "on_hold"),
+    # vestigial: nothing writes `cancelled`; kept readable, archivable only
+    "cancelled": ("archived",),
+}
+
+# Archive is available from ANY status, at any stage, at any time (rule 1).
+ARCHIVABLE_FROM = tuple(STATUS_TRANSITIONS)
+
+# Statuses that freeze the project: reads stay open, mutations are refused. Only
+# `archived` freezes — a completed project stays mutable so its final paperwork
+# (reports, job costs) can still be filed.
+FROZEN_STATUSES = frozenset({"archived"})
+
+# Clearing these when a project leaves `completed` keeps a re-opened project from
+# being simultaneously "active" and stamped complete.
+COMPLETION_FIELDS = ("completed_at",)
+
 # §3.7 deliverable kinds.
 DELIVERABLE_KINDS = ["shop_drawing", "bom", "scan", "photo", "report", "certificate"]
 

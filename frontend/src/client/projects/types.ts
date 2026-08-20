@@ -266,6 +266,22 @@ export const PROJECT_TONE: Record<Project["status"], BadgeTone> = {
   cancelled: "danger",
 };
 
+export type ProjectStatus = Project["status"];
+
+/** Mirror of permissions.STATUS_TRANSITIONS (docs/PROJECT_STATUS_PLAN.md §3.2)
+ *  so the UI only ever offers a move the server will accept.
+ *
+ *  `completed` appears in no value list: it is reached solely by approving the
+ *  last stage, never by picking it. Archive is offered from every status —
+ *  rule 1, "available at all times". */
+export const MANUAL_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]> = {
+  active: ["on_hold", "archived"],
+  on_hold: ["active", "archived"],
+  completed: ["active", "archived"],   // D2: one-step re-open
+  archived: ["active", "on_hold"],     // rule 3: never back to completed
+  cancelled: ["archived"],
+};
+
 export const REPORT_TONE: Record<string, BadgeTone> = {
   open: "danger",
   in_progress: "warning",

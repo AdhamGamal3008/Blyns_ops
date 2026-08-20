@@ -29,6 +29,7 @@ import { DeliverablesSection } from "./DeliverablesSection";
 import { JobCostsSection } from "./JobCostsSection";
 import { ReportsSection } from "./ReportsSection";
 import { StagePanel } from "./StagePanel";
+import { StatusControl } from "./StatusControl";
 import {
   PROJECT_TONE, humanize, money,
   type ApproverEntry, type Project, type Timeline,
@@ -144,10 +145,13 @@ export function ProjectDetail() {
           </Row>
         }
         actions={
-          <Button variant="secondary" onClick={() => navigate("/app/projects")}>
-            <ArrowLeft size={16} aria-hidden="true" />
-            Projects
-          </Button>
+          <Row gap={2}>
+            <StatusControl project={project} canWrite={canWrite} onChanged={reload} />
+            <Button variant="secondary" onClick={() => navigate("/app/projects")}>
+              <ArrowLeft size={16} aria-hidden="true" />
+              Projects
+            </Button>
+          </Row>
         }
       />
 

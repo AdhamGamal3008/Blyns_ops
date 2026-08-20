@@ -19,7 +19,9 @@ from app.core import storage
 from app.core.audit import write_activity
 from app.core.config import settings
 from app.core.errors import (
+    INVALID_STATUS_TRANSITION,
     PERMISSION_DENIED,
+    PROJECT_ARCHIVED,
     TENANT_NOT_FOUND,
     VALIDATION_ERROR,
     DomainError,
@@ -39,18 +41,22 @@ from app.modules.projects.models import (
     JobCostCreate,
     ProjectCreate,
     ProjectPatch,
+    ProjectStatusChange,
     ReportCreate,
     ReportPatch,
     RevisionCreate,
     StageConfigPatch,
 )
 from app.modules.projects.permissions import (
+    COMPLETION_FIELDS,
     DEFAULT_GATE_DOCUMENT_KIND,
     DEFAULT_REJECT_REPORT,
     FIRST_STAGE_ORDER,
+    FROZEN_STATUSES,
     GATE_DOCUMENT_KINDS,
     LAST_STAGE_ORDER,
     OPEN_REPORT_STATUSES,
+    STATUS_TRANSITIONS,
 )
 from app.tenant.deps import ClientPrincipal
 
@@ -90,10 +96,27 @@ async def _require(
     return doc
 
 
-async def _project(principal: ClientPrincipal, project_id: str) -> dict:
-    return await _require(
+async def _project(
+    principal: ClientPrincipal, project_id: str, *, mutating: bool = True
+) -> dict:
+    """Load a project, refusing to mutate a frozen (archived) one.
+
+    `mutating` defaults to True so the guard is inherited by default: a new
+    endpoint that forgets to think about archiving is safe, and only the read
+    paths opt out. Reads stay open on an archived project — you must be able to
+    look at what you parked (docs/PROJECT_STATUS_PLAN.md §3.4).
+    """
+    project = await _require(
         principal, repo.PROJECTS, _oid(project_id, "Project"), "Project"
     )
+    if mutating and project.get("status") in FROZEN_STATUSES:
+        raise DomainError(
+            PROJECT_ARCHIVED,
+            "This project is archived. Restore it before making changes.",
+            http_status=409,
+            details={"status": project["status"], "code": project.get("code")},
+        )
+    return project
 
 
 async def _definition_in(db: Any, scope: repo.ConfigScope, order: int) -> dict:
@@ -171,6 +194,11 @@ async def list_projects(
     query: dict[str, Any] = {}
     if status:
         query["status"] = status
+    else:
+        # Rule 2: archived projects live in their own tab. An unfiltered
+        # portfolio is the working list, so it excludes them; the tab asks for
+        # them explicitly with ?status=archived.
+        query["status"] = {"$ne": "archived"}
     if pm_id:
         query["pm_id"] = pm_id
     if stage:
@@ -182,7 +210,7 @@ async def list_projects(
 
 
 async def get_project(principal: ClientPrincipal, project_id: str) -> dict:
-    return await _project(principal, project_id)
+    return await _project(principal, project_id, mutating=False)
 
 
 async def create_project(principal: ClientPrincipal, payload: ProjectCreate) -> dict:
@@ -352,8 +380,94 @@ async def patch_project(
     return updated
 
 
+async def change_status(
+    principal: ClientPrincipal, project_id: str, payload: ProjectStatusChange
+) -> dict:
+    """The one door for a managed status change (docs/PROJECT_STATUS_PLAN.md).
+
+    `mutating=False` because this endpoint is precisely how an archived project
+    gets un-frozen — guarding it would make archiving a one-way trip.
+    """
+    project = await _project(principal, project_id, mutating=False)
+    current = project.get("status") or "active"
+    target = payload.status
+
+    same = target == current
+    # Re-holding a project the ENGINE parked is a real request, not a no-op: it
+    # converts the hold to a manual one, so resolving the recovery report no
+    # longer releases a project a human wants kept parked (§3.3).
+    upgrade_hold = (
+        same and target == "on_hold"
+        and (project.get("hold") or {}).get("source") != "manual"
+    )
+    if same and not upgrade_hold:
+        return project
+
+    if not same:
+        allowed = STATUS_TRANSITIONS.get(current, ())
+        if target not in allowed:
+            raise DomainError(
+                INVALID_STATUS_TRANSITION,
+                f"A {current.replace('_', ' ')} project cannot be moved to "
+                f"{target.replace('_', ' ')}.",
+                http_status=409,
+                details={"from": current, "to": target, "allowed": list(allowed)},
+            )
+
+    now = _now()
+    actor = str(principal.user["_id"])
+    fields: dict[str, Any] = {"status": target, "updated_by": actor}
+
+    if target == "on_hold":
+        # Provenance is what stops _maybe_clear_hold from silently resuming a
+        # project a human deliberately paused (§3.3).
+        fields["hold"] = {
+            "source": "manual", "reason": payload.reason,
+            "by": actor, "at": now,
+        }
+    elif current == "on_hold":
+        fields["hold"] = None  # resumed or archived out of a hold
+
+    # Leaving `completed` (re-open, or restore from an archived-completed) must
+    # clear the completion stamp — nothing is both active and complete.
+    if current == "completed" or (current == "archived" and project.get("completed_at")):
+        for field in COMPLETION_FIELDS:
+            fields[field] = None
+
+    history = list(project.get("status_history") or [])
+    history.append({
+        "from": current, "to": target, "reason": payload.reason,
+        "by": actor, "by_name": principal.user.get("name"), "at": now,
+    })
+    fields["status_history"] = history
+
+    updated = await repo.update(
+        principal.tenant_db, repo.PROJECTS, project["_id"], fields
+    )
+    assert updated is not None
+
+    # Name the event by the most meaningful half of the move. Leaving the
+    # archive is a "restore" whichever state it lands in — that is the fact a
+    # reader of the feed cares about, more than the landing state.
+    if target == "archived":
+        action = "project.archived"
+    elif current == "archived":
+        action = "project.restored"
+    elif current == "completed":
+        action = "project.reopened"
+    elif target == "on_hold":
+        action = "project.held"
+    else:
+        action = "project.resumed"
+    await _log(principal, action,
+               {"type": "project", "id": project_id, "label": updated["name"]},
+               {"code": updated.get("code"), "from": current, "to": target,
+                "reason": payload.reason})
+    return updated
+
+
 async def delete_project(principal: ClientPrincipal, project_id: str) -> None:
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     await repo.soft_delete(
         principal.tenant_db, repo.PROJECTS, project["_id"], str(principal.user["_id"])
     )
@@ -363,7 +477,7 @@ async def delete_project(principal: ClientPrincipal, project_id: str) -> None:
 
 async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
     """§12 — stages + milestones for the Gantt view."""
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     db = principal.tenant_db
     scope = await repo.scope_for_project(db, project)
     definitions = await repo.stage_defs(db, scope)
@@ -406,7 +520,7 @@ async def timeline(principal: ClientPrincipal, project_id: str) -> dict:
 
 async def board(principal: ClientPrincipal, project_id: str) -> dict:
     """§12 — the current stage's tasks/gates for the Kanban view."""
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     if not project.get("current_stage_order"):
         # a legacy/partial doc never entered the machine — nothing to board
         return {"project_id": project_id, "stage": None, "tasks": [],
@@ -442,7 +556,7 @@ async def list_stages(principal: ClientPrincipal, project_id: str) -> list[dict]
 
 
 async def get_stage(principal: ClientPrincipal, project_id: str, order: int) -> dict:
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     definition = await _definition(principal, project, order)
     db = principal.tenant_db
     instance = await repo.stage_instance(db, project["_id"], order)
@@ -605,7 +719,12 @@ async def record_gate_result(
             rolled_to = target_key
         else:
             # v1.0 semantics: a severe breach halts the whole project (§8).
-            await repo.update(db, repo.PROJECTS, project["_id"], {"status": "on_hold"})
+            # Stamped `engine` so resolving the recovery report auto-clears it.
+            await repo.update(db, repo.PROJECTS, project["_id"], {
+                "status": "on_hold",
+                "hold": {"source": "engine", "at": _now(),
+                         "reason": f"severe gate breach: {gate_key}"},
+            })
 
     await _log(principal, "gate.passed" if passed else "gate.failed",
                {"type": "project", "id": project_id, "label": project["name"]},
@@ -1133,7 +1252,10 @@ async def reject_stage(
         await repo.set_stage_fields(db, instance["_id"], {
             "status": "on_hold", "blocking_reason": comment,
         })
-        await repo.update(db, repo.PROJECTS, project["_id"], {"status": "on_hold"})
+        await repo.update(db, repo.PROJECTS, project["_id"], {
+            "status": "on_hold",
+            "hold": {"source": "engine", "at": _now(), "reason": comment},
+        })
     else:
         # the rejection reopens the same stage for a mandatory resubmission loop
         await repo.set_stage_fields(db, instance["_id"], {
@@ -1449,7 +1571,7 @@ async def open_deliverable_file(
 ):
     """Open the GridFS stream for a document version's uploaded file (download).
     URL-reference versions have no file to stream."""
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     db = principal.tenant_db
     deliverable = await db[repo.DELIVERABLES].find_one({
         "_id": _oid(deliverable_id, "Deliverable"),
@@ -1476,7 +1598,7 @@ async def list_deliverables(
     principal: ClientPrincipal, project_id: str, kind: str | None,
     skip: int, limit: int,
 ) -> tuple[list[dict], int]:
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     query: dict[str, Any] = {"project_id": project["_id"]}
     if kind:
         query["kind"] = kind
@@ -1665,7 +1787,7 @@ async def list_reports(
     principal: ClientPrincipal, project_id: str, type_: str | None,
     status: str | None, skip: int, limit: int,
 ) -> tuple[list[dict], int]:
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     query: dict[str, Any] = {"project_id": project["_id"]}
     if type_:
         query["type"] = type_
@@ -1720,14 +1842,24 @@ async def patch_report(
 
 
 async def _maybe_clear_hold(principal: ClientPrincipal, project: dict) -> None:
-    """§4: on_hold suspends the project until the recovery report is resolved."""
+    """§4: on_hold suspends the project until the recovery report is resolved.
+
+    Only an ENGINE hold auto-clears. A hold a human placed deliberately is
+    cleared only by an explicit resume — otherwise resolving an unrelated
+    report would silently un-pause a project someone paused on purpose
+    (docs/PROJECT_STATUS_PLAN.md §3.3).
+    """
     if project.get("status") != "on_hold":
+        return
+    if (project.get("hold") or {}).get("source") == "manual":
         return
     db = principal.tenant_db
     still_open = await repo.open_reports(db, project["_id"], OPEN_REPORT_STATUSES)
     if still_open:
         return
-    await repo.update(db, repo.PROJECTS, project["_id"], {"status": "active"})
+    await repo.update(db, repo.PROJECTS, project["_id"], {
+        "status": "active", "hold": None,
+    })
     order = int(project["current_stage_order"])
     instance = await repo.stage_instance(db, project["_id"], order)
     if instance is not None and instance.get("status") == "on_hold":
@@ -1827,7 +1959,7 @@ async def create_job_cost(
 async def list_job_costs(
     principal: ClientPrincipal, project_id: str, skip: int, limit: int
 ) -> tuple[list[dict], int]:
-    project = await _project(principal, project_id)
+    project = await _project(principal, project_id, mutating=False)
     return await repo.list_docs(
         principal.tenant_db, repo.JOB_COSTS, {"project_id": project["_id"]},
         skip, limit,
